@@ -12,3 +12,5 @@ docker-compose.yml
 
 test/
 TODO.md
+
+.dockerignore

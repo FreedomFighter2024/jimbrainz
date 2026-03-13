@@ -1,88 +1,12 @@
-//TODO modularize this mess
+import { init} from './init.js';
+import {sleep} from './utils.js';
 
-function convertTime(dateObj) {
-  let hours = dateObj.getHours(); 
-  let minutes = dateObj.getMinutes(); 
-  let seconds = dateObj.getSeconds(); 
-  const pad = (num) => num.toString().padStart(2, '0');
-  console.log(`${pad(hours)}:${pad(minutes)}:${pad(seconds)}`)
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-}
+
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const lidbrainzEventLog = document.getElementById('logs-scrollable');
-    const lidbrainzEventSource = new EventSource('/lidbrainz/interface_logs/interface_logs');
-    let lidarrUrl = await refreshLidarrInfo();
-
-    if(lidarrUrl == undefined){
-        const eventItem = document.createElement('div');
-        eventItem.className = 'event-item';
-        const timeString = convertTime(new Date());
-        eventItem.innerHTML = 
-        `
-            <div class="first-row">
-                <h5 class="text default event-type WARNING">WARNING</h5>
-                <h5 class="text white event-time">[${timeString}]</h5>
-            </div>
-            <div class="second-row">
-                <h4 class="text event-content-indent">└─╲</h5>
-                <h5 class="text default-secondary event-content">It seems no Lidarr URL has been configured.</h5>
-            </div>
-        `;
-        lidbrainzEventLog.prepend(eventItem);
-    }
-
-    lidbrainzEventSource.onmessage = async function(event) {
-        const data = JSON.parse(event.data);
-
-        if (data.event_content.toLowerCase().includes("lidarr")){
-            const lidarrLink = `<a href="${lidarrUrl}" target="_blank" rel="noopener noreferrer">Lidarr</a>`;
-            data.event_content = data.event_content.replace(/lidarr/gi, lidarrLink);
-        }
-
-        const eventItem = document.createElement('div');
-        eventItem.className = 'event-item';
-        const timeString = convertTime(new Date());
-        eventItem.innerHTML = 
-        `
-            <div class="first-row">
-                <h5 class="text default event-type ${data.event_type}">${data.event_type}</h5>
-                <h5 class="text white event-time">[${timeString}]</h5>
-            </div>
-            <div class="second-row">
-                <h4 class="text event-content-indent">└─╲</h5>
-                <h5 class="text default-secondary event-content">${data.event_content}</h5>
-            </div>
-        `;
-        lidbrainzEventLog.prepend(eventItem);
-    }
-
-    if(lidarrUrl != undefined && lidbrainzEventLog.children.length === 0){
-        const eventItem = document.createElement('div');
-        eventItem.className = 'event-item';
-        const timeString = convertTime(new Date());
-        eventItem.innerHTML = 
-        `
-            <div class="first-row">
-                <h5 class="text default event-type INFO">INFO</h5>
-                <h5 class="text white event-time">[${timeString}]</h5>
-            </div>
-            <div class="second-row">
-                <h4 class="text event-content-indent">└─╲</h5>
-                <h5 class="text default-secondary event-content">Fetched Lidarr system info</h5>
-            </div>
-        `;
-        lidbrainzEventLog.prepend(eventItem); 
-    }
+    init({refreshLidarrInfo})
 });
 
-
-
-window.addEventListener('beforeunload', () => {
-    if (lidbrainzEventSource) {
-        lidbrainzEventSource.close();
-    }
-});
 
 
 
@@ -123,6 +47,7 @@ function loadAllCoverImages(parentContainer) {
 
 
 async function fetchLidarrInfo() {
+    console.log("getting lidarr info")
     const response = await fetch(`/lidbrainz/add_to_lidarr/system_info`);
 
     if (!response.ok) {
@@ -136,10 +61,14 @@ async function fetchLidarrInfo() {
 
 
 async function refreshLidarrInfo() {
+    console.log("refreshng lidarr info")
     try {
         const lidarrInfo = await fetchLidarrInfo();
+        await sleep(100)
         await populateMetadataProfiles(lidarrInfo.metadata_profiles);
+        await sleep(150)
         await populateQualityProfiles(lidarrInfo.quality_profiles);
+        await sleep(150)
         await populateFolderProfiles(lidarrInfo.root_folders);
         return lidarrInfo.lidarr_url;
     } 
@@ -147,6 +76,7 @@ async function refreshLidarrInfo() {
     catch (error) {}
 }
 async function populateMetadataProfiles(profiles) {
+    console.log("populating metadata profs")
     const container = document.getElementById('metadata-profile-select');
     container.innerHTML = '';
 
@@ -167,6 +97,7 @@ async function populateMetadataProfiles(profiles) {
 
 
 async function populateQualityProfiles(profiles) {
+    console.log("populating quality profs")
     const container = document.getElementById('quality-profile-select');
     container.innerHTML = '';
     const firstProfileId = profiles[0].id;
@@ -188,6 +119,7 @@ async function populateQualityProfiles(profiles) {
 
 
 async function populateFolderProfiles(profiles) {
+    console.log("populating folders")
     const container = document.getElementById('folder-profile-select');
     container.innerHTML = '';
     const firstProfileId = profiles[0].id;
@@ -335,13 +267,15 @@ async function handleSearch() {
     if (!query) return;
 
     try {
-        if (searchCache[query]) {
-            processSearchResults(searchCache[query]);
+        let limit = parseInt(limitValueDisplay.innerText);
+        const cached = searchCache[query];
+        if (cached && cached.limit === limit) {
+            processSearchResults(cached.results);
         } 
         
         else {
             const results = await searchReleaseGroups(query);
-            searchCache[query] = results;
+            searchCache[query] = { results, limit };
             processSearchResults(results);
         }
     } 
@@ -372,6 +306,7 @@ function processSearchResults(results) {
 
     releaseGroups.forEach((rg, index) => {
         const releases = index === 0 ? bestMatchReleases : null;
+        
         container.appendChild(createReleaseGroupElement(rg, releases));
     });
 
@@ -477,13 +412,21 @@ function createReleaseElement(release, releaseGroupId, artistId) {
     const countryDisplay = release['release-events']?.[0]?.area?.['iso-3166-1-codes']?.[0] || 'N/A';
     const date = release['release-events']?.[0]?.date || release.date || 'N/A';
     const releaseId = release.id;
-    const div = document.createElement('div');
-    div.className = 'release';
+    const media = release.media || [];
+    const wrapper = document.createElement('div');
+    wrapper.className = 'release-wrapper';
 
-    div.innerHTML = 
+    let totalTracks = 0;
+    for (let disc of media) {
+        totalTracks += (disc.tracks?.length || 0);
+    }
+
+    const releaseRow = document.createElement('div');
+    releaseRow.className = 'release';
+    releaseRow.innerHTML = 
     `
         <div class="shrinkable">
-            <h4 class="text white releaseName">└─╲
+            <h4 class="text white releaseName">└─╲ ▷
                 <a href="https://musicbrainz.org/release/${releaseId}" target="_blank" rel="noopener noreferrer">${title}</a>
             &nbsp;</h4>
             <h4 class="text default releaseFormat">[${format}]▷╲</h4>
@@ -498,7 +441,8 @@ function createReleaseElement(release, releaseGroupId, artistId) {
         </div>
     `;
 
-    div.querySelector('.releaseAddButton').addEventListener('click', async () => {
+    releaseRow.querySelector('.releaseAddButton').addEventListener('click', async (e) => {
+        e.stopPropagation();
         let status
 
         try {
@@ -510,10 +454,69 @@ function createReleaseElement(release, releaseGroupId, artistId) {
         }
     });
 
-    return div;
+    wrapper.appendChild(releaseRow);
+
+    if (totalTracks > 0) {
+        const tracksContainer = document.createElement('div');
+        tracksContainer.className = 'release-tracks';
+
+        for (let disc of media) {
+            for (let track of (disc.tracks || [])) {
+                const { minutes, seconds } = millisecondsToMinutesAndSeconds(track.recording?.length);
+                const recordingTitle = track.recording?.title || 'N/A';
+                const recordingId = track.recording?.id;
+                const lengthStr = minutes === 'N/A' ? 'N/A' : `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                const trackDiv = document.createElement('div');
+                trackDiv.className = 'track';
+                trackDiv.innerHTML = 
+                `
+                    <h4 class="text default-secondary trackIndent">└─╲ <h4>
+                    <h4 class="text default trackNumber">${track.number}.${track.position} : <h4>
+                    <h4 class="text white trackName"><a href="https://musicbrainz.org/recording/${recordingId}" target="_blank" rel="noopener noreferrer">${recordingTitle}</a></h4>
+                    <h4 class="text white-tertiary trackLength">[${lengthStr}]</h4>
+                `;
+                tracksContainer.appendChild(trackDiv);
+            }
+        }
+
+        wrapper.appendChild(tracksContainer);
+
+        releaseRow.addEventListener('click', (e) => {
+            if (e.target.closest('a')) return;
+            tracksContainer.classList.toggle('expanded');
+
+            const nameEl = releaseRow.querySelector('.releaseName');
+            if (tracksContainer.classList.contains('expanded')) {
+                nameEl.innerHTML = `└─╲ ▽
+                    <a href="https://musicbrainz.org/release/${releaseId}" target="_blank" rel="noopener noreferrer">${title}</a>
+                &nbsp;`;
+            }
+            else {
+                nameEl.innerHTML = `└─╲ ▷
+                    <a href="https://musicbrainz.org/release/${releaseId}" target="_blank" rel="noopener noreferrer">${title}</a>
+                &nbsp;`;
+            }
+
+            checkScrollability();
+        });
+    }
+
+    return wrapper;
 }
 
+function millisecondsToMinutesAndSeconds(ms) {
 
+    if (ms === undefined || ms === null) return { minutes: 'N/A', seconds: '' };
+
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return {
+        minutes: minutes,
+        seconds: seconds
+    }
+}
 
 function createReleaseGroupElement(releaseGroup, releases = null) {
     const artist = getArtistNames(releaseGroup['artist-credit']);
@@ -533,7 +536,9 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     `
         <div class="release-group-header">
             <div class="shrinkable">
-                <h3 class="text white-tertiary releaseGrpArtist">${artist} -&nbsp;</h3>
+                <h3 class="text white-tertiary releaseGrpArtist">
+                    <a href="https://musicbrainz.org/artist/${artistId}" target="_blank" rel="noopener noreferrer">${artist}</a>&nbsp;-&nbsp;
+                </h3>
                 <h3 class="text white releaseGrpName">
                     <a href="https://musicbrainz.org/release-group/${releaseGroupId}" target="_blank" rel="noopener noreferrer">${title} (${year})</a>
                 </h3>
@@ -602,12 +607,14 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
         });
     } 
 
+
     else if (releases === null) {
         const fetchButton = div.querySelector('.fetch-releases-button');
 
         fetchButton.addEventListener('click', async () => {
             try {
                 const result = await fetchReleases(releaseGroupId);
+                
                 const fetchedReleases = result.releases;
 
                 const newHtml = 

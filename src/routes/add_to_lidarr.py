@@ -50,3 +50,14 @@ async def system_info(request: Request):
         logger.error(f"Exception in /system_info endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving Lidarr system info: {e}")
 
+
+@router.get("/ping")
+async def ping(request: Request):
+    try:
+        lidarr_client = request.app.state.lidarr_client
+        ping_response = await lidarr_client.ping()
+        return ping_response
+    except Exception as e:
+        logger.error(f"Exception in /ping endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error pinging Lidarr: {e}")
+

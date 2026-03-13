@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from src.logger import logger, sse_event_queue
+from src.logger import logger, register_sse_client, unregister_sse_client
 import asyncio
 
 router = APIRouter()
@@ -10,12 +10,26 @@ async def interface_logs():
     try:
         async def event_generator():
             logger.info("interface connecting to event stream")
+            client_queue = register_sse_client()
 
-            while True:
-                event = await sse_event_queue.get()
-                yield f"data: {event}\n\n"
+            try:
+                while True:
+                    try: 
+                        event = await asyncio.wait_for(client_queue.get(), timeout=15)
+                        yield f"data: {event}\n\n"
+                    except asyncio.TimeoutError:
+                        yield ":\n\n" #keepalive
+            finally:
+                unregister_sse_client(client_queue)
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_generator(), 
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
     
     except Exception as e:
         logger.error(f"Exception in /interface_logs endpoint: {e}")

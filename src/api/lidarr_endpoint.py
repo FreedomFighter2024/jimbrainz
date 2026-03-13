@@ -469,6 +469,44 @@ Either try a less strict metadata profile or add release manually."""
             logger.error(f"Error is coming from: {traceback.format_exc()}")
             logger.error(f"failed to fully add release to lidarr, more info in logs", extra={"frontend": True})
             return {}
+        
+    async def ping(self) -> dict:
+        logger.info("pinging lidarr to check connectivity")
+
+        try: 
+            client = await self.get_client()
+            ping_response = await client.get(
+                url="/api/v1/system/status",
+                params={}
+            )
+            ping_response.raise_for_status()
+            print(ping_response.json())
+            if ping_response.json().get("appName") != "":
+                logger.info("lidarr auth correct, and connection successful")
+                return {"status": "ok"}
+            else:
+                logger.error("lidarr ping didnt return a state")
+                return {"status": "failed", "error": "lidarr ping didnt return a response", "code": "NO_STATE"}
+
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            logger.error(f"lidarr ping replied but failed with HTTP error, status code: {status}")
+
+            if status == 401:
+                logger.error("lidarr http 401, ping responded but api unauthorized")
+                return {"status":"failed", "error":"lidarr http 401, ping responded but api unauthorized","code":401}
+            else:
+                logger.error(f"lidarr uncaught HTTP error {status}, unknown")
+                return {"status": "failed", "error": f"lidarr uncaught HTTP error {status}, unknown", "code": "UNKNOWN_HTTP_ERROR"}
+        
+        except ValueError:
+                logger.error(f"lidarr URL or APIKEY is not configured")
+                return {"status": "failed", "error": f"lidarr URL or APIKEY is not configured", "code": "VALUE_ERROR"}
+        
+        except Exception as e:
+            logger.error(f"lidarr ping failed unexpectedly")
+            logger.error(traceback.format_exc())
+            return {"status": "failed", "error": f"lidarr ping failed unexpectedly", "code": "UNKNOWN_ERROR"}
 
 
     

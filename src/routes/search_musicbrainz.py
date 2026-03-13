@@ -34,3 +34,14 @@ async def get_releases(
         logger.error(f"Exception in /releases endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving releases from MusicBrainz: {e}")
 
+
+@router.get("/ping")
+async def ping(request: Request):
+    try:
+        mb_client = request.app.state.musicbrainz_client
+        ping_response = await mb_client.ping()
+        return ping_response
+    except Exception as e:
+        logger.error(f"Exception in /ping endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error pinging MusicBrainz: {e}")
+

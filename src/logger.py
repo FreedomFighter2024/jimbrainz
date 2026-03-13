@@ -12,7 +12,24 @@ if os.getenv("TZ") is not None:
     except:
         pass
 
-sse_event_queue = asyncio.Queue() 
+sse_clients = set()
+
+def register_sse_client():
+    q = asyncio.Queue()
+    sse_clients.add(q)
+    return q
+
+def unregister_sse_client(q):
+    sse_clients.discard(q)
+
+def publish_sse_event(event_json):
+    for q in list(sse_clients):
+        try:
+            q.put_nowait(event_json)
+        except asyncio.QueueFull:
+            pass
+
+
 class SSEHandler(logging.Handler):
     def emit(self, record):
         if not getattr(record, "frontend", False):
@@ -31,7 +48,7 @@ class SSEHandler(logging.Handler):
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = asyncio.get_event_loop()
-            loop.call_soon_threadsafe(sse_event_queue.put_nowait, event_json)
+            loop.call_soon_threadsafe(publish_sse_event, event_json)
         
         except RuntimeError:
             pass

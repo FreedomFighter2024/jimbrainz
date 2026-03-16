@@ -16,11 +16,11 @@ class SlskdClient:
         try:
             if self.client is None:
                 if not Config.SLSKD_URL:
-                    logger.warning("SLSKD_URL is not configured", extra={"frontend": True})
+                    logger.warning("SLSKD_URL is not configured", extra={"frontend": True, "src":"slskd"})
                     raise ValueError("SLSKD_URL is not configured")
                 
                 if not Config.SLSKD_APIKEY:
-                    logger.warning("SLSKD_APIKEY is not configured", extra={"frontend": True})
+                    logger.warning("SLSKD_APIKEY is not configured", extra={"frontend": True, "src":"slskd"})
                     raise ValueError("SLSKD_APIKEY is not configured")
 
                 self.client = slskd_api.SlskdClient(
@@ -28,7 +28,7 @@ class SlskdClient:
                     api_key=Config.SLSKD_APIKEY
                 )
         except Exception as e:
-            logger.error(f"failed to create slskd client, traceback in logs", extra={"frontend": True})
+            logger.error(f"failed to create slskd client, traceback in logs", extra={"frontend": True, "src":"slskd"})
             logger.error(traceback.format_exc())
             raise e
         
@@ -48,6 +48,7 @@ class SlskdClient:
             state = await asyncio.to_thread(client.application.state)
             if state:
                 logger.info("slskd functionality enabled, auth correct, and connection successful")
+                logger.info(f"Connection successful", extra={"frontend": True, "src":"slskd"})
                 return {"status": "ok"}
             else:
                 logger.error("slskd ping didnt return a state")

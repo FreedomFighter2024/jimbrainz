@@ -23,11 +23,11 @@ class LidarrClient:
         try:
             if not self.client or self.client.is_closed:
                 if not Config.LIDARR_URL:
-                    logger.error("LIDARR_URL is not configured", extra={"frontend": True})
+                    logger.error("LIDARR_URL is not configured", extra={"frontend": True, "src":"lidarr"})
                     raise ValueError("LIDARR_URL or LIDARR_APIKEY is not configured")
                 
                 if not Config.LIDARR_APIKEY:
-                    logger.error("LIDARR_APIKEY is not configured", extra={"frontend": True})
+                    logger.error("LIDARR_APIKEY is not configured", extra={"frontend": True, "src":"lidarr"})
                     raise ValueError("LIDARR_URL or LIDARR_APIKEY is not configured")
 
                 self.client = httpx.AsyncClient(
@@ -40,7 +40,7 @@ class LidarrClient:
                     http2=True 
                 )
         except Exception as e:
-            logger.error(f"failed to create lidarr httpx AsyncClient, traceback in logs", extra={"frontend": True})
+            logger.error(f"failed to create lidarr httpx AsyncClient, traceback in logs", extra={"frontend": True, "src":"lidarr"})
             logger.error(traceback.format_exc())
             raise e
         
@@ -60,7 +60,7 @@ class LidarrClient:
         
 
     async def get_system_info(self) -> dict:
-        logger.info("fetching system info from lidarr", extra={"frontend": True})
+        logger.info("fetching system info from lidarr", extra={"frontend": True, "src":"lidarr"})
 
         try: 
             client = await self.get_client()
@@ -91,7 +91,7 @@ class LidarrClient:
             return system_info
         
         except Exception as e:
-            logger.error(f"failed to get system info from Lidarr, more info in logs", extra={"frontend": True})
+            logger.error(f"failed to get system info from Lidarr, more info in logs", extra={"frontend": True, "src":"lidarr"})
             logger.error(traceback.format_exc())
             return {}
     
@@ -112,7 +112,7 @@ class LidarrClient:
             return artist.json()
 
         except Exception as e:
-            logger.error(f"failed to check if artist in lidarr library", extra={"frontend": True})
+            logger.error(f"failed to check if artist in lidarr library", extra={"frontend": True, "src":"lidarr"})
             return {}
 
 
@@ -162,7 +162,7 @@ class LidarrClient:
             return added_artist
         
         except Exception as e:
-            logger.error(f"failed to add artist to lidarr library", extra={"frontend": True})
+            logger.error(f"failed to add artist to lidarr library", extra={"frontend": True, "src":"lidarr"})
             return {}
 
 
@@ -182,7 +182,7 @@ class LidarrClient:
             return release_group.json()
         
         except Exception as e:
-            logger.error(f"failed to check if release group in lidarr library", extra={"frontend": True})
+            logger.error(f"failed to check if release group in lidarr library", extra={"frontend": True, "src":"lidarr"})
             return {}
 
 
@@ -207,7 +207,7 @@ class LidarrClient:
             return updated_release_group
         
         except Exception as e:
-            logger.error(f"failed to set monitor for release group in lidarr", extra={"frontend": True})
+            logger.error(f"failed to set monitor for release group in lidarr", extra={"frontend": True, "src":"lidarr"})
             return {}
         
 
@@ -234,7 +234,7 @@ class LidarrClient:
             return updated_release_group    
         
         except Exception as e:
-            logger.error(f"failed to set release in release group in lidarr", extra={"frontend": True})
+            logger.error(f"failed to set release in release group in lidarr", extra={"frontend": True, "src":"lidarr"})
             return {}
 
 
@@ -259,7 +259,7 @@ class LidarrClient:
             return command_status
     
         except Exception as e:
-            logger.error(f"failed to trigger search for release group in lidarr", extra={"frontend": True})
+            logger.error(f"failed to trigger search for release group in lidarr", extra={"frontend": True, "src":"lidarr"})
             return {}
 
    
@@ -310,11 +310,11 @@ class LidarrClient:
                     await asyncio.sleep(poll_interval)
                     elapsed += poll_interval
 
-            logger.error(f"metadata refresh command with id: {command_id} did not complete in time {max_wait}s", extra={"frontend": True})
+            logger.error(f"metadata refresh command with id: {command_id} did not complete in time {max_wait}s", extra={"frontend": True, "src":"lidarr"})
             return {}
         
         except Exception as e:
-            logger.error(f"failed to trigger metadata refresh in lidarr", extra={"frontend": True})
+            logger.error(f"failed to trigger metadata refresh in lidarr", extra={"frontend": True, "src":"lidarr"})
             return {}
         
 
@@ -358,18 +358,18 @@ class LidarrClient:
                         return command_status
                     
                     if status == "failed":
-                        logger.error(f"metadata refresh command with id: {command_id} failed", extra={"frontend": True})
+                        logger.error(f"metadata refresh command with id: {command_id} failed", extra={"frontend": True, "src":"lidarr"})
                         return {}
                     
                     logger.info(f"metadata refresh command with id: {command_id} status: {status}, waiting...")
                     await asyncio.sleep(poll_interval)
                     elapsed += poll_interval
 
-            logger.error(f"metadata refresh command with id: {command_id} did not complete in time {max_wait}s", extra={"frontend": True})
+            logger.error(f"metadata refresh command with id: {command_id} did not complete in time {max_wait}s", extra={"frontend": True, "src":"lidarr"})
             return {}
 
         except Exception as e:
-            logger.error(f"failed to trigger metadata refresh in lidarr", extra={"frontend": True})
+            logger.error(f"failed to trigger metadata refresh in lidarr", extra={"frontend": True, "src":"lidarr"})
             return {}
     
 
@@ -387,7 +387,7 @@ class LidarrClient:
         monitor_artist: bool = True, #optional, if specified it sets the artist to monitored
     ) -> dict:
         logger.info("fully adding release to lidarr")
-        logger.info(f"attempting to add release to lidarr", extra={"frontend": True})
+        logger.info(f"attempting to add release to lidarr", extra={"frontend": True, "src":"lidarr"})
 
         try:
             if not root_folder_path:
@@ -429,7 +429,7 @@ f"""Release group with mbid: {release_group_mbid} still not found in Lidarr
 library after adding artist and refreshing metadata, this is likely because 
 your METADATA PROFILE doesnt find this release. 
 Either try a less strict metadata profile or add release manually.""", 
-                    extra={"frontend": True}
+                    extra={"frontend": True, "src":"lidarr"}
                 )
                 print(
 f"""release group with mbid: {release_group_mbid} still not found in Lidarr
@@ -455,19 +455,19 @@ Either try a less strict metadata profile or add release manually."""
                 )
 
             if auto_download:
-                logger.info(f"Auto download is true, triggering automatic search for release", extra={"frontend": True})
+                logger.info(f"Auto download is true, triggering automatic search for release", extra={"frontend": True, "src":"lidarr"})
                 await self.refresh_artist_metadata(artist_lrid=artist["id"])
                 await asyncio.sleep(1.0)
                 logger.info(f"triggering search for release group to start download")
                 await self.trigger_search_for_release_group(release_group_lrid=release_group['id'])
 
-            logger.info(f"successfully fully added release to Lidarr", extra={"frontend": True})
+            logger.info(f"successfully fully added release to Lidarr", extra={"frontend": True, "src":"lidarr"})
             return monitored_release_group
         
         except Exception as e:
             logger.error(f"failed to fully add release to Lidarr: {e}")
             logger.error(f"Error is coming from: {traceback.format_exc()}")
-            logger.error(f"failed to fully add release to lidarr, more info in logs", extra={"frontend": True})
+            logger.error(f"failed to fully add release to lidarr, more info in logs", extra={"frontend": True, "src":"lidarr"})
             return {}
         
     async def ping(self) -> dict:

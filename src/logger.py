@@ -42,6 +42,11 @@ class SSEHandler(logging.Handler):
             "event_content": record.getMessage()
         }
 
+        src = getattr(record, "src", None)
+
+        if src is not None:
+            event_json["src"] = src
+
         try:
             event_json = json.dumps(event_json)
             try:

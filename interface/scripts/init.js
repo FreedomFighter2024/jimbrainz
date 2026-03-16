@@ -11,10 +11,15 @@ async function pingMusicbrainz() {
 }
 async function checkMusicbrainzPing() {
     try {
+        addConnectionToInterface(
+            "musicbrainz",
+            "pending",
+            "loading..."
+        )
         const musicbrainz_ping_response = await pingMusicbrainz();
         if(musicbrainz_ping_response.status.toLowerCase() == "ok"){
             console.log("musicbrainz configured and ping responded with OK")
-            musicbrainz_ping_response.code = "ok"
+            musicbrainz_ping_response.code = "connected"
             musicbrainz_ping_response.status = "ok"
         }
         else if(musicbrainz_ping_response.status.toLowerCase() == "failed"){
@@ -49,7 +54,7 @@ async function checkMusicbrainzPing() {
             musicbrainz_ping_response.code = "UNEXPECTED"
             musicbrainz_ping_response.status = "failed"
         }
-        await addConnectionToInterface(
+        addConnectionToInterface(
             "musicbrainz",
             musicbrainz_ping_response.status,
             musicbrainz_ping_response.code
@@ -57,7 +62,7 @@ async function checkMusicbrainzPing() {
         return musicbrainz_ping_response
     } catch (error) {
         console.log("Musicbrainz ping error")
-        await addConnectionToInterface(
+        addConnectionToInterface(
             "musicbrainz",
             "failed",
             "CONNECTION_ERROR"
@@ -78,10 +83,15 @@ async function pingLidarr() {
 }
 async function checkLidarrPing() {
     try {
+        addConnectionToInterface(
+            "lidarr",
+            "pending",
+            "loading..."
+        )
         const lidarr_ping_response = await pingLidarr();
         if(lidarr_ping_response.status.toLowerCase() == "ok"){
             console.log("Lidarr configured and ping responded with OK")
-            lidarr_ping_response.code = "ok"
+            lidarr_ping_response.code = "connected"
             lidarr_ping_response.status = "ok"
         }
         else if(lidarr_ping_response.status.toLowerCase() == "failed"){
@@ -107,7 +117,7 @@ async function checkLidarrPing() {
             lidarr_ping_response.code = "UNKNOWN"
             lidarr_ping_response.status = "failed"
         }
-        await addConnectionToInterface(
+        addConnectionToInterface(
             "lidarr",
             lidarr_ping_response.status,
             lidarr_ping_response.code
@@ -115,7 +125,7 @@ async function checkLidarrPing() {
         return lidarr_ping_response
     } catch (error) {
         console.log("Lidarr ping didnt respond at all, url configured incorrectly")
-        await addConnectionToInterface(
+        addConnectionToInterface(
             "lidarr",
             "failed",
             "CONNECTION_ERROR"
@@ -135,10 +145,15 @@ async function pingSlskd() {
 }
 async function checkSlskdPing() {
     try {
+        addConnectionToInterface(
+            "slskd",
+            "pending",
+            "loading..."
+        )
         const slskd_ping_response = await pingSlskd();
         if(slskd_ping_response.status.toLowerCase() == "ok"){
             console.log("Slskd configured and ping responded with OK")
-            slskd_ping_response.code = "ok"
+            slskd_ping_response.code = "connected"
             slskd_ping_response.status = "ok"
         }
         else if(slskd_ping_response.status.toLowerCase() == "failed"){
@@ -167,7 +182,7 @@ async function checkSlskdPing() {
             slskd_ping_response.code = "UNEXPECTED"
             slskd_ping_response.status = "failed"
         }
-        await addConnectionToInterface(
+        addConnectionToInterface(
             "slskd",
             slskd_ping_response.status,
             slskd_ping_response.code
@@ -175,7 +190,7 @@ async function checkSlskdPing() {
         return slskd_ping_response
     } catch (error) {
         console.log("Slskd ping didnt respond, slskd not configured")
-        await addConnectionToInterface(
+        addConnectionToInterface(
             "slskd",
             "failed",
             "CONNECTION_ERROR"
@@ -184,13 +199,22 @@ async function checkSlskdPing() {
     }
 }
 
-async function addConnectionToInterface(
+function addConnectionToInterface(
     connectionName, //slskd //lidarr //musicbrainz
     connectionStatus, 
     connectionStatusCode
 ) {
     let connectionElement = document.getElementById("general-connection-status")
 
+
+
+    if(document.querySelector(`.connection-item:has(.connection-info):has(.connection-info-name.${connectionName})`)) {
+        console.log(`Connection ${connectionName} already exists, updating status`)
+        const existingConnection = document.querySelector(`.connection-item:has(.connection-info):has(.connection-info-name.${connectionName})`);
+        existingConnection.querySelector('.connection-info').className = `connection-info ${connectionStatus}`;
+        existingConnection.querySelector('.connection-info-code').textContent = connectionStatusCode;
+        return;
+    }
 
     let connectorLineElement = document.createElement("div");
     connectorLineElement.className = "connection-connector-line";
@@ -201,14 +225,15 @@ async function addConnectionToInterface(
 
     let connectionItem = document.createElement('div');
     connectionItem.className = "connection-item";
+        // <div class="connection-logo-container">
+        //     <img src="./assets/${connectionName}.png" alt="${connectionName} logo" class="connection-logo">
+        // </div>
     connectionItem.innerHTML = `
-        <div class="connection-logo-container">
-            <img src="./assets/${connectionName}.png" alt="${connectionName} logo" class="connection-logo">
-        </div>
+
         <div class="connection-info ${connectionStatus}">
-            <h5 class="connection-info-name text white">[${connectionName}]</h5>
-            <h5 class="connection-info-line text default">:</h5>
-            <h5 class="connection-info-code text default">${connectionStatusCode}</h5>
+            <h4 class="connection-info-name text white ${connectionName}">[${connectionName}]</h4>
+            <h4 class="connection-info-line text default">:</h4>
+            <h4 class="connection-info-code text">${connectionStatusCode}</h4>
         </div>
     `
     connectionElement.appendChild(connectionItem);
@@ -218,7 +243,7 @@ async function addConnectionToInterface(
 
 let lidbrainzEventSource = null; 
 
-export async function init({ refreshLidarrInfo }) {
+async function initLidarrInfo({ refreshLidarrInfo }) {
     const lidbrainzEventLog = document.getElementById('logs-scrollable');
    
     let lidarrUrl = await refreshLidarrInfo();
@@ -249,7 +274,8 @@ export async function init({ refreshLidarrInfo }) {
         `
             <div class="first-row">
                 <h5 class="text default event-type INFO">INFO</h5>
-                <h5 class="text white event-time">[${timeString}]</h5>
+                <h5 class="text white event-time">[${timeString}]&nbsp;&nbsp;</h5>
+                <h5 class="text default-secondary event-src lidarr">lidarr</h5>
             </div>
             <div class="second-row">
                 <h4 class="text event-content-indent">└─╲</h5>
@@ -287,10 +313,7 @@ export async function init({ refreshLidarrInfo }) {
     lidbrainzEventSource.onmessage = async function(event) {
         const data = JSON.parse(event.data);
 
-        if (data.event_content.toLowerCase().includes("lidarr")){
-            const lidarrLink = `<a href="${lidarrUrl}" target="_blank" rel="noopener noreferrer">Lidarr</a>`;
-            data.event_content = data.event_content.replace(/lidarr/gi, lidarrLink);
-        }
+        console.log(lidarrUrl)
 
         const eventItem = document.createElement('div');
         eventItem.className = 'event-item';
@@ -299,7 +322,8 @@ export async function init({ refreshLidarrInfo }) {
         `
             <div class="first-row">
                 <h5 class="text default event-type ${data.event_type}">${data.event_type}</h5>
-                <h5 class="text white event-time">[${timeString}]</h5>
+                <h5 class="text white event-time">[${timeString}]&nbsp;&nbsp;</h5>
+                <h5 class="text default-secondary event-src ${data.src.toLowerCase()}">${data.src}</h5>
             </div>
             <div class="second-row">
                 <h4 class="text event-content-indent">└─╲</h5>
@@ -308,6 +332,13 @@ export async function init({ refreshLidarrInfo }) {
         `;
         lidbrainzEventLog.prepend(eventItem);
     }
+}
+
+export async function init({ refreshLidarrInfo }) {
+
+    await initLidarrInfo({ refreshLidarrInfo })
+
+    await sleep(100)
 
     const [musicbrainzPingResponse , lidarrPingResponse , slskdPingResponse] = await Promise.all([
         checkMusicbrainzPing(), checkLidarrPing(), checkSlskdPing()]);

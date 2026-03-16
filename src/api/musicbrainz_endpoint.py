@@ -20,7 +20,7 @@ class RateLimit:
             
             if time_since_oldest < self.time_window:
                 wait_time = self.time_window - time_since_oldest
-                logger.warning(f"rate limit hit on musicbrainz requests", extra={"frontend": True})
+                logger.warning(f"rate limit hit on musicbrainz requests", extra={"frontend": True, "src":"musicbrainz"})
                 await asyncio.sleep(wait_time)
                 curr_time = time.monotonic()
 
@@ -38,7 +38,7 @@ class MusicBrainzClient:
 
         if not self.client or self.client.is_closed:
             if not Config.MUSICBRAINZ_USERAGENT:
-                logger.error("MUSICBRAINZ_USERAGENT is not configured", extra={"frontend": True})
+                logger.error("MUSICBRAINZ_USERAGENT is not configured", extra={"frontend": True, "src":"musicbrainz"})
                 raise ValueError("MUSICBRAINZ_USERAGENT is not configured")
             logger.info(f" user agent is {Config.MUSICBRAINZ_USERAGENT}")
             self.client = httpx.AsyncClient(
@@ -102,7 +102,7 @@ class MusicBrainzClient:
                 delay = 2.0 + (attempt * 0.5)
 
                 if attempt < self.RETRIES:
-                    logger.warning(f"Network error on attempt {attempt}. Retrying in {delay:.2f} seconds...", extra={"frontend": True})
+                    logger.warning(f"Network error on attempt {attempt}. Retrying in {delay:.2f} seconds...", extra={"frontend": True, "src":"musicbrainz"})
                     logger.warning(f"Network error on attempt {attempt} Retrying in {delay:.2f} seconds...")
                     logger.warning(f"Error details: {type(exc).__name__}: {exc}")
                     
@@ -127,7 +127,7 @@ class MusicBrainzClient:
                     continue
 
                 if status == 403: 
-                    logger.error(f"MusicBrainz forbid your request, this is likely because of missing/invalid User-Agent header", extra={"frontend": True})
+                    logger.error(f"MusicBrainz forbid your request, this is likely because of missing/invalid User-Agent header", extra={"frontend": True, "src":"musicbrainz"})
                     logger.error(f"Response text: {exc.response.text}")
                     ping_error_obj["error"] =  "musicbrainz ping failed with 403 forbidden error, connection was made but user agent / ip not accepted"
                     ping_error_obj["status"] =  "failed"
@@ -162,7 +162,7 @@ class MusicBrainzClient:
                 ping_error_obj["code"] = "UNKNOWN_ERROR"
 
         logger.error("exceeded maximum retries for MusicBrainz request without getting valid response")
-        logger.error("failed to get valid response from MusicBrainz after retries", extra={"frontend": True})
+        logger.error("failed to get valid response from MusicBrainz after retries", extra={"frontend": True, "src":"musicbrainz"})
         return ping_error_obj
         
 
@@ -176,7 +176,7 @@ class MusicBrainzClient:
 
 
     async def get_releases(self, release_group_id: str) -> dict:
-        logger.info("getting specific releases from musicbrainz", extra={"frontend": True})
+        logger.info("getting specific releases from musicbrainz", extra={"frontend": True, "src":"musicbrainz"})
         params = {
             "release-group": release_group_id,
             "inc": "media+recordings",
@@ -186,7 +186,7 @@ class MusicBrainzClient:
     
 
     async def fully_search(self, query: str, limit: int = 5) -> dict:
-        logger.info(f"searching musicbrainz...", extra={"frontend": True})
+        logger.info(f"searching musicbrainz...", extra={"frontend": True, "src":"musicbrainz"})
         params = {
             "query": query,
             "fmt": "json",
@@ -195,11 +195,11 @@ class MusicBrainzClient:
         release_groups =  await self.request_with_retries("release-group/", params)
 
         if not release_groups["release-groups"]:
-            logger.info(f"no release groups found for query: ({query})", extra={"frontend": True})
+            logger.info(f"no release groups found for query: ({query})", extra={"frontend": True, "src":"musicbrainz"})
             return {}
 
 
-        logger.info(f"release groups parsed", extra={"frontend": True})
+        logger.info(f"release groups parsed", extra={"frontend": True, "src":"musicbrainz"})
         first_release_group = release_groups["release-groups"][0] 
         first_release_group_releases = await self.get_releases(first_release_group["id"])
         
@@ -218,6 +218,7 @@ class MusicBrainzClient:
                 return test_release #? {"status":"failed"}
             else: 
                 logger.info(f"talking heads!")
+                logger.info(f"Connection successful", extra={"frontend": True, "src":"musicbrainz"})
                 return {"status": "ok"}
         except Exception as e:
             logger.error(f"musicbrainz ping failed unexpectedly")

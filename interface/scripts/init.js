@@ -24,30 +24,30 @@ async function checkMusicbrainzPing() {
         }
         else if(musicbrainz_ping_response.status.toLowerCase() == "failed"){
             console.log("musicbrainz ping responded with FAILED")
-            if(musicbrainz_ping_response.code == 403){
-                console.log(musicbrainz_ping_response.error)
-            }
-            if(musicbrainz_ping_response.code == "VALUE_ERROR"){
-                console.log(musicbrainz_ping_response.error)
-            }
-            if(musicbrainz_ping_response.code == "UNKNOWN_ERROR"){
-                console.log(musicbrainz_ping_response.error)
-            }
-            if(musicbrainz_ping_response.code == 401){
-                console.log(musicbrainz_ping_response.error)
-            }
-            if(musicbrainz_ping_response.code == "CONNECTION_ERROR"){
-                console.log(musicbrainz_ping_response.error)
-            }
-            if(musicbrainz_ping_response.code == 429){
-                console.log(musicbrainz_ping_response.error)
-            }
-            if(musicbrainz_ping_response.code == 503){
-                console.log(musicbrainz_ping_response.error)
-            }
-            if(musicbrainz_ping_response.code == "UNKNOWN_HTTP_ERROR"){
-                console.log(musicbrainz_ping_response.error)
-            }
+            // if(musicbrainz_ping_response.code == 403){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
+            // if(musicbrainz_ping_response.code == "VALUE_ERROR"){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
+            // if(musicbrainz_ping_response.code == "UNKNOWN_ERROR"){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
+            // if(musicbrainz_ping_response.code == 401){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
+            // if(musicbrainz_ping_response.code == "CONNECTION_ERROR"){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
+            // if(musicbrainz_ping_response.code == 429){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
+            // if(musicbrainz_ping_response.code == 503){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
+            // if(musicbrainz_ping_response.code == "UNKNOWN_HTTP_ERROR"){
+            //     console.log(musicbrainz_ping_response.error)
+            // }
         }
         else{
             console.log("Unexpected musicbrainz ping response, consider it unconfigured:", musicbrainz_ping_response)
@@ -96,21 +96,21 @@ async function checkLidarrPing() {
         }
         else if(lidarr_ping_response.status.toLowerCase() == "failed"){
             console.log("Lidarr configured but ping responded with FAILED")
-            if(lidarr_ping_response.code == 401){
-                console.log(lidarr_ping_response.error)
-            }
-            if(lidarr_ping_response.code == "VALUE_ERROR"){
-                console.log(lidarr_ping_response.error)
-            }
-            if(lidarr_ping_response.code == "NO_STATE"){
-                console.log(lidarr_ping_response.error)
-            }
-            if(lidarr_ping_response.code == "UNKNOWN_ERROR"){
-                console.log(lidarr_ping_response.error)
-            }
-            if(lidarr_ping_response.code == "UNKNOWN_HTTP_ERROR"){
-                console.log(lidarr_ping_response.error)
-            }
+            // if(lidarr_ping_response.code == 401){
+            //     console.log(lidarr_ping_response.error)
+            // }
+            // if(lidarr_ping_response.code == "VALUE_ERROR"){
+            //     console.log(lidarr_ping_response.error)
+            // }
+            // if(lidarr_ping_response.code == "NO_STATE"){
+            //     console.log(lidarr_ping_response.error)
+            // }
+            // if(lidarr_ping_response.code == "UNKNOWN_ERROR"){
+            //     console.log(lidarr_ping_response.error)
+            // }
+            // if(lidarr_ping_response.code == "UNKNOWN_HTTP_ERROR"){
+            //     console.log(lidarr_ping_response.error)
+            // }
         }
         else{
             console.log("Unexpected lidarr ping response, consider it unconfigured:", lidarr_ping_response)
@@ -145,11 +145,11 @@ async function pingSlskd() {
 }
 async function checkSlskdPing() {
     try {
-        addConnectionToInterface(
-            "slskd",
-            "pending",
-            "loading..."
-        )
+        // addConnectionToInterface(
+        //     "slskd",
+        //     "pending",
+        //     "loading..."
+        // )
         const slskd_ping_response = await pingSlskd();
         if(slskd_ping_response.status.toLowerCase() == "ok"){
             console.log("Slskd configured and ping responded with OK")
@@ -157,30 +157,31 @@ async function checkSlskdPing() {
             slskd_ping_response.status = "ok"
         }
         else if(slskd_ping_response.status.toLowerCase() == "failed"){
-            console.log("Slskd configured but ping responded with FAILED")
-            if(slskd_ping_response.code == 401){
-                console.log(slskd_ping_response.error)
-            }
-            if(slskd_ping_response.code == 502){
-                console.log(slskd_ping_response.error)
-            }
-            if(slskd_ping_response.code == "CONNECTION_ERROR"){
-                console.log(slskd_ping_response.error)
-            }
-            if(slskd_ping_response.code == "NO_STATE"){
-                console.log(slskd_ping_response.error)
-            }
-            if(slskd_ping_response.code == "UNKNOWN_ERROR"){
-                console.log(slskd_ping_response.error)
-            }
-            if(slskd_ping_response.code == "UNKNOWN_HTTP_ERROR"){
-                console.log(slskd_ping_response.error)
-            }
+            // console.log("Slskd configured but ping responded with FAILED")
+            // if(slskd_ping_response.code == 401){
+            //     console.log(slskd_ping_response.error)
+            // }
+            // if(slskd_ping_response.code == 502){
+            //     console.log(slskd_ping_response.error)
+            // }
+            // if(slskd_ping_response.code == "CONNECTION_ERROR"){
+            //     console.log(slskd_ping_response.error)
+            // }
+            // if(slskd_ping_response.code == "NO_STATE"){
+            //     console.log(slskd_ping_response.error)
+            // }
+            // if(slskd_ping_response.code == "UNKNOWN_ERROR"){
+            //     console.log(slskd_ping_response.error)
+            // }
+            // if(slskd_ping_response.code == "UNKNOWN_HTTP_ERROR"){
+            //     console.log(slskd_ping_response.error)
+            // }
         }
         else{
             console.log("Unexpected slskd ping response, consider it unconfigured:", slskd_ping_response)
             slskd_ping_response.code = "UNEXPECTED"
             slskd_ping_response.status = "failed"
+            return {"status": "failed", "error": "Slskd ping didnt respond, slskd not configured", "code": "CONNECTION_ERROR"}
         }
         addConnectionToInterface(
             "slskd",
@@ -190,11 +191,11 @@ async function checkSlskdPing() {
         return slskd_ping_response
     } catch (error) {
         console.log("Slskd ping didnt respond, slskd not configured")
-        addConnectionToInterface(
-            "slskd",
-            "failed",
-            "CONNECTION_ERROR"
-        )
+        // addConnectionToInterface(
+        //     "slskd",
+        //     "failed",
+        //     "CONNECTION_ERROR"
+        // )
         return {"status": "failed", "error": "Slskd ping didnt respond, slskd not configured", "code": "CONNECTION_ERROR"}
     }
 }
@@ -212,7 +213,7 @@ function addConnectionToInterface(
         console.log(`Connection ${connectionName} already exists, updating status`)
         const existingConnection = document.querySelector(`.connection-item:has(.connection-info):has(.connection-info-name.${connectionName})`);
         existingConnection.querySelector('.connection-info').className = `connection-info ${connectionStatus}`;
-        existingConnection.querySelector('.connection-info-code').textContent = connectionStatusCode;
+        existingConnection.querySelector('.connection-info-code').textContent = `--${connectionStatusCode}--`;
         return;
     }
 
@@ -231,9 +232,9 @@ function addConnectionToInterface(
     connectionItem.innerHTML = `
 
         <div class="connection-info ${connectionStatus}">
-            <h4 class="connection-info-name text white ${connectionName}">[${connectionName}]</h4>
-            <h4 class="connection-info-line text default">:</h4>
-            <h4 class="connection-info-code text">${connectionStatusCode}</h4>
+            <h4 class="connection-info-name text white ${connectionName}">⠀</h4>
+            <h4 class="connection-info-line text white">&nbsp;[${connectionName}]&nbsp;</h4>
+            <h4 class="connection-info-code text">--${connectionStatusCode}--</h4>
         </div>
     `
     connectionElement.appendChild(connectionItem);

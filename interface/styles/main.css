@@ -97,6 +97,7 @@ body {
     display:flex;
     flex-direction:column;
     gap:5px;
+    width: max-content;
 }
     .connection-connector-line {
         font-size:0.80em;
@@ -107,6 +108,7 @@ body {
         display:flex;
         flex-direction:row;
         
+        width:100%;
     }
         .connection-logo-container{
             display:flex;
@@ -122,16 +124,15 @@ body {
             display:flex;
             flex-direction:row;
             align-items: center;
+            width:100%;
         }
         .connection-info.ok{
 
         }
         .connection-info.failed{
-            
-            
+             
         }
         .connection-info.pending{
-            
             
         }
 
@@ -139,32 +140,74 @@ body {
                 opacity: 0.60;
             }
             .pending > .connection-info-line{
-                
+                opacity: 0.60;
             }
             .pending > .connection-info-code{
                 opacity: 0.60;
-                color: var(--main-text)
+                color: var(--main-text);
+                
             }
 
-            .ok > .connection-info-name{
-                
+            .ok > .connection-info-name.musicbrainz{
+                background-color: #f766b6;
+                color: var(--main-hover-text);
+                font-weight:var(--font-bold);
+                font-style: italic;
+                font-family:var(--font-family);
+                box-shadow: 
+                    0 0 3.25px #cc3e8ccb,
+                    0 0 8.25px #cc3e8ccb,
+                    0 0 12.5px #cc3e8ccb;
+
+            }
+            .ok > .connection-info-name.lidarr{
+                background-color: #02da84;
+                color: #f0d8e0;
+                font-weight:var(--font-bold);
+                font-style: italic;
+                font-family:var(--font-family);
+                box-shadow: 
+                    0 0 3.25px #009258cd,
+                    0 0 8.25px #009258cd,
+                    0 0 12.5px #009258cd;
+
+            }
+            .ok > .connection-info-name.slskd{
+                background-color: #44a7f8;
+                color: var(--main-hover-text);
+                font-weight:var(--font-bold);
+                font-style: italic;
+                font-family:var(--font-family);
+                box-shadow: 
+                    0 0 3.25px #008cffb7,
+                    0 0 8.25px #008cffb7,
+                    0 0 12.5px #008cffb7;
+
             }
             .ok > .connection-info-line{
                 
             }
             .ok > .connection-info-code{
-                color: var(--green-text)
+                color: #2cef94;
+                text-shadow: 
+                    0 0 3.25px var(--green-glow-text),
+                    0 0 8.25px var(--green-glow-text),
+                    0 0 12.5px var(--green-glow-text);
             }
+
+
 
             .failed > .connection-info-name{
                 text-decoration: line-through;
                 opacity: 0.60;
             }
             .failed > .connection-info-line{
+                opacity: 0.60;
                 
             }
             .failed > .connection-info-code{
-                color: var(--red-text)
+                color: var(--red-text);
+                
             }
 
 #lidbrainz-connection{

@@ -175,8 +175,8 @@ class MusicBrainzClient:
         return await self.request_with_retries("release-group/", params)
 
 
-    async def get_releases(self, release_group_id: str) -> dict:
-        logger.info("getting specific releases from musicbrainz", extra={"frontend": True, "src":"musicbrainz"})
+    async def get_releases(self, release_group_id: str, log=True) -> dict:
+        if log: logger.info("getting specific releases from musicbrainz", extra={"frontend": True, "src":"musicbrainz"})
         params = {
             "release-group": release_group_id,
             "inc": "media+recordings",
@@ -201,7 +201,7 @@ class MusicBrainzClient:
 
         logger.info(f"release groups parsed", extra={"frontend": True, "src":"musicbrainz"})
         first_release_group = release_groups["release-groups"][0] 
-        first_release_group_releases = await self.get_releases(first_release_group["id"])
+        first_release_group_releases = await self.get_releases(first_release_group["id"], log=False)
         
         
         return {

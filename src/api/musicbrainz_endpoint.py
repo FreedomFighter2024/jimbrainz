@@ -173,46 +173,46 @@ class MusicBrainzClient:
             "limit": limit
         }
         return await self.request_with_retries("release-group/", params)
-
-
+      
+     
     async def get_releases(self, release_group_id: str, log=True) -> dict:
-    if log:
-        logger.info(
-            "getting specific releases from musicbrainz",
-            extra={"frontend": True, "src": "musicbrainz"}
-        )
+        if log:
+            logger.info(
+                "getting specific releases from musicbrainz",
+                extra={"frontend": True, "src": "musicbrainz"}
+            )
 
-    all_releases = []
-    offset = 0
-    limit = 100
+        all_releases = []
+        offset = 0
+        limit = 100
 
-    while True:
-        params = {
-            "release-group": release_group_id,
-            "inc": "media+recordings",
-            "fmt": "json",
-            "limit": limit,
-            "offset": offset,
+        while True:
+            params = {
+                "release-group": release_group_id,
+                "inc": "media+recordings",
+                "fmt": "json",
+                "limit": limit,
+                "offset": offset,
+            }
+
+            data = await self.request_with_retries("release/", params)
+            releases = data.get("releases", [])
+
+            if not releases:
+                break
+
+            all_releases.extend(releases)
+
+            if len(all_releases) >= data.get("release-count", 0):
+            break
+
+            offset += len(releases)
+
+        return {
+            "release-count": len(all_releases),
+            "releases": all_releases,
         }
 
-        data = await self.request_with_retries("release/", params)
-        releases = data.get("releases", [])
-
-        if not releases:
-            break
-
-        all_releases.extend(releases)
-
-        release_count = data.get("release-count", 0)
-        if len(all_releases) >= release_count:
-            break
-
-        offset += len(releases)
-
-    return {
-        "release-count": len(all_releases),
-        "releases": all_releases,
-    }           
     
 
     async def fully_search(self, query: str, limit: int = 5) -> dict:

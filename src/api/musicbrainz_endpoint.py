@@ -176,13 +176,43 @@ class MusicBrainzClient:
 
 
     async def get_releases(self, release_group_id: str, log=True) -> dict:
-        if log: logger.info("getting specific releases from musicbrainz", extra={"frontend": True, "src":"musicbrainz"})
+    if log:
+        logger.info(
+            "getting specific releases from musicbrainz",
+            extra={"frontend": True, "src": "musicbrainz"}
+        )
+
+    all_releases = []
+    offset = 0
+    limit = 100
+
+    while True:
         params = {
             "release-group": release_group_id,
             "inc": "media+recordings",
-            "fmt": "json"
+            "fmt": "json",
+            "limit": limit,
+            "offset": offset,
         }
-        return await self.request_with_retries("release/", params)                
+
+        data = await self.request_with_retries("release/", params)
+        releases = data.get("releases", [])
+
+        if not releases:
+            break
+
+        all_releases.extend(releases)
+
+        release_count = data.get("release-count", 0)
+        if len(all_releases) >= release_count:
+            break
+
+        offset += len(releases)
+
+    return {
+        "release-count": len(all_releases),
+        "releases": all_releases,
+    }           
     
 
     async def fully_search(self, query: str, limit: int = 5) -> dict:

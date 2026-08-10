@@ -204,7 +204,7 @@ class MusicBrainzClient:
             all_releases.extend(releases)
 
             if len(all_releases) >= data.get("release-count", 0):
-            break
+                break
 
             offset += len(releases)
 

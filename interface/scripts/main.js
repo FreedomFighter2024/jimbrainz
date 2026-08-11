@@ -474,107 +474,360 @@ function formatReleaseDate(dateStr) {
 
 
 
-function createReleaseElement(release, releaseGroupId, artistId) {
-    const title = release.title || 'N/A';
-    const format = release.media?.[0]?.format || 'N/A';
-    const tracks = getTrackString(release.media);
-    const status = release.status || 'N/A';
-    const countryCode = getCountryCode(release);
-    const countryDisplay = release['release-events']?.[0]?.area?.['iso-3166-1-codes']?.[0] || 'N/A';
-    const rawDate = release['release-events']?.[0]?.date || release.date || 'N/A';
-    const date = formatReleaseDate(rawDate);
-    const releaseId = release.id;
-    const media = release.media || [];
-    const editionTags = getEditionTags(release);
-    const disambiguation = release.disambiguation || '';
-    const wrapper = document.createElement('div');
-    wrapper.className = 'release-wrapper';
+const EDITION_TAG_COLORS = {
+    'REMASTER': 'yellow',
+    'SUPER DELUXE': 'red',
+    'DELUXE': 'main',
+    'BOX SET': 'green',
+    'ANNIVERSARY': 'white',
+    'EXPANDED': 'white-secondary',
+    'LIMITED': 'main-secondary',
+    'SPECIAL EDITION': 'white-tertiary',
+};
 
-    let totalTracks = 0;
-    for (let disc of media) {
-        totalTracks += (disc.tracks?.length || 0);
+const RELEASE_COLUMNS = [
+    { id: 'title', label: 'Title' },
+    { id: 'edition', label: 'Edition' },
+    { id: 'format', label: 'Format' },
+    { id: 'tracks', label: 'Tracks' },
+    { id: 'status', label: 'Status' },
+    { id: 'country', label: 'Country' },
+    { id: 'date', label: 'Date' },
+];
+
+const COLUMN_STATE_STORAGE_KEY = 'jimbrainz-release-columns';
+
+function defaultColumnState() {
+    return {
+        order: RELEASE_COLUMNS.map(c => c.id),
+        visible: Object.fromEntries(RELEASE_COLUMNS.map(c => [c.id, true])),
+    };
+}
+
+function loadColumnState() {
+    const fallback = defaultColumnState();
+
+    try {
+        const saved = JSON.parse(localStorage.getItem(COLUMN_STATE_STORAGE_KEY));
+        if (!saved || !Array.isArray(saved.order) || typeof saved.visible !== 'object') return fallback;
+
+        // reconcile against known columns, in case the column set changed between versions
+        const knownIds = new Set(RELEASE_COLUMNS.map(c => c.id));
+        const order = saved.order.filter(id => knownIds.has(id));
+        for (const id of knownIds) {
+            if (!order.includes(id)) order.push(id);
+        }
+
+        const visible = {};
+        for (const id of knownIds) {
+            visible[id] = saved.visible[id] !== undefined ? !!saved.visible[id] : true;
+        }
+
+        return { order, visible };
     }
 
-    const releaseRow = document.createElement('div');
-    releaseRow.className = 'release';
-    releaseRow.innerHTML = 
-    `
-        <div class="shrinkable">
-            <h4 class="text white releaseName">└─╲ ▷
-                <a href="https://musicbrainz.org/release/${releaseId}" target="_blank" rel="noopener noreferrer">${title}</a>
-            &nbsp;</h4>
-            <h4 class="text default releaseFormat">[${format}]▷╲</h4>
-            <h4 class="text default releaseTracks">(${tracks}),&nbsp;</h4>
-            <h4 class="text default-secondary releaseStatus">${status}</h4>
-            ${editionTags.map(tag => `<h4 class="text yellow releaseEditionTag" title="${disambiguation}">[${tag}]</h4>`).join('')}
-        </div>
-        <div class="non-shrinkable">
-            ${countryCode ? `<img src="https://flagcdn.com/${countryCode}.svg">` : `<img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/No_flag.svg">`}
-            <h4 class="text white releaseCountry">${countryDisplay}&nbsp;¦</h4>
-            <h4 class="text white releaseYear">${date}</h4>
-            <h4 class="text green releaseAddButton">Add release</h4>
-        </div>
+    catch {
+        return fallback;
+    }
+}
+
+function saveColumnState() {
+    try {
+        localStorage.setItem(COLUMN_STATE_STORAGE_KEY, JSON.stringify(columnState));
+    }
+
+    catch {
+        // storage unavailable (private browsing, quota, etc) - just skip persisting
+    }
+}
+
+let columnState = loadColumnState();
+const mountedReleaseGrids = new Set();
+
+function notifyColumnStateChange() {
+    saveColumnState();
+    mountedReleaseGrids.forEach(grid => grid.rerender());
+}
+
+
+
+function buildReleasesGrid(releases, releaseGroupId, artistId) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'releases-grid-wrapper';
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'releases-toolbar';
+
+    const filterInput = document.createElement('input');
+    filterInput.type = 'text';
+    filterInput.className = 'releases-filter-input';
+    filterInput.placeholder = 'Filter releases...';
+
+    const columnsControl = document.createElement('div');
+    columnsControl.className = 'releases-columns-control';
+    columnsControl.innerHTML = `
+        <button type="button" class="columns-toggle-button">Columns ▾</button>
+        <div class="columns-dropdown"></div>
     `;
 
-    releaseRow.querySelector('.releaseAddButton').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        let status
+    toolbar.appendChild(filterInput);
+    toolbar.appendChild(columnsControl);
 
-        try {
-            status = await handleAddRelease(releaseGroupId, artistId, releaseId);
-        } 
-        
-        catch (error) {
-            status = `Add release error: ${error.message}`;
+    const tableScroll = document.createElement('div');
+    tableScroll.className = 'releases-table-scroll';
+
+    const table = document.createElement('table');
+    table.className = 'releases-table';
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    tableScroll.appendChild(table);
+
+    wrapper.appendChild(toolbar);
+    wrapper.appendChild(tableScroll);
+
+    let currentFilter = '';
+
+    function renderHeader() {
+        const visibleOrder = columnState.order.filter(id => columnState.visible[id]);
+        thead.innerHTML = '';
+        const headRow = document.createElement('tr');
+
+        const expandTh = document.createElement('th');
+        expandTh.className = 'releases-col-expand';
+        headRow.appendChild(expandTh);
+
+        for (const id of visibleOrder) {
+            const def = RELEASE_COLUMNS.find(c => c.id === id);
+            const th = document.createElement('th');
+            th.textContent = def.label;
+            th.draggable = true;
+            th.dataset.columnId = id;
+            th.className = 'releases-col-draggable';
+            th.title = 'Drag to reorder';
+
+            th.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', id);
+                th.classList.add('dragging');
+            });
+
+            th.addEventListener('dragend', () => th.classList.remove('dragging'));
+            th.addEventListener('dragover', (e) => e.preventDefault());
+
+            th.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const draggedId = e.dataTransfer.getData('text/plain');
+                if (!draggedId || draggedId === id) return;
+
+                const order = columnState.order.filter(cid => cid !== draggedId);
+                const targetIndex = order.indexOf(id);
+                order.splice(targetIndex, 0, draggedId);
+                columnState.order = order;
+                notifyColumnStateChange();
+            });
+
+            headRow.appendChild(th);
+        }
+
+        const actionTh = document.createElement('th');
+        actionTh.className = 'releases-col-action';
+        headRow.appendChild(actionTh);
+
+        thead.appendChild(headRow);
+    }
+
+    function renderColumnsDropdown() {
+        const dropdown = columnsControl.querySelector('.columns-dropdown');
+        dropdown.innerHTML = '';
+
+        for (const id of columnState.order) {
+            const def = RELEASE_COLUMNS.find(c => c.id === id);
+            const label = document.createElement('label');
+            label.className = 'columns-dropdown-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = !!columnState.visible[id];
+            checkbox.addEventListener('change', () => {
+                columnState.visible[id] = checkbox.checked;
+                notifyColumnStateChange();
+            });
+
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(def.label));
+            dropdown.appendChild(label);
+        }
+    }
+
+    function renderBody() {
+        tbody.innerHTML = '';
+        const visibleOrder = columnState.order.filter(id => columnState.visible[id]);
+        const colspan = visibleOrder.length + 2; // + expand column + action column
+
+        for (const release of releases) {
+            const title = release.title || 'N/A';
+            const format = release.media?.[0]?.format || 'N/A';
+            const tracks = getTrackString(release.media);
+            const status = release.status || 'N/A';
+            const countryCode = getCountryCode(release);
+            const countryDisplay = release['release-events']?.[0]?.area?.['iso-3166-1-codes']?.[0] || 'N/A';
+            const rawDate = release['release-events']?.[0]?.date || release.date || 'N/A';
+            const date = formatReleaseDate(rawDate);
+            const releaseId = release.id;
+            const media = release.media || [];
+            const editionTags = getEditionTags(release);
+            const disambiguation = release.disambiguation || '';
+
+            const searchText = [title, format, status, countryDisplay, date, ...editionTags].join(' ').toLowerCase();
+            if (currentFilter && !searchText.includes(currentFilter)) continue;
+
+            let totalTracks = 0;
+            for (const disc of media) totalTracks += (disc.tracks?.length || 0);
+
+            const row = document.createElement('tr');
+            row.className = 'release-row';
+
+            const expandCell = document.createElement('td');
+            expandCell.className = 'releases-col-expand';
+            expandCell.textContent = totalTracks > 0 ? '▷' : '';
+            row.appendChild(expandCell);
+
+            for (const id of visibleOrder) {
+                const td = document.createElement('td');
+                td.className = `releases-col-${id}`;
+
+                if (id === 'title') {
+                    td.innerHTML = `<h4 class="text white releaseGridTitle"><a href="https://musicbrainz.org/release/${releaseId}" target="_blank" rel="noopener noreferrer">${title}</a></h4>`;
+                }
+
+                else if (id === 'edition') {
+                    td.innerHTML = editionTags.length
+                        ? editionTags.map(tag => `<h4 class="text ${EDITION_TAG_COLORS[tag] || 'default'} edition-tag" title="${disambiguation}">${tag}</h4>`).join('')
+                        : `<h4 class="text default-muted">—</h4>`;
+                }
+
+                else if (id === 'format') {
+                    td.innerHTML = `<h4 class="text default">${format}</h4>`;
+                }
+
+                else if (id === 'tracks') {
+                    td.innerHTML = `<h4 class="text default">${tracks}</h4>`;
+                }
+
+                else if (id === 'status') {
+                    td.innerHTML = `<h4 class="text default-secondary">${status}</h4>`;
+                }
+
+                else if (id === 'country') {
+                    td.innerHTML = `
+                        ${countryCode ? `<img src="https://flagcdn.com/${countryCode}.svg">` : `<img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/No_flag.svg">`}
+                        <h4 class="text white">${countryDisplay}</h4>
+                    `;
+                }
+
+                else if (id === 'date') {
+                    td.innerHTML = `<h4 class="text white">${date}</h4>`;
+                }
+
+                row.appendChild(td);
+            }
+
+            const actionCell = document.createElement('td');
+            actionCell.className = 'releases-col-action';
+            actionCell.innerHTML = `<h4 class="text green releaseAddButton">Add release</h4>`;
+            actionCell.querySelector('.releaseAddButton').addEventListener('click', async (e) => {
+                e.stopPropagation();
+
+                try {
+                    await handleAddRelease(releaseGroupId, artistId, releaseId);
+                }
+
+                catch (error) {
+                    console.error(`Add release error: ${error.message}`);
+                }
+            });
+            row.appendChild(actionCell);
+
+            tbody.appendChild(row);
+
+            if (totalTracks > 0) {
+                row.classList.add('has-tracks');
+
+                const tracksRow = document.createElement('tr');
+                tracksRow.className = 'release-tracks-row';
+
+                const tracksCell = document.createElement('td');
+                tracksCell.colSpan = colspan;
+
+                const tracksContainer = document.createElement('div');
+                tracksContainer.className = 'release-tracks';
+
+                for (const disc of media) {
+                    for (const track of (disc.tracks || [])) {
+                        const { minutes, seconds } = millisecondsToMinutesAndSeconds(track.recording?.length);
+                        const recordingTitle = track.recording?.title || 'N/A';
+                        const recordingId = track.recording?.id;
+                        const lengthStr = minutes === 'N/A' ? 'N/A' : `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                        const trackDiv = document.createElement('div');
+                        trackDiv.className = 'track';
+                        trackDiv.innerHTML = `
+                            <h4 class="text default trackNumber">${track.number}.${track.position}</h4>
+                            <h4 class="text white trackName"><a href="https://musicbrainz.org/recording/${recordingId}" target="_blank" rel="noopener noreferrer">${recordingTitle}</a></h4>
+                            <h4 class="text white-tertiary trackLength">[${lengthStr}]</h4>
+                        `;
+                        tracksContainer.appendChild(trackDiv);
+                    }
+                }
+
+                tracksCell.appendChild(tracksContainer);
+                tracksRow.appendChild(tracksCell);
+                tbody.appendChild(tracksRow);
+
+                row.addEventListener('click', (e) => {
+                    if (e.target.closest('a') || e.target.closest('.releaseAddButton')) return;
+                    tracksContainer.classList.toggle('expanded');
+                    expandCell.textContent = tracksContainer.classList.contains('expanded') ? '▽' : '▷';
+                    checkScrollability();
+                });
+            }
+        }
+
+        if (!tbody.children.length) {
+            const emptyRow = document.createElement('tr');
+            const emptyCell = document.createElement('td');
+            emptyCell.colSpan = colspan;
+            emptyCell.className = 'releases-empty-cell';
+            emptyCell.innerHTML = `<h4 class="text default-muted">No releases match your filter</h4>`;
+            emptyRow.appendChild(emptyCell);
+            tbody.appendChild(emptyRow);
+        }
+    }
+
+    function rerender() {
+        renderHeader();
+        renderColumnsDropdown();
+        renderBody();
+    }
+
+    filterInput.addEventListener('input', () => {
+        currentFilter = filterInput.value.trim().toLowerCase();
+        renderBody();
+    });
+
+    columnsControl.querySelector('.columns-toggle-button').addEventListener('click', (e) => {
+        e.stopPropagation();
+        columnsControl.classList.toggle('open');
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!columnsControl.contains(e.target)) {
+            columnsControl.classList.remove('open');
         }
     });
 
-    wrapper.appendChild(releaseRow);
-
-    if (totalTracks > 0) {
-        const tracksContainer = document.createElement('div');
-        tracksContainer.className = 'release-tracks';
-
-        for (let disc of media) {
-            for (let track of (disc.tracks || [])) {
-                const { minutes, seconds } = millisecondsToMinutesAndSeconds(track.recording?.length);
-                const recordingTitle = track.recording?.title || 'N/A';
-                const recordingId = track.recording?.id;
-                const lengthStr = minutes === 'N/A' ? 'N/A' : `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                const trackDiv = document.createElement('div');
-                trackDiv.className = 'track';
-                trackDiv.innerHTML = 
-                `
-                    <h4 class="text default-secondary trackIndent">└─╲ <h4>
-                    <h4 class="text default trackNumber">${track.number}.${track.position} : <h4>
-                    <h4 class="text white trackName"><a href="https://musicbrainz.org/recording/${recordingId}" target="_blank" rel="noopener noreferrer">${recordingTitle}</a></h4>
-                    <h4 class="text white-tertiary trackLength">[${lengthStr}]</h4>
-                `;
-                tracksContainer.appendChild(trackDiv);
-            }
-        }
-
-        wrapper.appendChild(tracksContainer);
-
-        releaseRow.addEventListener('click', (e) => {
-            if (e.target.closest('a')) return;
-            tracksContainer.classList.toggle('expanded');
-
-            const nameEl = releaseRow.querySelector('.releaseName');
-            if (tracksContainer.classList.contains('expanded')) {
-                nameEl.innerHTML = `└─╲ ▽
-                    <a href="https://musicbrainz.org/release/${releaseId}" target="_blank" rel="noopener noreferrer">${title}</a>
-                &nbsp;`;
-            }
-            else {
-                nameEl.innerHTML = `└─╲ ▷
-                    <a href="https://musicbrainz.org/release/${releaseId}" target="_blank" rel="noopener noreferrer">${title}</a>
-                &nbsp;`;
-            }
-
-            checkScrollability();
-        });
-    }
+    rerender();
+    mountedReleaseGrids.add({ rerender });
 
     return wrapper;
 }
@@ -670,7 +923,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     if (releases && releases.length) {
         const releasesContainer = div.querySelector('.release-group-releases');
         const toggleButton = div.querySelector('.releases-toggle-button');
-        releases.forEach(r => releasesContainer.appendChild(createReleaseElement(r,releaseGroupId,artistId)));
+        releasesContainer.appendChild(buildReleasesGrid(releases, releaseGroupId, artistId));
 
         toggleButton.addEventListener('click', () => {
             releasesContainer.classList.toggle('expanded');
@@ -711,7 +964,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
                 div.insertAdjacentHTML('beforeend', newHtml);
                 const releasesContainer = div.querySelector('.release-group-releases');
                 const toggleButton = div.querySelector('.releases-toggle-button');
-                fetchedReleases.forEach(r => releasesContainer.appendChild(createReleaseElement(r, releaseGroupId, artistId)));
+                releasesContainer.appendChild(buildReleasesGrid(fetchedReleases, releaseGroupId, artistId));
 
                 toggleButton.addEventListener('click', () => {
                     releasesContainer.classList.toggle('expanded');

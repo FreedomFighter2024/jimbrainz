@@ -4,6 +4,11 @@
   <img src="interface/assets/icon.svg" width="128" height="128">
 </p>
 
+<p align="center">
+  <a href="https://github.com/freedomfighter2024/jimbrainz/releases"><img src="https://img.shields.io/github/v/release/freedomfighter2024/jimbrainz" alt="GitHub Release"></a>
+  <a href="https://github.com/freedomfighter2024/jimbrainz/pkgs/container/jimbrainz"><img src="https://img.shields.io/badge/ghcr.io-freedomfighter2024%2Fjimbrainz-blue" alt="Container image"></a>
+</p>
+
 A simple one-page interface to manage all Lidarr requests, built upon the MusicBrainz api, centered around specific Releases and **Release Groups** (instead of artists), i.e. albums, singles, mixtapes, etc. If a release is on MusicBrainz, LidBrainz can search for and find it in ~1 - 2 seconds. With one click it can be added to your Lidarr instance and automatically grab the (linux ISOs) 
 
 ![Alt text](assets/videos/demo_1.gif)
@@ -52,7 +57,19 @@ If youre like me and can be a little picky about specific releases in release gr
 </details>
 
 ### Specifying settings (folder, metadata/quality profile, auto-grab)
-the ui has buttons and dials for all those things, i like knowing exactly what i do when i add stuff. thats abt it xP
+the ui has buttons and dials for all those things, tucked into one tidy profile card that remembers what you picked last time so you're not reselecting your quality profile on every single reload. i like knowing exactly what i do when i add stuff. thats abt it xP
+
+### Browsing releases like it's MusicBrainz itself
+<details>
+<summary style="font-style:italic">A proper data grid for digging through every pressing of an album</summary>
+Specific releases show as a sortable table with way more metadata than before — label, catalog number, barcode, quality, language/script, and disambiguation on top of the format/tracks/status/country/date it already had. Columns can be reordered, resized, hidden, and filtered — both globally (across every release group you've got expanded at once) and per-column, plus a tag filter for edition keywords like DELUXE, REMASTER, and BOX SET. Genuinely useful once you're staring down 100+ pressings of the same album.
+</details>
+
+### A log that stays out of your way
+<details>
+<summary style="font-style:italic">The event log is a floating window now, not a permanent sidebar</summary>
+Instead of eating a chunk of the screen at all times, the event log collapses into a small toggle and opens as a floating window on top of everything when you actually need it, with an unread badge if something went sideways while it was closed.
+</details>
 
 
 
@@ -87,10 +104,10 @@ I scraped together this ui with my high school html and css knowledge, and it wo
 ## Installation (UnRaid)
 since i made this for myself, and i use UnRaid, ive included an unraid template that'll let you manually add a template to run this container like any of your other UnRaid docker containers!
 
-_Note: given this container was just made for myself and is just in development, i havent published it to the Community Applications plugin, i might in the future though, but for now this is just a :dev build. this also means the container adhere to the same quality control as the CA containers, again, i made this for myself so use at your own discretion_ 
+_Note: given this container was just made for myself, i havent published it to the Community Applications plugin, i might in the future though. Images are built and published to ghcr.io automatically on tagged releases, but this still doesnt adhere to the same quality control as the CA containers, again, i made this for myself so use at your own discretion_ 
 
 ### how to manually add the template
-1. move/copy `my-LidBrainz.xml` to `/boot/config/plugins/dockerMan/templates-user/`
+1. move/copy `my-lidbrainz.xml` to `/boot/config/plugins/dockerMan/templates-user/`
 2. in the docker tab on unraid, click "add container"
 3. the LidBrainz template should show up in the template dropdown, select it
 

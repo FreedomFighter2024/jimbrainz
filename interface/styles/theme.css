@@ -40,52 +40,42 @@
     --font-bold: 700;
     --font-extrabold: 800;
     
-    --background-color: #151515;
-    --background-color-input:#111111 ;
-    --background-color-light: #222222;
-    --background-color-decor: #d4b0bc3b; 
+    /* backgrounds carry a purple tint rather than neutral grey, so the accents sit in the
+       same family instead of floating on top of grey */
+    --background-color: #0e0b16;
+    --background-color-input: #08060e;
+    --background-color-light: #171227;
+    --background-color-decor: #a874ff33;
 
-    /* --background-color: #000000;
-    --background-color-input:#000000 ;
-    --background-color-light: #000000;
-    --background-color-decor: #b671883b; */
+    --muted-text: #a48fd155;
 
-    --muted-text: #cbcbcb51;
+    --green-text: #2ee6a8;
+    --green-secondary-text: #1aa87a;
+    --green-glow-text: #2ee6a880;
 
-    --green-text: #1DCD9F;
-    --green-secondary-text: #169976;
-    --green-glow-text: #16997686;
+    --red-text: #ff5f7e;
+    --red-secondary-text: #ff7d97;
+    --red-glow-text: #ff5f7e5e;
 
-    --red-text: #e65664;
-    --red-secondary-text: #e86975;
-    --red-glow-text: #e56f7b51;
+    --yellow-text: #ffd45e;
+    --yellow-secondary-text: #d9ab35;
+    --yellow-glow-text: #ffd45e5c;
 
-    --yellow-text: #E3C454;
-    --yellow-secondary-text: #C4A23A;
-    --yellow-glow-text: #c4a23a52;
+    --main-text: #c9a3ff;
+    --main-glow-text: #a05cff70;
 
-    --main-text: #D4B0BC;
-    --main-glow-text: #d4b0bc56;
+    --main-secondary-text: #ab80ee;
+    --main-secondary-glow-text: #9a6cf085;
 
-    --main-secondary-text: #C695A5;
-    --main-secondary-glow-text: #c695a56f;
+    --main-muted-text: #8a6ec2c4;
+    --main-hover-text: #e4ccff;
 
-    --main-muted-text: #cca3b1ad;
-    --main-hover-text: #ecbdcc; 
-
-    /* --main-text: #C1697F;
-    --main-glow-text: #c1697fb4;
-
-    --main-secondary-text: #D07489;
-    --main-secondary-glow-text: #d0748ab7;
-
-    --main-muted-text: #955764;
-    --main-hover-text: #955764; */
-
-    --white-text: #D2C1B9;
-    --white-secondary-text: #928781;
-    --white-tertiary-text: #9F8876;
-    --white-glow-text: rgba(228, 216, 211, 0.504);
+    /* "white" here is a warm off-white pulled slightly lavender so it reads as part of the
+       same palette instead of a separate greyscale one */
+    --white-text: #e6dcf5;
+    --white-secondary-text: #a396bd;
+    --white-tertiary-text: #8d7fae;
+    --white-glow-text: rgba(230, 220, 245, 0.55);
 
     --crt-red: rgba(218, 49, 49);
     --crt-green: rgb(112, 159, 115);

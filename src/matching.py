@@ -312,6 +312,8 @@ def score_candidate(candidate: dict, expected: dict, format_preference: str = "p
     total_weight = sum(WEIGHTS[k] for k in active)
     score = sum(WEIGHTS[k] * v for k, v in active.items()) / total_weight if total_weight else 0.0
 
+    response = candidate["response"]
+
     return {
         **candidate,
         "score": round(score, 4),
@@ -322,6 +324,13 @@ def score_candidate(candidate: dict, expected: dict, format_preference: str = "p
         "track_mapping": mapping,
         "detected_edition_tags": sorted(detect_edition_tags(candidate["directory"])),
         "formats": sorted({file_extension(split_remote_path(f.get("filename", ""))[1]) for f in files}),
+        #? peer stats, surfaced so the UI can show and filter on them. note slskd's
+        #? uploadSpeed is the peer's upload = our download, in bits/sec.
+        "upload_speed": response.get("uploadSpeed", 0) or 0,
+        "queue_length": response.get("queueLength", 0) or 0,
+        "has_free_slot": bool(response.get("hasFreeUploadSlot")),
+        "total_size": sum(f.get("size", 0) or 0 for f in files),
+        "bitrates": sorted({f["bitRate"] for f in files if f.get("bitRate")}),
     }
 
 

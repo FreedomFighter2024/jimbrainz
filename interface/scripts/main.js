@@ -65,7 +65,7 @@ async function refreshServerConfig() {
     try {
         const serverConfig = await fetchServerConfig();
         populateFormatPreference();
-        updateAccordionValueLabel('library-path-display', serverConfig.library_path || 'not configured');
+        setLabel('library-path-display', serverConfig.library_path || 'not configured');
         return serverConfig;
     }
 
@@ -106,29 +106,20 @@ function saveDownloadDefaults(partial) {
 
 let downloadDefaults = loadDownloadDefaults();
 
-function updateAccordionValueLabel(elementId, text) {
+function setLabel(elementId, text) {
     const el = document.getElementById(elementId);
     if (el) el.textContent = text || '—';
 }
 
-function closeAccordionRow(rowId) {
-    const row = document.getElementById(rowId);
-    if (row) row.classList.remove('open');
-}
-
-function setupAccordion() {
-    const rows = document.querySelectorAll('#download-profile .accordion-row');
-
-    rows.forEach(row => {
-        const header = row.querySelector('.accordion-row-header');
-        header.addEventListener('click', () => {
-            const wasOpen = row.classList.contains('open');
-            rows.forEach(r => r.classList.remove('open'));
-            if (!wasOpen) row.classList.add('open');
-        });
-    });
-}
-setupAccordion();
+/* the download profile lives in a top-bar popover now that the right sidebar is gone */
+const profileControl = document.getElementById('profile-control');
+document.getElementById('profile-toggle-button').addEventListener('click', (e) => {
+    e.stopPropagation();
+    profileControl.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+    if (!profileControl.contains(e.target)) profileControl.classList.remove('open');
+});
 
 const autoGrabCheckbox = document.getElementById('auto-download-checkbox');
 if (typeof downloadDefaults.autoGrab === 'boolean') {
@@ -164,15 +155,10 @@ function populateFormatPreference() {
         `;
     });
 
-    updateAccordionValueLabel('format-preference-current', FORMAT_PREFERENCES.find(f => f.id === selectedId)?.name);
-
     container.addEventListener('change', () => {
         const checked = document.querySelector('#format-preference-select > input[type="radio"]:checked');
         if (!checked) return;
-        const format = FORMAT_PREFERENCES.find(f => f.id === checked.value);
-        updateAccordionValueLabel('format-preference-current', format?.name);
         saveDownloadDefaults({ formatPreference: checked.value });
-        closeAccordionRow('format-accordion-row');
     });
 }
 
@@ -428,6 +414,8 @@ function processSearchResults(results) {
 
     checkScrollability();
     loadAllCoverImages(container);
+    renderFacets();
+    updateResultsSummary();
 }
 
 async function findCandidates(expected) {
@@ -549,11 +537,14 @@ async function runCandidateSearch(expected) {
     try {
         const result = await findCandidates(expected);
         candidatesQueryInput.value = result.query;
-        renderCandidates(result);
+        lastCandidateResult = result;
+        renderCandidateFormatFilters(result.candidates);
+        renderCandidates();
     }
 
     catch (error) {
         console.error(`Candidate search error: ${error.message}`);
+        lastCandidateResult = null;
         candidatesScrollable.innerHTML =
             `<h4 class="text red candidates-status">search failed: ${error.message}</h4>`;
     }
@@ -570,20 +561,108 @@ const SIGNAL_LABELS = {
     peer: 'peer',
 };
 
-function renderCandidates(result) {
+let lastCandidateResult = null;
+const candidateFilterState = { freeSlotOnly: false, completeOnly: false, minScore: 0, formats: new Set() };
+
+/** slskd reports peer upload speed in bits/sec - that's our download rate for them. */
+function formatSpeed(bitsPerSecond) {
+    if (!bitsPerSecond) return 'unknown';
+
+    const kb = bitsPerSecond / 1000;
+    if (kb < 1000) return `${Math.round(kb)} kb/s`;
+    return `${(kb / 1000).toFixed(1)} mb/s`;
+}
+
+function formatSize(bytes) {
+    if (!bytes) return '';
+    const mb = bytes / (1024 * 1024);
+    if (mb < 1024) return `${Math.round(mb)} MB`;
+    return `${(mb / 1024).toFixed(1)} GB`;
+}
+
+document.getElementById('candidate-free-slot-only').addEventListener('change', (e) => {
+    candidateFilterState.freeSlotOnly = e.target.checked;
+    renderCandidates();
+});
+
+document.getElementById('candidate-complete-only').addEventListener('change', (e) => {
+    candidateFilterState.completeOnly = e.target.checked;
+    renderCandidates();
+});
+
+const minScoreInput = document.getElementById('candidate-min-score');
+minScoreInput.addEventListener('input', (e) => {
+    candidateFilterState.minScore = Number(e.target.value);
+    document.getElementById('candidate-min-score-value').textContent = e.target.value;
+    renderCandidates();
+});
+
+function renderCandidateFormatFilters(candidates) {
+    const container = document.getElementById('candidate-format-filters');
+    container.innerHTML = '';
+    candidateFilterState.formats.clear();
+
+    const formats = [...new Set(candidates.flatMap(c => c.formats))].filter(Boolean).sort();
+
+    for (const format of formats) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'tag-chip main';
+        chip.textContent = format;
+        chip.addEventListener('click', () => {
+            if (candidateFilterState.formats.has(format)) {
+                candidateFilterState.formats.delete(format);
+                chip.classList.remove('active');
+            } else {
+                candidateFilterState.formats.add(format);
+                chip.classList.add('active');
+            }
+            renderCandidates();
+        });
+        container.appendChild(chip);
+    }
+}
+
+function candidatePassesFilters(candidate) {
+    if (candidateFilterState.freeSlotOnly && !candidate.has_free_slot) return false;
+    if (Math.round(candidate.score * 100) < candidateFilterState.minScore) return false;
+
+    if (candidateFilterState.completeOnly && candidate.expected_tracks
+        && candidate.matched_tracks < candidate.expected_tracks) return false;
+
+    if (candidateFilterState.formats.size
+        && !candidate.formats.some(f => candidateFilterState.formats.has(f))) return false;
+
+    return true;
+}
+
+function renderCandidates() {
     candidatesScrollable.innerHTML = '';
 
-    if (!result.candidates.length) {
+    if (!lastCandidateResult) return;
+
+    const { candidates, response_count } = lastCandidateResult;
+
+    if (!candidates.length) {
         candidatesScrollable.innerHTML =
-            `<h4 class="text default-muted candidates-status">no matches from ${result.response_count} responses — try editing the query above</h4>`;
+            `<h4 class="text default-muted candidates-status">no matches from ${response_count} responses — try editing the query above</h4>`;
         return;
     }
 
-    for (const candidate of result.candidates) {
+    const visible = candidates.filter(candidatePassesFilters);
+
+    if (!visible.length) {
+        candidatesScrollable.innerHTML =
+            `<h4 class="text default-muted candidates-status">${candidates.length} candidates, none match your filters</h4>`;
+        return;
+    }
+
+    for (const candidate of visible) {
         const box = document.createElement('div');
         box.className = 'candidate-box';
 
         const scorePercent = Math.round(candidate.score * 100);
+        const scoreClass = scorePercent >= 75 ? 'good' : scorePercent >= 40 ? 'mid' : 'bad';
         const trackSummary = candidate.expected_tracks
             ? `${candidate.matched_tracks}/${candidate.expected_tracks} tracks`
             : `${candidate.audio_file_count} files`;
@@ -600,9 +679,17 @@ function renderCandidates(result) {
             .map(tag => `<h4 class="text ${EDITION_TAG_COLORS[tag] || 'default'} edition-tag">${tag}</h4>`)
             .join('');
 
+        const bitrateText = candidate.bitrates?.length
+            ? ` ${candidate.bitrates.length > 1
+                ? `${Math.min(...candidate.bitrates)}-${Math.max(...candidate.bitrates)}`
+                : candidate.bitrates[0]}kbps`
+            : '';
+
+        const sizeText = formatSize(candidate.total_size);
+
         box.innerHTML = `
             <div class="candidate-main">
-                <div class="candidate-score ${scorePercent >= 75 ? 'good' : scorePercent >= 40 ? 'mid' : 'bad'}">${scorePercent}</div>
+                <div class="candidate-score ${scoreClass}">${scorePercent}</div>
                 <div class="candidate-body">
                     <h4 class="text white candidate-dir" title="${candidate.directory}">${candidate.directory_name}</h4>
                     <div class="candidate-meta">
@@ -610,7 +697,13 @@ function renderCandidates(result) {
                         <span class="text default-muted">·</span>
                         <span class="text default-secondary">${trackSummary}</span>
                         <span class="text default-muted">·</span>
-                        <span class="text default-secondary">${candidate.formats.join(', ') || 'unknown'}</span>
+                        <span class="text default-secondary">${candidate.formats.join(', ') || 'unknown'}${bitrateText}</span>
+                        ${sizeText ? `<span class="text default-muted">·</span><span class="text default-secondary">${sizeText}</span>` : ''}
+                    </div>
+                    <div class="candidate-peer">
+                        <span class="candidate-speed">▼ ${formatSpeed(candidate.upload_speed)}</span>
+                        <span class="candidate-slot ${candidate.has_free_slot ? 'free' : 'busy'}">${candidate.has_free_slot ? 'free slot' : 'no free slot'}</span>
+                        <span class="text default-muted">queue ${candidate.queue_length}</span>
                     </div>
                     <div class="candidate-tags">${editionMarkup}</div>
                     <div class="candidate-signals">${signalMarkup}</div>
@@ -872,16 +965,44 @@ function notifyColumnStateChange() {
 
 
 
-/* ===== global filters (text, per-column, tags) - apply to every mounted release table ===== */
+/* ===== global filters: free text + checkbox facets, applied to every mounted release table ===== */
+
+// Facet values are derived from whatever is actually on screen rather than hardcoded, so the
+// checkboxes only ever offer things that exist in the current results.
+const FACET_DEFS = [
+    { id: 'edition', label: 'edition', valuesOf: (release) => getEditionTags(release) },
+    { id: 'format', label: 'format', valuesOf: (release) => [release.media?.[0]?.format].filter(Boolean) },
+    { id: 'status', label: 'status', valuesOf: (release) => [release.status].filter(Boolean) },
+    { id: 'country', label: 'country', valuesOf: (release) =>
+        [release['release-events']?.[0]?.area?.['iso-3166-1-codes']?.[0]].filter(Boolean) },
+    { id: 'label', label: 'label', valuesOf: (release) =>
+        (release['label-info'] || []).map(li => li.label?.name).filter(Boolean) },
+];
 
 const globalFilterState = {
     text: '',
-    columns: Object.fromEntries(RELEASE_COLUMNS.map(c => [c.id, ''])),
-    tags: new Set(),
+    facets: Object.fromEntries(FACET_DEFS.map(f => [f.id, new Set()])),
 };
 
 function notifyFilterStateChange() {
     mountedReleaseGrids.forEach(grid => grid.rerender());
+    renderFacets();
+    updateResultsSummary();
+}
+
+function releaseMatchesFilters(release, searchText) {
+    if (globalFilterState.text && !searchText.includes(globalFilterState.text)) return false;
+
+    // multi-select inside one facet is OR, across facets it's AND - standard faceted search
+    for (const def of FACET_DEFS) {
+        const selected = globalFilterState.facets[def.id];
+        if (!selected.size) continue;
+
+        const values = def.valuesOf(release);
+        if (!values.some(v => selected.has(v))) return false;
+    }
+
+    return true;
 }
 
 const globalFilterInput = document.getElementById('global-filter-input');
@@ -890,12 +1011,11 @@ globalFilterInput.addEventListener('input', () => {
     notifyFilterStateChange();
 });
 
-const filtersToggleButton = document.getElementById('filters-toggle-button');
-const filtersControl = document.getElementById('global-filters-control');
-filtersToggleButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    filtersControl.classList.toggle('open');
-    columnsControlGlobal.classList.remove('open');
+document.getElementById('clear-filters-button').addEventListener('click', () => {
+    globalFilterState.text = '';
+    globalFilterInput.value = '';
+    for (const set of Object.values(globalFilterState.facets)) set.clear();
+    notifyFilterStateChange();
 });
 
 const columnsToggleButtonGlobal = document.getElementById('columns-toggle-button');
@@ -903,41 +1023,11 @@ const columnsControlGlobal = document.getElementById('global-columns-control');
 columnsToggleButtonGlobal.addEventListener('click', (e) => {
     e.stopPropagation();
     columnsControlGlobal.classList.toggle('open');
-    filtersControl.classList.remove('open');
 });
 
 document.addEventListener('click', (e) => {
-    if (!filtersControl.contains(e.target)) filtersControl.classList.remove('open');
     if (!columnsControlGlobal.contains(e.target)) columnsControlGlobal.classList.remove('open');
 });
-
-function renderGlobalFiltersDropdown() {
-    const dropdown = document.getElementById('filters-dropdown');
-    dropdown.innerHTML = '';
-
-    for (const col of RELEASE_COLUMNS) {
-        const row = document.createElement('label');
-        row.className = 'columns-dropdown-item filters-dropdown-item';
-
-        const span = document.createElement('span');
-        span.textContent = col.label;
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'filters-dropdown-input';
-        input.placeholder = 'contains…';
-        input.addEventListener('input', () => {
-            globalFilterState.columns[col.id] = input.value.trim().toLowerCase();
-            notifyFilterStateChange();
-        });
-        input.addEventListener('click', (e) => e.stopPropagation());
-
-        row.appendChild(span);
-        row.appendChild(input);
-        dropdown.appendChild(row);
-    }
-}
-renderGlobalFiltersDropdown();
 
 function renderGlobalColumnsDropdown() {
     const dropdown = document.getElementById('columns-dropdown');
@@ -963,31 +1053,100 @@ function renderGlobalColumnsDropdown() {
 }
 renderGlobalColumnsDropdown();
 
-const TAG_FILTER_OPTIONS = ['REMASTER', ...EDITION_KEYWORDS.map(k => k.label)];
 
-function renderTagFilterRow() {
-    const container = document.getElementById('tag-filter-row');
+
+function allMountedReleases() {
+    const releases = [];
+    mountedReleaseGrids.forEach(grid => releases.push(...grid.releases));
+    return releases;
+}
+
+function computeFacetCounts() {
+    const counts = Object.fromEntries(FACET_DEFS.map(f => [f.id, new Map()]));
+
+    for (const release of allMountedReleases()) {
+        for (const def of FACET_DEFS) {
+            for (const value of def.valuesOf(release)) {
+                counts[def.id].set(value, (counts[def.id].get(value) || 0) + 1);
+            }
+        }
+    }
+
+    return counts;
+}
+
+function renderFacets() {
+    const container = document.getElementById('facets');
+    const counts = computeFacetCounts();
     container.innerHTML = '';
 
-    for (const tag of TAG_FILTER_OPTIONS) {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = `tag-chip ${EDITION_TAG_COLORS[tag] || 'default'}`;
-        chip.textContent = tag;
-        chip.addEventListener('click', () => {
-            if (globalFilterState.tags.has(tag)) {
-                globalFilterState.tags.delete(tag);
-                chip.classList.remove('active');
-            } else {
-                globalFilterState.tags.add(tag);
-                chip.classList.add('active');
-            }
-            notifyFilterStateChange();
-        });
-        container.appendChild(chip);
+    const anyValues = FACET_DEFS.some(def => counts[def.id].size);
+    if (!anyValues) {
+        container.innerHTML = `<div class="facet-empty">expand a release group to see filters</div>`;
+        return;
+    }
+
+    for (const def of FACET_DEFS) {
+        const values = [...counts[def.id].entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+        if (!values.length) continue;
+
+        const group = document.createElement('div');
+        group.className = 'facet-group';
+        group.innerHTML = `<h4 class="text default facet-group-title">${def.label}</h4>`;
+
+        for (const [value, count] of values) {
+            const selected = globalFilterState.facets[def.id].has(value);
+            const option = document.createElement('label');
+            option.className = `facet-option${selected ? ' checked' : ''}`;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = selected;
+            checkbox.addEventListener('change', () => {
+                const set = globalFilterState.facets[def.id];
+                if (checkbox.checked) set.add(value);
+                else set.delete(value);
+                notifyFilterStateChange();
+            });
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'facet-option-label';
+            labelSpan.textContent = value;
+            labelSpan.title = value;
+
+            const countSpan = document.createElement('span');
+            countSpan.className = 'facet-option-count';
+            countSpan.textContent = count;
+
+            option.append(checkbox, labelSpan, countSpan);
+            group.appendChild(option);
+        }
+
+        container.appendChild(group);
     }
 }
-renderTagFilterRow();
+
+
+
+// render the empty state on first load rather than leaving a blank column until a search
+renderFacets();
+
+function updateResultsSummary() {
+    const summary = document.getElementById('results-summary');
+    const total = allMountedReleases().length;
+
+    if (!total) {
+        summary.textContent = document.querySelectorAll('.results-box.release-group-result').length
+            ? 'expand a release group to list releases'
+            : 'no search yet';
+        return;
+    }
+
+    const visible = document.querySelectorAll('.releases-table tbody tr.release-row').length;
+    summary.textContent = visible === total
+        ? `${total} releases`
+        : `${visible} of ${total} releases`;
+}
 
 
 
@@ -1146,20 +1305,7 @@ function buildReleasesGrid(releases, releaseGroupId, artistId, releaseGroupConte
             };
 
             const searchText = Object.values(fieldValues).join(' ').toLowerCase();
-            if (globalFilterState.text && !searchText.includes(globalFilterState.text)) continue;
-
-            let columnFilterMismatch = false;
-            for (const [colId, filterValue] of Object.entries(globalFilterState.columns)) {
-                if (!filterValue) continue;
-                const fieldText = String(fieldValues[colId] ?? '').toLowerCase();
-                if (!fieldText.includes(filterValue)) {
-                    columnFilterMismatch = true;
-                    break;
-                }
-            }
-            if (columnFilterMismatch) continue;
-
-            if (globalFilterState.tags.size > 0 && !editionTags.some(t => globalFilterState.tags.has(t))) continue;
+            if (!releaseMatchesFilters(release, searchText)) continue;
 
             let totalTracks = 0;
             for (const disc of media) totalTracks += (disc.tracks?.length || 0);
@@ -1312,7 +1458,7 @@ function buildReleasesGrid(releases, releaseGroupId, artistId, releaseGroupConte
     }
 
     rerender();
-    mountedReleaseGrids.add({ rerender });
+    mountedReleaseGrids.add({ rerender, releases });
 
     return wrapper;
 }

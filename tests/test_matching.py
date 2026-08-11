@@ -292,5 +292,28 @@ def test_score_candidate_exposes_signal_breakdown():
     assert scored["track_mapping"][1]["track"]["title"] == "Wildlife Analysis"
 
 
+def test_candidate_carries_peer_stats_for_the_ui():
+    """Speed/queue/size drive both the display and the candidate filters, so they're contractual."""
+    files = album_files(r"share\MHTRTC")
+    responses = [make_response("alice", files, free_slot=True, queue=3, speed=1_500_000)]
+
+    ranked = rank_candidates(responses, EXPECTED_BASE)
+    candidate = ranked[0]
+
+    assert candidate["upload_speed"] == 1_500_000
+    assert candidate["queue_length"] == 3
+    assert candidate["has_free_slot"] is True
+    assert candidate["total_size"] == sum(f["size"] for f in files)
+
+
+def test_bitrates_collected_from_lossy_files():
+    files = [
+        make_file(r"share\Album\01 - Wildlife Analysis.mp3", length=87, bitrate=320),
+        make_file(r"share\Album\02 - An Eagle in Your Mind.mp3", length=383, bitrate=320),
+    ]
+    ranked = rank_candidates([make_response("alice", files)], EXPECTED_BASE, format_preference="any")
+    assert ranked[0]["bitrates"] == [320]
+
+
 def test_empty_responses_produce_no_candidates():
     assert rank_candidates([], EXPECTED_BASE) == []

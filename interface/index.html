@@ -3,72 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LidBrainz</title>
+    <title>jimbrainz</title>
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
     <!-- THANK YOU OLIVIA !!! ^^ -->
 <link rel="stylesheet" href="styles/main.css">
 </head>
 <body >   <div class="background-layer" ></div>
 <div id="main-container" class="crt">
-    <div id="header">
-        <div id="logo" style="visibility:hidden;">
-            <img class="glow default" src="assets/icon.svg" alt="LidBrainz Logo" height="64px">
-        </div>
-        <div id="title">
+    <div id="top-bar">
+        <div id="brand">
 <pre class="text glow default">
-     _ _           ____            _     
+     _ _           ____            _
     | (_)_ __ ___ | __ ) _ __ __ _(_)_ __  ____
  _  | | | '_ ` _ \|  _ \| '__/ _` | | '_ \|_  /
 | |_| | | | | | | | |_) | | | (_| | | | | |/ /
  \___/|_|_| |_| |_|____/|_|  \__,_|_|_| |_|/___|
 </pre>
-        </div> 
-        <div id="header-ghost-for-centering"></div>
-    </div>
-    <div id="main-content">
-        <div id="left-sidebar">
-            <div id="general-connection">
-                <h3 class="text default">░ ▒ ▓ connections ▓ ▒ ░</h3>
-                <hr>
-                <div id="general-connection-status" class="text default glow">
-
-                </div>
-            </div>
+        </div>
+        <div id="general-connection-status" class="text default glow"></div>
+        <div id="top-bar-actions">
             <button type="button" id="log-toggle-button">
-                <span>░ ▒ ▓ log ▓ ▒ ░</span>
+                <span>log</span>
                 <span id="log-unread-badge" class="log-unread-badge" hidden>0</span>
             </button>
-        </div>
-        <div id="log-window">
-            <div id="lidbrainz-connection">
-                <div id="lidbrainz-event-log">
-                    <div id="log-window-header">
-                        <h3 class="text default">░ ▒ ▓ event log ▓ ▒ ░</h3>
-                        <button type="button" id="log-close-button">✕</button>
-                    </div>
-                    <hr>
-                    <div class="scrollable" id="logs-scrollable">
-                    </div>
+            <div id="profile-control">
+                <button type="button" id="profile-toggle-button">download profile ▾</button>
+                <div id="profile-dropdown">
+                    <h4 class="text default profile-section-title">format</h4>
+                    <div id="format-preference-select" class="text default"></div>
+                    <h4 class="text default profile-section-title">library</h4>
+                    <div id="library-path-display" class="text white-secondary profile-value">—</div>
+                    <label id="download-settings-label" for="auto-download-checkbox" class="white">
+                        <div id="auto-download-checkbox-container" class="custom-checkbox">
+                            <input id="auto-download-checkbox" type="checkbox" class="white" name="auto-download-checkbox">
+                            <div id="download-settings-label-text" class="label-text">auto-grab best match</div>
+                        </div>
+                    </label>
                 </div>
             </div>
         </div>
-        <div id="candidates-window">
-            <div id="candidates-panel">
-                <div id="candidates-header">
-                    <h3 class="text default">░ ▒ ▓ soulseek candidates ▓ ▒ ░</h3>
-                    <button type="button" id="candidates-close-button">✕</button>
-                </div>
-                <hr>
-                <div id="candidates-subject">
-                    <h4 class="text white" id="candidates-release-label">—</h4>
-                    <div id="candidates-query-row">
-                        <span class="text default-muted candidates-query-label">query</span>
-                        <input type="text" id="candidates-query-input" class="releases-filter-input">
-                        <button type="button" id="candidates-requery-button" class="columns-toggle-button">Re-search</button>
-                    </div>
-                </div>
-                <div class="scrollable" id="candidates-scrollable"></div>
+    </div>
+    <div id="main-content">
+        <div id="filter-column">
+            <div id="filter-column-header">
+                <h3 class="text default">░ ▒ ▓ filters ▓ ▒ ░</h3>
+                <button type="button" id="clear-filters-button">clear</button>
             </div>
+            <hr>
+            <input type="text" id="global-filter-input" class="releases-filter-input" placeholder="Filter releases...">
+            <div class="scrollable" id="facets"></div>
         </div>
         <div id="middle-content">
             <div id="search-section">
@@ -89,59 +72,66 @@
                 </div>
             </div>
             <div id="results-section">
-                <div class="results-box example">
-                    <h3 class="text white-tertiary releaseGrpArtist">░ artistName ░&nbsp;</h3>
-                    <h3 class="text white releaseGrpName">░ releaseGroup ░&nbsp;</h3>
-                    <h3 class="text white-tertiary releaseGrpType">░ releaseType ░&nbsp;</h3>
-                    <h3 class="text default matchScore">░ matchScore ░&nbsp;</h3>
-                </div>
                 <div id="results-toolbar">
-                    <input type="text" id="global-filter-input" class="releases-filter-input" placeholder="Filter releases...">
-                    <div class="releases-columns-control" id="global-filters-control">
-                        <button type="button" id="filters-toggle-button" class="columns-toggle-button">Filters ▾</button>
-                        <div class="columns-dropdown" id="filters-dropdown"></div>
-                    </div>
+                    <span id="results-summary" class="text default-muted">no search yet</span>
                     <div class="releases-columns-control" id="global-columns-control">
                         <button type="button" id="columns-toggle-button" class="columns-toggle-button">Columns ▾</button>
                         <div class="columns-dropdown" id="columns-dropdown"></div>
                     </div>
                 </div>
-                <div id="tag-filter-row"></div>
                 <div class="scrollable" id="search-results-scrollable">
                 </div>
             </div>
         </div>
-        <div id="right-sidebar" >
-            <div class="settings-box" id="download-profile">
-                <h3 class="text default">░ ▒ ▓ download profile ▓ ▒ ░</h3>
+    </div>
+    <div id="log-window">
+        <div id="lidbrainz-connection">
+            <div id="lidbrainz-event-log">
+                <div id="log-window-header">
+                    <h3 class="text default">░ ▒ ▓ event log ▓ ▒ ░</h3>
+                    <button type="button" id="log-close-button">✕</button>
+                </div>
                 <hr>
-                <div class="accordion-row" id="format-accordion-row">
-                    <button type="button" class="accordion-row-header">
-                        <span class="accordion-row-label text default">Format</span>
-                        <span class="accordion-row-value" id="format-preference-current">—</span>
-                        <span class="accordion-row-caret">▾</span>
-                    </button>
-                    <div class="accordion-row-body">
-                        <div id="format-preference-select" class="text default"></div>
-                    </div>
-                </div>
-                <div class="settings-info-row">
-                    <span class="accordion-row-label text default">Library</span>
-                    <span class="accordion-row-value" id="library-path-display">—</span>
-                </div>
-                <div id="download-settings-select" class="text default">
-                    <label id="download-settings-label" for="auto-download-checkbox" class="white">
-                        <div id="auto-download-checkbox-container" class="custom-checkbox">
-                            <input id="auto-download-checkbox" type="checkbox" class="white" name="auto-download-checkbox">
-                            <div id="download-settings-label-text" class="label-text">auto-grab best match</div>
-                        </div>
-                    </label>
+                <div class="scrollable" id="logs-scrollable">
                 </div>
             </div>
+        </div>
+    </div>
+    <div id="candidates-window">
+        <div id="candidates-panel">
+            <div id="candidates-header">
+                <h3 class="text default">░ ▒ ▓ soulseek candidates ▓ ▒ ░</h3>
+                <button type="button" id="candidates-close-button">✕</button>
+            </div>
+            <hr>
+            <div id="candidates-subject">
+                <h4 class="text white" id="candidates-release-label">—</h4>
+                <div id="candidates-query-row">
+                    <span class="text default-muted candidates-query-label">query</span>
+                    <input type="text" id="candidates-query-input" class="releases-filter-input">
+                    <button type="button" id="candidates-requery-button" class="columns-toggle-button">Re-search</button>
+                </div>
+                <div id="candidate-filters">
+                    <label class="candidate-filter-toggle">
+                        <input type="checkbox" id="candidate-free-slot-only">
+                        <span class="text default-secondary">free slot only</span>
+                    </label>
+                    <label class="candidate-filter-toggle">
+                        <input type="checkbox" id="candidate-complete-only">
+                        <span class="text default-secondary">complete albums only</span>
+                    </label>
+                    <label class="candidate-filter-range">
+                        <span class="text default-secondary">min score</span>
+                        <input type="range" id="candidate-min-score" min="0" max="100" step="5" value="0">
+                        <span class="text default" id="candidate-min-score-value">0</span>
+                    </label>
+                    <div id="candidate-format-filters"></div>
+                </div>
+            </div>
+            <div class="scrollable" id="candidates-scrollable"></div>
         </div>
     </div>
 </div>
 <script type="module" src="scripts/main.js"></script>
 </body>
 </html>
-

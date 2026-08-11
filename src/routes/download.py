@@ -106,6 +106,11 @@ def _serialize_candidate(candidate: dict) -> dict:
         "audio_file_count": candidate["audio_file_count"],
         "detected_edition_tags": candidate["detected_edition_tags"],
         "formats": candidate["formats"],
+        "upload_speed": candidate["upload_speed"],
+        "queue_length": candidate["queue_length"],
+        "has_free_slot": candidate["has_free_slot"],
+        "total_size": candidate["total_size"],
+        "bitrates": candidate["bitrates"],
         "files": [
             {"filename": f["filename"], "size": f.get("size", 0)}
             for f in candidate["files"]

@@ -1098,6 +1098,9 @@ h4.white-secondary{
 h4.white-tertiary{
     color: var(--white-tertiary-text);
 }
+h4.yellow {
+    color: var(--yellow-text);
+}
 
 h5.green {
     color: var(--green-text);

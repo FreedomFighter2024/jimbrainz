@@ -403,9 +403,73 @@ function getTrackString(media) {
 
 
 
+const EDITION_KEYWORDS = [
+    { regex: /super deluxe/, label: 'SUPER DELUXE' },
+    { regex: /deluxe/, label: 'DELUXE' },
+    { regex: /box set|boxset/, label: 'BOX SET' },
+    { regex: /anniversary/, label: 'ANNIVERSARY' },
+    { regex: /expanded/, label: 'EXPANDED' },
+    { regex: /limited edition/, label: 'LIMITED' },
+    { regex: /special edition/, label: 'SPECIAL EDITION' },
+];
+
 function isRemaster(release) {
     const haystack = `${release.disambiguation || ''} ${release.title || ''}`.toLowerCase();
     return haystack.includes('remaster');
+}
+
+function getEditionTags(release) {
+    const haystack = `${release.disambiguation || ''} ${release.title || ''}`.toLowerCase();
+    const tags = [];
+
+    if (isRemaster(release)) tags.push('REMASTER');
+
+    for (const { regex, label } of EDITION_KEYWORDS) {
+        if (regex.test(haystack)) {
+            tags.push(label);
+            if (label === 'SUPER DELUXE') break; // skip the plain DELUXE match on the same text
+        }
+    }
+
+    if (release.packaging === 'Box' && !tags.includes('BOX SET')) {
+        tags.push('BOX SET');
+    }
+
+    return tags;
+}
+
+function getSortableDate(release) {
+    const dateStr = release['release-events']?.[0]?.date || release.date;
+    if (!dateStr) return -1;
+
+    const [y, m, d] = dateStr.split('-');
+    const year = (y || '0000').padStart(4, '0');
+    const month = (m || '01').padStart(2, '0');
+    const day = (d || '01').padStart(2, '0');
+
+    return parseInt(`${year}${month}${day}`, 10);
+}
+
+function sortReleasesByDateDesc(releases) {
+    return [...releases].sort((a, b) => getSortableDate(b) - getSortableDate(a));
+}
+
+function formatReleaseDate(dateStr) {
+    if (!dateStr || dateStr === 'N/A') return 'N/A';
+
+    const parts = dateStr.split('-');
+
+    if (parts.length === 3) {
+        const [y, m, d] = parts;
+        return `${m}-${d}-${y}`;
+    }
+
+    if (parts.length === 2) {
+        const [y, m] = parts;
+        return `${m}-${y}`;
+    }
+
+    return parts[0];
 }
 
 
@@ -417,10 +481,11 @@ function createReleaseElement(release, releaseGroupId, artistId) {
     const status = release.status || 'N/A';
     const countryCode = getCountryCode(release);
     const countryDisplay = release['release-events']?.[0]?.area?.['iso-3166-1-codes']?.[0] || 'N/A';
-    const date = release['release-events']?.[0]?.date || release.date || 'N/A';
+    const rawDate = release['release-events']?.[0]?.date || release.date || 'N/A';
+    const date = formatReleaseDate(rawDate);
     const releaseId = release.id;
     const media = release.media || [];
-    const remastered = isRemaster(release);
+    const editionTags = getEditionTags(release);
     const disambiguation = release.disambiguation || '';
     const wrapper = document.createElement('div');
     wrapper.className = 'release-wrapper';
@@ -441,7 +506,7 @@ function createReleaseElement(release, releaseGroupId, artistId) {
             <h4 class="text default releaseFormat">[${format}]▷╲</h4>
             <h4 class="text default releaseTracks">(${tracks}),&nbsp;</h4>
             <h4 class="text default-secondary releaseStatus">${status}</h4>
-            ${remastered ? `<h4 class="text yellow releaseRemaster" title="${disambiguation}">[REMASTER]</h4>` : ''}
+            ${editionTags.map(tag => `<h4 class="text yellow releaseEditionTag" title="${disambiguation}">[${tag}]</h4>`).join('')}
         </div>
         <div class="non-shrinkable">
             ${countryCode ? `<img src="https://flagcdn.com/${countryCode}.svg">` : `<img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/No_flag.svg">`}
@@ -529,6 +594,10 @@ function millisecondsToMinutesAndSeconds(ms) {
 }
 
 function createReleaseGroupElement(releaseGroup, releases = null) {
+    if (releases && releases.length) {
+        releases = sortReleasesByDateDesc(releases);
+    }
+
     const artist = getArtistNames(releaseGroup['artist-credit']);
     const title = releaseGroup.title || 'N/A';
     const year = getYear(releaseGroup['first-release-date']);
@@ -625,7 +694,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
             try {
                 const result = await fetchReleases(releaseGroupId);
                 
-                const fetchedReleases = result.releases;
+                const fetchedReleases = sortReleasesByDateDesc(result.releases);
 
                 const newHtml = 
                 `

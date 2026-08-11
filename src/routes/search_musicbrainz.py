@@ -1,4 +1,4 @@
-from src.api.musicbrainz_endpoint import MusicBrainzClient
+from src.api.musicbrainz_endpoint import MusicBrainzClient, MusicBrainzUnavailable
 from fastapi import APIRouter, HTTPException, Query, Request
 from src.logger import logger
 
@@ -14,7 +14,15 @@ async def fully_search(
         mb_client = request.app.state.musicbrainz_client
         search_result = await mb_client.fully_search(query, limit)
         return search_result
-    
+
+    except MusicBrainzUnavailable as e:
+        #? 503 not 500: nothing is wrong with the request, the upstream is just down
+        raise HTTPException(
+            status_code=503,
+            detail=f"MusicBrainz is unreachable right now, so this search couldn't run. "
+                   f"This isn't a problem with your search terms - try again shortly. ({e})",
+        )
+
     except Exception as e:
         logger.error(f"Exception in /fully_search endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error searching MusicBrainz: {e}")

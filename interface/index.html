@@ -127,10 +127,12 @@
                         <span class="text default" id="candidate-min-score-value">0</span>
                     </label>
                     <div id="candidate-format-filters"></div>
-                </div>
-                <div id="candidate-signal-filters">
-                    <span class="text default-muted candidate-signal-filters-label">minimum per signal</span>
-                    <div id="candidate-signal-sliders"></div>
+                    <div class="releases-columns-control" id="candidate-signals-control">
+                        <button type="button" id="candidate-signals-button" class="columns-toggle-button">
+                            Signals ▾<span id="candidate-signals-badge" class="signals-badge" hidden>0</span>
+                        </button>
+                        <div class="columns-dropdown" id="candidate-signal-sliders"></div>
+                    </div>
                 </div>
             </div>
             <div class="scrollable" id="candidates-scrollable"></div>

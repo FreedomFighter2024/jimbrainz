@@ -59,3 +59,47 @@ def test_env_strips_surrounding_whitespace(monkeypatch):
 def test_env_default_is_used_when_absent(monkeypatch):
     monkeypatch.delenv("JB_TEST_ABSENT", raising=False)
     assert _env("JB_TEST_ABSENT", "fallback") == "fallback"
+
+
+# --------------------------------------------------------- musicbrainz availability
+
+def test_unreachable_musicbrainz_is_distinguished_from_no_results():
+    """
+    Regression: fully_search reached straight for "release-groups", but request_with_retries
+    returns an error dict when it gives up. The resulting KeyError surfaced as
+    "Error searching MusicBrainz: 'release-groups'", which reads like a bad query - so an
+    outage looked like a user mistake, and people blamed their search terms (including their
+    capitalisation) for it.
+    """
+    import asyncio
+
+    from src.api.musicbrainz_endpoint import MusicBrainzClient, MusicBrainzUnavailable
+
+    client = MusicBrainzClient()
+
+    async def failing(endpoint, params, retry=True):
+        return {"error": "musicbrainz ping failed with connection error",
+                "status": "failed", "code": "CONNECTION_ERROR"}
+
+    client.request_with_retries = failing
+
+    try:
+        asyncio.run(client.fully_search("artist:\"tame impala\""))
+    except MusicBrainzUnavailable as e:
+        assert "connection error" in str(e)
+    else:
+        raise AssertionError("expected MusicBrainzUnavailable")
+
+
+def test_genuinely_empty_results_are_not_treated_as_an_outage():
+    import asyncio
+
+    from src.api.musicbrainz_endpoint import MusicBrainzClient
+
+    client = MusicBrainzClient()
+
+    async def empty(endpoint, params, retry=True):
+        return {"release-groups": [], "count": 0}
+
+    client.request_with_retries = empty
+    assert asyncio.run(client.fully_search("artist:\"nonexistent band\"")) == {}

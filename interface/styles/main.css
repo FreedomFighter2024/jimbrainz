@@ -2106,33 +2106,40 @@ span.red { color: var(--red-text); }
 .download-progress-fill.bad { background-color: var(--red-text); }
 
 
-#candidate-signal-filters {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--muted-text);
-}
-
-.candidate-signal-filters-label {
-    font-family: var(--font-family-condensed);
-    font-size: 0.78em;
-    text-transform: lowercase;
-}
-
 #candidate-signal-sliders {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 4px 14px;
-    margin-top: 5px;
+    min-width: 260px;
+    gap: 6px;
+}
+
+#candidate-signals-control.has-active .columns-toggle-button {
+    color: var(--main-hover-text);
+    border-color: var(--main-secondary-text);
+}
+
+.signals-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    min-width: 1.3em;
+    height: 1.3em;
+    padding: 0 3px;
+    border-radius: 50%;
+    background-color: var(--main-secondary-text);
+    color: var(--background-color);
+    font-size: 0.75em;
+    font-weight: var(--font-bold);
 }
 
 .candidate-signal-slider {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     font-family: var(--font-family-condensed);
-    font-size: 0.8em;
+    font-size: 0.85em;
     cursor: pointer;
-    opacity: 0.75;
+    white-space: nowrap;
+    opacity: 0.8;
 }
 
 .candidate-signal-slider.active {
@@ -2145,7 +2152,7 @@ span.red { color: var(--red-text); }
 
 .candidate-signal-slider input[type="range"] {
     flex: 1;
-    min-width: 0;
+    min-width: 90px;
     accent-color: var(--main-secondary-text);
     cursor: pointer;
 }
@@ -2155,6 +2162,24 @@ span.red { color: var(--red-text); }
 }
 
 .candidate-signal-value {
-    flex: 0 0 1.8em;
+    flex: 0 0 2em;
     text-align: right;
+}
+
+.signals-reset-button {
+    align-self: flex-end;
+    margin-top: 4px;
+    background: transparent;
+    border: 1px solid var(--muted-text);
+    border-radius: 3px;
+    color: var(--white-secondary-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.8em;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.signals-reset-button:hover {
+    color: var(--white-text);
+    border-color: var(--white-secondary-text);
 }

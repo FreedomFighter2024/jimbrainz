@@ -4,6 +4,15 @@ import httpx
 from collections import deque
 from src.config import Config
 from src.logger import logger
+class MusicBrainzUnavailable(Exception):
+    """
+    Raised when MusicBrainz couldn't be reached at all, as opposed to returning no matches.
+
+    The distinction matters to whoever is staring at the screen: "no results" means try a
+    different search, "unreachable" means wait and try the same one again.
+    """
+
+
 class RateLimit:
     max_requests = 4
     time_window = 5.0 
@@ -223,6 +232,19 @@ class MusicBrainzClient:
             "limit": limit
         }
         release_groups =  await self.request_with_retries("release-group/", params)
+
+        #? request_with_retries returns an error dict rather than raising when it gives up, so
+        #? reaching straight for "release-groups" threw a KeyError that surfaced as
+        #? "Error searching MusicBrainz: 'release-groups'" - a message that reads like a bad
+        #? query rather than "the service is down". MusicBrainz goes unreachable often enough
+        #? that people reasonably blamed their own search terms for it.
+        if release_groups.get("status") == "failed" or "release-groups" not in release_groups:
+            reason = release_groups.get("error", "unknown error")
+            logger.error(
+                f"MusicBrainz is unreachable, this is not a problem with your search ({reason})",
+                extra={"frontend": True, "src": "musicbrainz"},
+            )
+            raise MusicBrainzUnavailable(reason)
 
         if not release_groups["release-groups"]:
             logger.info(f"no release groups found for query: ({query})", extra={"frontend": True, "src":"musicbrainz"})

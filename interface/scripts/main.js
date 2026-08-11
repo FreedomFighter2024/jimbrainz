@@ -595,6 +595,11 @@ async function handleSearch() {
 
     catch (error) {
         console.error(`Search error: ${error.message}`);
+        // surface it in the results area - a silent console error looks like "no matches",
+        // which sends people rewording a search that never actually ran
+        document.getElementById('search-results-scrollable').innerHTML =
+            `<h4 class="text red candidates-status">${error.message}</h4>`;
+        updateResultsSummary();
     }
 }
 
@@ -825,6 +830,29 @@ minScoreInput.addEventListener('input', (e) => {
     renderCandidates();
 });
 
+/*
+ * Per-signal thresholds live in a dropdown rather than inline: six always-visible sliders
+ * ate most of the panel, and this is a tuning control you reach for occasionally, not
+ * something to stare at. The badge keeps any active threshold from becoming hidden state.
+ */
+const candidateSignalsControl = document.getElementById('candidate-signals-control');
+const candidateSignalsBadge = document.getElementById('candidate-signals-badge');
+
+document.getElementById('candidate-signals-button').addEventListener('click', (e) => {
+    e.stopPropagation();
+    candidateSignalsControl.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+    if (!candidateSignalsControl.contains(e.target)) candidateSignalsControl.classList.remove('open');
+});
+
+function updateSignalsBadge() {
+    const active = Object.values(candidateFilterState.minSignals).filter(Boolean).length;
+    candidateSignalsBadge.hidden = active === 0;
+    candidateSignalsBadge.textContent = active;
+    candidateSignalsControl.classList.toggle('has-active', active > 0);
+}
+
 function renderCandidateSignalSliders() {
     const container = document.getElementById('candidate-signal-sliders');
     if (container.dataset.built) return;
@@ -850,12 +878,27 @@ function renderCandidateSignalSliders() {
             candidateFilterState.minSignals[signal] = Number(slider.value);
             readout.textContent = slider.value;
             wrapper.classList.toggle('active', Number(slider.value) > 0);
+            updateSignalsBadge();
             renderCandidates();
         });
+        slider.addEventListener('click', (e) => e.stopPropagation());
 
         wrapper.append(name, slider, readout);
         container.appendChild(wrapper);
     }
+
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'signals-reset-button';
+    reset.textContent = 'reset';
+    reset.addEventListener('click', (e) => {
+        e.stopPropagation();
+        for (const input of container.querySelectorAll('input[type="range"]')) {
+            input.value = '0';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+    container.appendChild(reset);
 }
 renderCandidateSignalSliders();
 

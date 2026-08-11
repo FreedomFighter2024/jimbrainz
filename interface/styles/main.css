@@ -153,18 +153,6 @@ body {
                     0 0 12.5px #cc3e8ccb;
 
             }
-            .ok > .connection-info-name.lidarr{
-                background-color: #02da84;
-                color: #f0d8e0;
-                font-weight:var(--font-bold);
-                font-style: italic;
-                font-family:var(--font-family);
-                box-shadow: 
-                    0 0 3.25px #009258cd,
-                    0 0 8.25px #009258cd,
-                    0 0 12.5px #009258cd;
-
-            }
             .ok > .connection-info-name.slskd{
                 background-color: #44a7f8;
                 color: var(--main-hover-text);
@@ -226,19 +214,6 @@ body {
                 }
                 .event-src{
                     text-decoration:underline;
-                }
-                .event-src.lidarr{
-                    background-color: #009257;
-                    color: #f0d8e0;
-                    font-weight:var(--font-bold);
-                    font-style: italic;
-                    font-size: 0.80em;
-                    font-family:var(--font-family);
-                    
-                    padding-left:6px;
-                    padding-right:7px;
-                    padding-bottom:2px;
-                    padding-top:1px;
                 }
                 .event-src.musicbrainz{
                     background-color: #CC3E8B;

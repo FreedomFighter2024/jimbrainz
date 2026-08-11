@@ -15,3 +15,5 @@ TODO.md
 
 .dockerignore
 .devdata/
+
+.DS_Store

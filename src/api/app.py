@@ -69,10 +69,10 @@ def start() -> FastAPI:
         return response
 
     logger.info("adding routers")
-    app.include_router(interface_logs.router, prefix="/lidbrainz/interface_logs", tags=["interface_logs"])
-    app.include_router(search_musicbrainz.router, prefix="/lidbrainz/search_musicbrainz", tags=["search_musicbrainz"])
-    app.include_router(monitor_slskd.router, prefix="/lidbrainz/monitor_slskd", tags=["monitor_slskd"])
-    app.include_router(download.router, prefix="/lidbrainz/download", tags=["download"])
+    app.include_router(interface_logs.router, prefix="/jimbrainz/interface_logs", tags=["interface_logs"])
+    app.include_router(search_musicbrainz.router, prefix="/jimbrainz/search_musicbrainz", tags=["search_musicbrainz"])
+    app.include_router(monitor_slskd.router, prefix="/jimbrainz/monitor_slskd", tags=["monitor_slskd"])
+    app.include_router(download.router, prefix="/jimbrainz/download", tags=["download"])
 
     logger.info("mounting static interface files")
     interface_path = Path(__file__).parent.parent.parent / "interface"

@@ -1,7 +1,7 @@
 import {convertTime, sleep} from './utils.js';
 
 async function pingMusicbrainz() {
-    const response = await fetch(`/lidbrainz/search_musicbrainz/ping`);
+    const response = await fetch(`/jimbrainz/search_musicbrainz/ping`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -49,7 +49,7 @@ async function checkMusicbrainzPing() {
 }
 
 async function pingSlskd() {
-    const response = await fetch(`/lidbrainz/monitor_slskd/ping`);
+    const response = await fetch(`/jimbrainz/monitor_slskd/ping`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -132,7 +132,7 @@ function addConnectionToInterface(
 
 
 function appendEvent(eventType, content, src) {
-    const lidbrainzEventLog = document.getElementById('logs-scrollable');
+    const eventLogElement = document.getElementById('logs-scrollable');
     const eventItem = document.createElement('div');
     eventItem.className = 'event-item';
     const timeString = convertTime(new Date());
@@ -152,15 +152,15 @@ function appendEvent(eventType, content, src) {
             <h5 class="text default-secondary event-content">${content}</h5>
         </div>
     `;
-    lidbrainzEventLog.prepend(eventItem);
+    eventLogElement.prepend(eventItem);
     return eventItem;
 }
 
 
-let lidbrainzEventSource = null;
+let eventSource = null;
 
 async function initEventStream({ refreshServerConfig }) {
-    const lidbrainzEventLog = document.getElementById('logs-scrollable');
+    const eventLogElement = document.getElementById('logs-scrollable');
 
     const serverConfig = await refreshServerConfig();
 
@@ -172,19 +172,19 @@ async function initEventStream({ refreshServerConfig }) {
         appendEvent('INFO', 'Loaded server config', 'slskd');
     }
 
-    lidbrainzEventSource = new EventSource('/lidbrainz/interface_logs/interface_logs');
-    lidbrainzEventSource.onerror = function(error){
+    eventSource = new EventSource('/jimbrainz/interface_logs/interface_logs');
+    eventSource.onerror = function(error){
         const eventItem = appendEvent('ERROR', 'Failed to connect to backend');
 
         // collapse repeats of the same message instead of flooding the log
-        if (lidbrainzEventLog.children[1] &&
-            lidbrainzEventLog.children[1].children[1].innerHTML == eventItem.children[1].innerHTML) {
+        if (eventLogElement.children[1] &&
+            eventLogElement.children[1].children[1].innerHTML == eventItem.children[1].innerHTML) {
             console.log("next element same as last")
-            lidbrainzEventLog.removeChild(lidbrainzEventLog.children[1])
+            eventLogElement.removeChild(eventLogElement.children[1])
         }
     }
 
-    lidbrainzEventSource.onmessage = async function(event) {
+    eventSource.onmessage = async function(event) {
         const data = JSON.parse(event.data);
         appendEvent(data.event_type, data.event_content, data.src);
     }
@@ -203,7 +203,7 @@ export async function init({ refreshServerConfig }) {
 }
 
 window.addEventListener('beforeunload', () => {
-    if (lidbrainzEventSource) {
-        lidbrainzEventSource.close();
+    if (eventSource) {
+        eventSource.close();
     }
 });

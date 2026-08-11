@@ -48,7 +48,7 @@ function loadAllCoverImages(parentContainer) {
 
 async function fetchServerConfig() {
     console.log("getting server config")
-    const response = await fetch(`/lidbrainz/monitor_slskd/config`);
+    const response = await fetch(`/jimbrainz/monitor_slskd/config`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -234,7 +234,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function fetchJobs() {
-    const response = await fetch('/lidbrainz/download/jobs');
+    const response = await fetch('/jimbrainz/download/jobs');
     if (!response.ok) throw new Error('failed to fetch download jobs');
     return response.json();
 }
@@ -432,7 +432,7 @@ async function searchReleaseGroups(query) {
         limit: parseInt(limitValueDisplay.innerText)
     });
 
-    const response = await fetch(`/lidbrainz/search_musicbrainz/fully_search?${params}`);
+    const response = await fetch(`/jimbrainz/search_musicbrainz/fully_search?${params}`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -449,7 +449,7 @@ async function fetchReleases(releaseGroupMbid) {
         release_group_mbid: releaseGroupMbid
     });
 
-    const response = await fetch(`/lidbrainz/search_musicbrainz/releases?${params}`);
+    const response = await fetch(`/jimbrainz/search_musicbrainz/releases?${params}`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -539,7 +539,7 @@ function processSearchResults(results) {
 
 async function findCandidates(expected) {
     const settings = getSettings();
-    const response = await fetch(`/lidbrainz/download/find_candidates`, {
+    const response = await fetch(`/jimbrainz/download/find_candidates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...expected, format_preference: settings.formatPreference })
@@ -558,7 +558,7 @@ async function findCandidates(expected) {
 async function enqueueCandidate(candidate) {
     // the release travels with the download so the server can remember what these files are
     // for - slskd only ever knows "bob is sending you some files"
-    const response = await fetch(`/lidbrainz/download/enqueue`, {
+    const response = await fetch(`/jimbrainz/download/enqueue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

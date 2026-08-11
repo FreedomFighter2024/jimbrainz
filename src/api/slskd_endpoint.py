@@ -3,7 +3,7 @@ import re
 import traceback
 import slskd_api
 from requests.exceptions import HTTPError, ConnectionError
-from src.config import Config
+from src.config import Config, describe_slskd_url
 from src.logger import logger
 
 
@@ -32,10 +32,17 @@ class SlskdClient:
 
         try:
             if self.client is None:
-                if not Config.SLSKD_URL:
-                    logger.warning("SLSKD_URL is not configured", extra={"frontend": True, "src":"slskd"})
-                    raise ValueError("SLSKD_URL is not configured")
-                
+                # Check the URL is actually usable before handing it over. slskd_api builds its
+                # base URL by urljoin-ing the host, so a blank or scheme-less value doesn't fail
+                # here - it fails much later inside requests as
+                # "Invalid URL '///api/v0/searches': No scheme supplied", which says nothing
+                # about which setting is wrong or where to fix it.
+                url_problem = describe_slskd_url(Config.SLSKD_URL)
+                if url_problem:
+                    message = f"SLSKD_URL is unusable ({url_problem})"
+                    logger.error(message, extra={"frontend": True, "src": "slskd"})
+                    raise ValueError(message)
+
                 if not Config.SLSKD_APIKEY:
                     logger.warning("SLSKD_APIKEY is not configured", extra={"frontend": True, "src":"slskd"})
                     raise ValueError("SLSKD_APIKEY is not configured")

@@ -6,16 +6,22 @@ services:
     image: ghcr.io/real-lizardwizard/jimbrainz:experimental
     container_name: jimbrainz
     restart: unless-stopped
+
+    # everything you configure lives in .env. Deliberately NOT repeated in an `environment:`
+    # block below - `environment:` wins over `env_file`, so listing SLSKD_URL=${SLSKD_URL}
+    # there means compose interpolates it a second time from its own environment, and if that
+    # lookup comes back empty it silently overwrites the perfectly good value .env just
+    # supplied. That failure looks like slskd being unconfigured for no visible reason.
     env_file:
       - .env
+
     environment:
-      - SLSKD_URL=${SLSKD_URL}
-      - SLSKD_APIKEY=${SLSKD_APIKEY}
-      - MUSICBRAINZ_USERAGENT=${MUSICBRAINZ_USERAGENT}
+      # only fixed container-internal paths belong here - these match the mounts below and
+      # aren't yours to change in .env
       - SLSKD_DOWNLOAD_PATH=/downloads
       - LIBRARY_PATH=/music
       - DB_PATH=/config/jimbrainz.db
-      - ORGANIZE_MODE=${ORGANIZE_MODE:-dry_run}
+
     volumes:
       # jimbrainz needs to SEE slskd's finished downloads to organize them, so this must be
       # the same underlying directory slskd writes to. If the two containers disagree about
@@ -25,6 +31,7 @@ services:
       - /path/to/music:/music
       # holds the database that remembers which download belongs to which release
       - /path/to/jimbrainz/config:/config
+
     ports:
       - "8080:8080"
     # this exposes the port on your host, to change it modify xxxx:8080, xxxx being

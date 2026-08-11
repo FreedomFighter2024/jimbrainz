@@ -12,7 +12,9 @@ Phase 3 hooks the organizer onto the queued -> complete transition.
 
 import asyncio
 
+from src.config import Config
 from src.logger import logger
+from src.organizer import organize_job
 from src.store import index_transfers_by_user, summarize_transfers
 
 
@@ -58,6 +60,7 @@ async def poll_downloads_once(slskd_client, store, missing_counts: dict[int, int
         if summary["files_done"] >= summary["files_total"]:
             logger.info(f"finished downloading {label}", extra={"frontend": True, "src": "slskd"})
             await store.update_status(job_id, "complete")
+            await _organize_if_enabled(job, store)
             continue
 
         if summary.get("files_failed") and summary["files_done"] + summary["files_failed"] >= summary["files_total"]:
@@ -71,6 +74,53 @@ async def poll_downloads_once(slskd_client, store, missing_counts: dict[int, int
         if job["status"] == "queued" and summary["progress"] > 0:
             logger.info(f"downloading {label}", extra={"frontend": True, "src": "slskd"})
             await store.update_status(job_id, "downloading")
+
+
+async def _organize_if_enabled(job: dict, store) -> None:
+    """
+    Hand a finished download to the organizer.
+
+    Kept off the critical path deliberately: a job that downloaded fine but failed to file
+    itself is recorded as such and left on disk in slskd's folder, rather than being marked
+    failed as though the download itself had gone wrong. Those are different problems and
+    want different fixes.
+    """
+    if not Config.organizing_enabled():
+        return
+
+    await store.update_status(job["id"], "organizing")
+
+    try:
+        results = await organize_job(
+            job, Config.SLSKD_DOWNLOAD_PATH, Config.LIBRARY_PATH, Config.ORGANIZE_MODE
+        )
+
+        if results.get("dry_run"):
+            #? nothing actually moved, so don't claim it did
+            await store.update_status(job["id"], "complete", "dry run - not organized")
+
+        elif results["failed"]:
+            await store.update_status(
+                job["id"], "complete", f"{results['failed']} file(s) failed to organize"
+            )
+
+        elif not results["organized"] and not results.get("skipped"):
+            #? nothing was placed and nothing was already there - usually the download path
+            #? doesn't actually point at slskd's files. Saying "organized" here would send
+            #? the user looking for an album that was never filed.
+            await store.update_status(
+                job["id"], "complete", "nothing could be organized, check SLSKD_DOWNLOAD_PATH"
+            )
+
+        else:
+            await store.update_status(job["id"], "organized")
+
+    except Exception as e:
+        logger.error(
+            f"organizing {job['artist']} - {job['album']} failed: {e}",
+            extra={"frontend": True, "src": "slskd"},
+        )
+        await store.update_status(job["id"], "complete", f"organize failed: {e}")
 
 
 async def run_download_poller(slskd_client, store) -> None:

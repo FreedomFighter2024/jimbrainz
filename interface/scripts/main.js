@@ -208,7 +208,8 @@ const downloadsScrollable = document.getElementById('downloads-scrollable');
 const downloadsBadge = document.getElementById('downloads-active-badge');
 let downloadsPollTimer = null;
 
-const ACTIVE_STATUSES = new Set(['queued', 'downloading']);
+// organizing counts as active so the panel keeps polling through the filing step
+const ACTIVE_STATUSES = new Set(['queued', 'downloading', 'organizing']);
 
 function isDownloadsOpen() {
     return downloadsControl.classList.contains('open');
@@ -288,6 +289,8 @@ function renderDownloads(jobs, trackingEnabled) {
         const detail = job.error
             ? job.error
             : [`${job.files_done}/${job.files_total} files`, speed].filter(Boolean).join(' · ');
+        // a note on an otherwise-fine job (dry run, nothing found) is a warning, not a failure
+        const detailClass = job.status === 'failed' ? 'red' : job.error ? 'yellow' : 'default-secondary';
 
         row.innerHTML = `
             <div class="download-job-head">
@@ -297,7 +300,7 @@ function renderDownloads(jobs, trackingEnabled) {
             <div class="download-job-meta">
                 <span class="text default-secondary">${job.username}</span>
                 <span class="text default-muted">·</span>
-                <span class="text default-secondary">${detail}</span>
+                <span class="text ${detailClass}">${detail}</span>
             </div>
             <div class="download-progress-track">
                 <div class="download-progress-fill ${JOB_STATUS_CLASS[job.status] || ''}" style="width:${percent}%"></div>

@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>lidbrainz</Name>
+  <Name>jimbrainz</Name>
   <Repository>ghcr.io/real-lizardwizard/jimbrainz:latest</Repository>
   <Registry>https://github.com/real-lizardwizard/jimbrainz/pkgs/container/jimbrainz</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <Support>https://github.com/real-lizardwizard/jimbrainz</Support>
   <Project>https://github.com/real-lizardwizard/jimbrainz</Project>
-  <Overview>search bar for musicbrainz to send to lidarr</Overview>
+  <Overview>search bar for musicbrainz that downloads through slskd</Overview>
   <Category>Tools: Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
   <TemplateURL>false</TemplateURL>
@@ -20,7 +20,11 @@
   <DonateLink/>
   <Requires/>
   <Config Name="WebUI Port" Target="8080" Default="22000" Mode="tcp" Description="Port of the web ui" Type="Port" Display="always" Required="true" Mask="false">22000</Config>
-  <Config Name="lidarr instance URL" Target="LIDARR_URL" Default="http://localhost:8686" Mode="" Description="url of your lidarr instance" Type="Variable" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="lidarr instance API key" Target="LIDARR_APIKEY" Default="" Mode="" Description="API key for your lidarr instance" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="slskd URL" Target="SLSKD_URL" Default="http://localhost:5030" Mode="" Description="url of your slskd instance" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="slskd API key" Target="SLSKD_APIKEY" Default="" Mode="" Description="API key for your slskd instance" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="custom musicbrainz user agent" Target="MUSICBRAINZ_USERAGENT" Default="" Mode="" Description="User agent for your personal instance" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="organize mode" Target="ORGANIZE_MODE" Default="dry_run" Mode="" Description="off | dry_run | copy | move. Leave on dry_run until the event log shows it finding your files, then switch to copy or move." Type="Variable" Display="always" Required="false" Mask="false">dry_run</Config>
+  <Config Name="slskd downloads" Target="/downloads" Default="" Mode="rw" Description="Must be the SAME directory slskd writes finished downloads to, or organizing will find nothing." Type="Path" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="music library" Target="/music" Default="" Mode="rw" Description="Where organized albums get filed" Type="Path" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="config" Target="/config" Default="" Mode="rw" Description="Holds the database remembering which download belongs to which release" Type="Path" Display="always" Required="true" Mask="false"></Config>
 </Container>

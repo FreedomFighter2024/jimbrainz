@@ -1943,6 +1943,9 @@ span.default-muted { color: var(--main-muted-text); }
 span.white { color: var(--white-text); }
 span.white-secondary { color: var(--white-secondary-text); }
 span.white-tertiary { color: var(--white-tertiary-text); }
+span.yellow { color: var(--yellow-text); }
+span.green { color: var(--green-text); }
+span.red { color: var(--red-text); }
 
 
 #candidate-filters {

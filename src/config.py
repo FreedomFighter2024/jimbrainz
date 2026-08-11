@@ -11,10 +11,15 @@ class Config:
     SLSKD_URL = os.getenv("SLSKD_URL")
     SLSKD_APIKEY = os.getenv("SLSKD_APIKEY")
 
-    #? filesystem paths, only needed once the organizer lands (phase 3)
+    #? filesystem paths for organizing finished downloads
     SLSKD_DOWNLOAD_PATH = os.getenv("SLSKD_DOWNLOAD_PATH")
     LIBRARY_PATH = os.getenv("LIBRARY_PATH")
     DB_PATH = os.getenv("DB_PATH", "/config/jimbrainz.db")
+
+    #? off | dry_run | copy | move. Defaults to dry_run deliberately: organizing is the only
+    #? thing here that writes to your filesystem, so a fresh install reports what it would
+    #? have done rather than acting on a possibly mis-mapped volume.
+    ORGANIZE_MODE = os.getenv("ORGANIZE_MODE", "dry_run")
 
     @classmethod
     def exists(cls, env_var: str):
@@ -51,3 +56,20 @@ class Config:
             logger.warning("LIBRARY_PATH not found in environment, organizing downloaded files will be disabled")
 
         else: logger.info(f"LIBRARY_PATH found!")
+
+        if cls.ORGANIZE_MODE not in ("off", "dry_run", "copy", "move"):
+            logger.error(
+                f"ORGANIZE_MODE is '{cls.ORGANIZE_MODE}', expected one of off/dry_run/copy/move. "
+                f"Falling back to dry_run.",
+                extra={"frontend": True},
+            )
+            cls.ORGANIZE_MODE = "dry_run"
+
+        if cls.organizing_enabled():
+            logger.info(f"organizing enabled in '{cls.ORGANIZE_MODE}' mode")
+
+        else: logger.info("organizing disabled (needs SLSKD_DOWNLOAD_PATH + LIBRARY_PATH, and ORGANIZE_MODE not 'off')")
+
+    @classmethod
+    def organizing_enabled(cls) -> bool:
+        return bool(cls.SLSKD_DOWNLOAD_PATH and cls.LIBRARY_PATH and cls.ORGANIZE_MODE != "off")

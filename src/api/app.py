@@ -49,6 +49,25 @@ def start() -> FastAPI:
         lifespan=lifespan
     )
 
+    @app.middleware("http")
+    async def revalidate_interface_assets(request, call_next):
+        """
+        Make the browser revalidate the interface files instead of trusting its cache.
+
+        Without this, updating the container leaves people staring at the old CSS and JS
+        until they think to hard-refresh - the failure mode being "I upgraded and nothing
+        changed", which is miserable to diagnose. `no-cache` still allows a conditional
+        request, so with StaticFiles' ETags the normal case is a cheap 304 rather than a
+        re-download. It cost real time during development before being noticed here.
+        """
+        response = await call_next(request)
+
+        path = request.url.path
+        if path == "/" or path.startswith(("/scripts/", "/styles/", "/assets/")):
+            response.headers["Cache-Control"] = "no-cache"
+
+        return response
+
     logger.info("adding routers")
     app.include_router(interface_logs.router, prefix="/lidbrainz/interface_logs", tags=["interface_logs"])
     app.include_router(search_musicbrainz.router, prefix="/lidbrainz/search_musicbrainz", tags=["search_musicbrainz"])

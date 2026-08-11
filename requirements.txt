@@ -20,6 +20,7 @@ hyperframe==6.1.0
 idna==3.11
 multidict==6.7.0
 musicbrainzngs==0.7.1
+mutagen==1.48.1
 propcache==0.4.1
 pydantic==2.12.5
 pydantic_core==2.41.5

@@ -185,3 +185,83 @@ def test_another_users_identical_filenames_do_not_complete_our_job(tmp_path):
 
     asyncio.run(poll_downloads_once(FakeSlskd(downloads), store, {}))
     assert status_of(store, job_id) == "queued"
+
+
+# ---------------------------------------------------------------- organize hook
+
+def _all_done():
+    return transfers(("share/album/01.flac", "Completed, Succeeded", 100.0),
+                     ("share/album/02.flac", "Completed, Succeeded", 100.0))
+
+
+def test_completed_job_is_left_alone_when_organizing_is_disabled(tmp_path, monkeypatch):
+    from src.config import Config
+    monkeypatch.setattr(Config, "SLSKD_DOWNLOAD_PATH", None)
+    monkeypatch.setattr(Config, "LIBRARY_PATH", None)
+
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+
+    assert status_of(store, job_id) == "complete"
+
+
+def test_dry_run_does_not_claim_the_job_was_organized(tmp_path, monkeypatch):
+    """
+    The status has to stay honest: nothing moved, so 'organized' would be a lie the user
+    would only discover by going and looking at their library.
+    """
+    from src.config import Config
+    downloads = tmp_path / "downloads" / "album"
+    downloads.mkdir(parents=True)
+    (downloads / "01.flac").write_bytes(b"x")
+    (downloads / "02.flac").write_bytes(b"x")
+
+    monkeypatch.setattr(Config, "SLSKD_DOWNLOAD_PATH", str(tmp_path / "downloads"))
+    monkeypatch.setattr(Config, "LIBRARY_PATH", str(tmp_path / "music"))
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "dry_run")
+
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+
+    job = next(j for j in asyncio.run(store.list_jobs()) if j["id"] == job_id)
+    assert job["status"] == "complete"
+    assert "dry run" in job["error"]
+    assert not (tmp_path / "music").exists()
+
+
+def test_successful_organize_marks_the_job_organized(tmp_path, monkeypatch):
+    from src.config import Config
+    downloads = tmp_path / "downloads" / "album"
+    downloads.mkdir(parents=True)
+    (downloads / "01.flac").write_bytes(b"x")
+    (downloads / "02.flac").write_bytes(b"x")
+
+    monkeypatch.setattr(Config, "SLSKD_DOWNLOAD_PATH", str(tmp_path / "downloads"))
+    monkeypatch.setattr(Config, "LIBRARY_PATH", str(tmp_path / "music"))
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "copy")
+
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+
+    assert status_of(store, job_id) == "organized"
+    assert (tmp_path / "music" / "Boards of Canada").exists()
+
+
+def test_organize_failure_does_not_mark_the_download_failed(tmp_path, monkeypatch):
+    """
+    Downloading and filing are different problems. A download that arrived fine but couldn't
+    be filed must not look like a failed download - the files are on disk and fine.
+    """
+    from src.config import Config
+    monkeypatch.setattr(Config, "SLSKD_DOWNLOAD_PATH", str(tmp_path / "nonexistent"))
+    monkeypatch.setattr(Config, "LIBRARY_PATH", str(tmp_path / "music"))
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "copy")
+
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+
+    assert status_of(store, job_id) == "complete"

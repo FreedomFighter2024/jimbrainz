@@ -28,15 +28,24 @@
     <div id="main-content">
         <div id="left-sidebar">
             <div id="general-connection">
-                <h3 class="text default">░ ▒ ▓ connections ▓ ▒ ░</h3> 
+                <h3 class="text default">░ ▒ ▓ connections ▓ ▒ ░</h3>
                 <hr>
                 <div id="general-connection-status" class="text default glow">
 
                 </div>
             </div>
+            <button type="button" id="log-toggle-button">
+                <span>░ ▒ ▓ log ▓ ▒ ░</span>
+                <span id="log-unread-badge" class="log-unread-badge" hidden>0</span>
+            </button>
+        </div>
+        <div id="log-window">
             <div id="lidbrainz-connection">
                 <div id="lidbrainz-event-log">
-                    <h3 class="text default">░ ▒ ▓ event log ▓ ▒ ░</h3> 
+                    <div id="log-window-header">
+                        <h3 class="text default">░ ▒ ▓ event log ▓ ▒ ░</h3>
+                        <button type="button" id="log-close-button">✕</button>
+                    </div>
                     <hr>
                     <div class="scrollable" id="logs-scrollable">
                     </div>
@@ -68,43 +77,62 @@
                     <h3 class="text white-tertiary releaseGrpType">░ releaseType ░&nbsp;</h3>
                     <h3 class="text default matchScore">░ matchScore ░&nbsp;</h3>
                 </div>
+                <div id="results-toolbar">
+                    <input type="text" id="global-filter-input" class="releases-filter-input" placeholder="Filter releases...">
+                    <div class="releases-columns-control" id="global-filters-control">
+                        <button type="button" id="filters-toggle-button" class="columns-toggle-button">Filters ▾</button>
+                        <div class="columns-dropdown" id="filters-dropdown"></div>
+                    </div>
+                    <div class="releases-columns-control" id="global-columns-control">
+                        <button type="button" id="columns-toggle-button" class="columns-toggle-button">Columns ▾</button>
+                        <div class="columns-dropdown" id="columns-dropdown"></div>
+                    </div>
+                </div>
+                <div id="tag-filter-row"></div>
                 <div class="scrollable" id="search-results-scrollable">
                 </div>
             </div>
         </div>
         <div id="right-sidebar" >
-            <div class="settings-box" id="metadata-settings">
-                <h3 class="text default">░ ▒ ▓ metadata profile ▓ ▒ ░</h3>
+            <div class="settings-box" id="download-profile">
+                <h3 class="text default">░ ▒ ▓ download profile ▓ ▒ ░</h3>
                 <hr>
-                <div>
-                    <div id="metadata-profile-select" class="text default">
+                <div class="accordion-row" id="metadata-accordion-row">
+                    <button type="button" class="accordion-row-header">
+                        <span class="accordion-row-label text default">Metadata</span>
+                        <span class="accordion-row-value" id="metadata-profile-current">—</span>
+                        <span class="accordion-row-caret">▾</span>
+                    </button>
+                    <div class="accordion-row-body">
+                        <div id="metadata-profile-select" class="text default"></div>
                     </div>
                 </div>
-            </div>
-            <div class="settings-box" id="quality-settings">
-                <h3 class="text white">░ ▒ ▓ quality profile ▓ ▒ ░</h3>
-                <hr>
-                <div>
-                    <div id="quality-profile-select" class="text default">
+                <div class="accordion-row" id="quality-accordion-row">
+                    <button type="button" class="accordion-row-header">
+                        <span class="accordion-row-label text default">Quality</span>
+                        <span class="accordion-row-value" id="quality-profile-current">—</span>
+                        <span class="accordion-row-caret">▾</span>
+                    </button>
+                    <div class="accordion-row-body">
+                        <div id="quality-profile-select" class="text default"></div>
                     </div>
                 </div>
-            </div>
-            <div class="settings-box" id="folder-settings">
-                <h3 class="text default">░ ▒ ▓ folder select ▓ ▒ ░</h3>
-                <hr>
-                <div>
-                    <div id="folder-profile-select" class="text default">
+                <div class="accordion-row" id="folder-accordion-row">
+                    <button type="button" class="accordion-row-header">
+                        <span class="accordion-row-label text default">Folder</span>
+                        <span class="accordion-row-value" id="folder-profile-current">—</span>
+                        <span class="accordion-row-caret">▾</span>
+                    </button>
+                    <div class="accordion-row-body">
+                        <div id="folder-profile-select" class="text default"></div>
                     </div>
                 </div>
-            </div>
-            <div class="settings-box" id="download-settings">
                 <div id="download-settings-select" class="text default">
-                    <label id="download-settings-label" for="auto-download-checkbox"  class="white">
-                        <div id="auto-download-checkbox-container" class="custom-checkbox" >
-                            <input id="auto-download-checkbox" type="checkbox" class="white"  name="auto-download-checkbox">
+                    <label id="download-settings-label" for="auto-download-checkbox" class="white">
+                        <div id="auto-download-checkbox-container" class="custom-checkbox">
+                            <input id="auto-download-checkbox" type="checkbox" class="white" name="auto-download-checkbox">
                             <div id="download-settings-label-text" class="label-text">auto-download</div>
                         </div>
-                        <div id="download-checkbox-connector" class="connector-line white">└──────┘</div>
                     </label>
                 </div>
             </div>

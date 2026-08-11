@@ -189,7 +189,7 @@ class MusicBrainzClient:
         while True:
             params = {
                 "release-group": release_group_id,
-                "inc": "media+recordings",
+                "inc": "media+recordings+labels+artist-credits",
                 "fmt": "json",
                 "limit": limit,
                 "offset": offset,

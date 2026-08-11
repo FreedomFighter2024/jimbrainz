@@ -71,26 +71,103 @@ async function refreshLidarrInfo() {
         await sleep(150)
         await populateFolderProfiles(lidarrInfo.root_folders);
         return lidarrInfo.lidarr_url;
-    } 
-    
+    }
+
     catch (error) {}
 }
+
+
+
+/* ===== persisted "default download profile" ===== */
+
+const DOWNLOAD_DEFAULTS_STORAGE_KEY = 'jimbrainz-download-defaults';
+
+function loadDownloadDefaults() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(DOWNLOAD_DEFAULTS_STORAGE_KEY));
+        return saved && typeof saved === 'object' ? saved : {};
+    }
+
+    catch {
+        return {};
+    }
+}
+
+function saveDownloadDefaults(partial) {
+    Object.assign(downloadDefaults, partial);
+
+    try {
+        localStorage.setItem(DOWNLOAD_DEFAULTS_STORAGE_KEY, JSON.stringify(downloadDefaults));
+    }
+
+    catch {
+        // storage unavailable (private browsing, quota, etc) - just skip persisting
+    }
+}
+
+let downloadDefaults = loadDownloadDefaults();
+
+function updateAccordionValueLabel(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (el) el.textContent = text || '—';
+}
+
+function closeAccordionRow(rowId) {
+    const row = document.getElementById(rowId);
+    if (row) row.classList.remove('open');
+}
+
+function setupAccordion() {
+    const rows = document.querySelectorAll('#download-profile .accordion-row');
+
+    rows.forEach(row => {
+        const header = row.querySelector('.accordion-row-header');
+        header.addEventListener('click', () => {
+            const wasOpen = row.classList.contains('open');
+            rows.forEach(r => r.classList.remove('open'));
+            if (!wasOpen) row.classList.add('open');
+        });
+    });
+}
+setupAccordion();
+
+const autoDownloadCheckbox = document.getElementById('auto-download-checkbox');
+if (typeof downloadDefaults.autoDownload === 'boolean') {
+    autoDownloadCheckbox.checked = downloadDefaults.autoDownload;
+}
+autoDownloadCheckbox.addEventListener('change', () => {
+    saveDownloadDefaults({ autoDownload: autoDownloadCheckbox.checked });
+});
+
+
+
 async function populateMetadataProfiles(profiles) {
     console.log("populating metadata profs")
     const container = document.getElementById('metadata-profile-select');
     container.innerHTML = '';
 
+    const savedId = downloadDefaults.metadataProfileId;
+    const savedExists = profiles.some(p => p.id === savedId);
+    const selectedId = savedExists ? savedId : profiles[0]?.id;
+
     profiles.forEach(profile => {
         const metadataProfileElementId = `metadata-profile-${profile.id}`;
-        container.innerHTML += 
+        container.innerHTML +=
         `
-            <input type="radio" id="${metadataProfileElementId}" name="metadata-profile" value="${profile.id}" ${profile.id === 1 ? 'checked' : ''}>
+            <input type="radio" id="${metadataProfileElementId}" name="metadata-profile" value="${profile.id}" ${profile.id === selectedId ? 'checked' : ''}>
             <label for="${metadataProfileElementId}">└─╲ ${profile.name}</label>
         `;
     });
 
-    container.addEventListener('change', (event) => {
-        const selectedMetadataProfileId = document.querySelector('#metadata-profile-select > input[type="radio"]:checked').value;
+    updateAccordionValueLabel('metadata-profile-current', profiles.find(p => p.id === selectedId)?.name);
+
+    container.addEventListener('change', () => {
+        const checked = document.querySelector('#metadata-profile-select > input[type="radio"]:checked');
+        if (!checked) return;
+        const profile = profiles.find(p => String(p.id) === checked.value);
+        updateAccordionValueLabel('metadata-profile-current', profile?.name);
+        saveDownloadDefaults({ metadataProfileId: profile ? profile.id : checked.value });
+        closeAccordionRow('metadata-accordion-row');
     });
 }
 
@@ -100,19 +177,29 @@ async function populateQualityProfiles(profiles) {
     console.log("populating quality profs")
     const container = document.getElementById('quality-profile-select');
     container.innerHTML = '';
-    const firstProfileId = profiles[0].id;
+
+    const savedId = downloadDefaults.qualityProfileId;
+    const savedExists = profiles.some(p => p.id === savedId);
+    const selectedId = savedExists ? savedId : profiles[0]?.id;
 
     profiles.forEach(profile => {
         const qualityProfileElementId = `quality-profile-${profile.id}`;
-        container.innerHTML += 
+        container.innerHTML +=
         `
-            <input type="radio" id="${qualityProfileElementId}" name="quality-profile" value="${profile.id}" ${profile.id === firstProfileId ? 'checked' : ''}>
+            <input type="radio" id="${qualityProfileElementId}" name="quality-profile" value="${profile.id}" ${profile.id === selectedId ? 'checked' : ''}>
             <label for="${qualityProfileElementId}">└─╲ ${profile.name}</label>
         `;
     });
 
-    container.addEventListener('change', (event) => {
-        const selectedQualityProfileId = document.querySelector('#quality-profile-select > input[type="radio"]:checked').value;
+    updateAccordionValueLabel('quality-profile-current', profiles.find(p => p.id === selectedId)?.name);
+
+    container.addEventListener('change', () => {
+        const checked = document.querySelector('#quality-profile-select > input[type="radio"]:checked');
+        if (!checked) return;
+        const profile = profiles.find(p => String(p.id) === checked.value);
+        updateAccordionValueLabel('quality-profile-current', profile?.name);
+        saveDownloadDefaults({ qualityProfileId: profile ? profile.id : checked.value });
+        closeAccordionRow('quality-accordion-row');
     });
 }
 
@@ -122,19 +209,29 @@ async function populateFolderProfiles(profiles) {
     console.log("populating folders")
     const container = document.getElementById('folder-profile-select');
     container.innerHTML = '';
-    const firstProfileId = profiles[0].id;
+
+    const savedPath = downloadDefaults.folderPath;
+    const savedExists = profiles.some(p => p.path === savedPath);
+    const selectedPath = savedExists ? savedPath : profiles[0]?.path;
 
     profiles.forEach(profile => {
         const folderProfileElementId = `folder-profile-${profile.id}`;
-        container.innerHTML += 
+        container.innerHTML +=
         `
-            <input type="radio" id="${folderProfileElementId}" name="folder-profile" value="${profile.path}" ${profile.id === firstProfileId ? 'checked' : ''}>
+            <input type="radio" id="${folderProfileElementId}" name="folder-profile" value="${profile.path}" ${profile.path === selectedPath ? 'checked' : ''}>
             <label for="${folderProfileElementId}">└─╲ ${profile.name}</label>
         `;
     });
 
-    container.addEventListener('change', (event) => {
-        const selectedFolderProfileId = document.querySelector('#folder-profile-select > input[type="radio"]:checked').value;
+    updateAccordionValueLabel('folder-profile-current', profiles.find(p => p.path === selectedPath)?.name);
+
+    container.addEventListener('change', () => {
+        const checked = document.querySelector('#folder-profile-select > input[type="radio"]:checked');
+        if (!checked) return;
+        const profile = profiles.find(p => p.path === checked.value);
+        updateAccordionValueLabel('folder-profile-current', profile?.name);
+        saveDownloadDefaults({ folderPath: checked.value });
+        closeAccordionRow('folder-accordion-row');
     });
 }
 
@@ -162,8 +259,8 @@ function checkScrollability() {
 
     if (resultsContainer.scrollHeight > resultsContainer.clientHeight) {
         resultsContainer.classList.add('is-scrollable');
-    } 
-    
+    }
+
     else {
         resultsContainer.classList.remove('is-scrollable');
     }
@@ -178,6 +275,83 @@ function checkScrollability() {
 }
 window.addEventListener('resize', checkScrollability);
 checkScrollability();
+
+
+
+/* ===== floating log window ===== */
+
+const LOG_STATE_STORAGE_KEY = 'jimbrainz-log-open';
+const logWindow = document.getElementById('log-window');
+const logToggleButton = document.getElementById('log-toggle-button');
+const logCloseButton = document.getElementById('log-close-button');
+const logUnreadBadge = document.getElementById('log-unread-badge');
+let unreadLogCount = 0;
+
+function setLogOpen(open) {
+    logWindow.classList.toggle('open', open);
+
+    try {
+        localStorage.setItem(LOG_STATE_STORAGE_KEY, open ? '1' : '0');
+    }
+
+    catch {
+        // storage unavailable - skip persisting
+    }
+
+    if (open) {
+        unreadLogCount = 0;
+        logUnreadBadge.hidden = true;
+        logUnreadBadge.textContent = '0';
+        checkScrollability();
+    }
+}
+
+function isLogOpenSaved() {
+    try {
+        return localStorage.getItem(LOG_STATE_STORAGE_KEY) === '1';
+    }
+
+    catch {
+        return false;
+    }
+}
+
+setLogOpen(isLogOpenSaved());
+
+logToggleButton.addEventListener('click', () => {
+    setLogOpen(!logWindow.classList.contains('open'));
+});
+logCloseButton.addEventListener('click', () => setLogOpen(false));
+
+document.addEventListener('click', (e) => {
+    if (logWindow.classList.contains('open') && !logWindow.contains(e.target) && !logToggleButton.contains(e.target)) {
+        setLogOpen(false);
+    }
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && logWindow.classList.contains('open')) setLogOpen(false);
+});
+
+const logObserver = new MutationObserver((mutations) => {
+    if (logWindow.classList.contains('open')) return;
+
+    for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+            if (!(node instanceof HTMLElement)) continue;
+            const type = node.querySelector('.event-type');
+
+            if (type && (type.classList.contains('WARNING') || type.classList.contains('ERROR'))) {
+                unreadLogCount += 1;
+            }
+        }
+    }
+
+    if (unreadLogCount > 0) {
+        logUnreadBadge.hidden = false;
+        logUnreadBadge.textContent = unreadLogCount > 99 ? '99+' : String(unreadLogCount);
+    }
+});
+logObserver.observe(document.getElementById('logs-scrollable'), { childList: true });
 
 
 
@@ -247,6 +421,12 @@ async function fetchReleases(releaseGroupMbid) {
 
 
 
+function quoteLuceneTerm(value) {
+    return `"${value.replace(/[\\"]/g, '\\$&')}"`;
+}
+
+
+
 async function handleSearch() {
     const release = releaseSearchInput.value.trim();
     let artist = artistSearchInput.value.trim();
@@ -257,9 +437,9 @@ async function handleSearch() {
 
     let query;
     if (artist && release) {
-        query = `releasegroup:${release} AND artist:${artist}`;
+        query = `releasegroup:${quoteLuceneTerm(release)} AND artist:${quoteLuceneTerm(artist)}`;
     } else if (artist) {
-        query = `artist:"${artist}"`;
+        query = `artist:${quoteLuceneTerm(artist)}`;
     } else {
         query = release;
     }
@@ -271,15 +451,15 @@ async function handleSearch() {
         const cached = searchCache[query];
         if (cached && cached.limit === limit) {
             processSearchResults(cached.results);
-        } 
-        
+        }
+
         else {
             const results = await searchReleaseGroups(query);
             searchCache[query] = { results, limit };
             processSearchResults(results);
         }
-    } 
-    
+    }
+
     catch (error) {
         console.error(`Search error: ${error.message}`);
     }
@@ -301,12 +481,13 @@ artistSearchInput.addEventListener('keypress', (e) => {
 function processSearchResults(results) {
     const container = document.getElementById('search-results-scrollable');
     container.innerHTML = '';
+    mountedReleaseGrids.clear();
     const releaseGroups = results['release-groups'] || [];
     const bestMatchReleases = results['best-match-releases'] || [];
 
     releaseGroups.forEach((rg, index) => {
         const releases = index === 0 ? bestMatchReleases : null;
-        
+
         container.appendChild(createReleaseGroupElement(rg, releases));
     });
 
@@ -389,7 +570,7 @@ function getCountryCode(release) {
         if (code === 'XW') return 'un';
         if (code === 'XE') return 'eu';
         return code.toLowerCase();
-    } 
+    }
 
     catch { return null; }
 }
@@ -399,6 +580,29 @@ function getCountryCode(release) {
 function getTrackString(media) {
     if (!media || !media.length) return 'N/A';
     return media.map(m => m['track-count'] || 0).join('x');
+}
+
+
+
+function getLabelInfo(release) {
+    const labelInfo = release['label-info'] || [];
+    const labels = labelInfo.map(li => li.label?.name).filter(Boolean);
+    const catalogNumbers = labelInfo.map(li => li['catalog-number']).filter(Boolean);
+
+    return {
+        label: labels.length ? labels.join(', ') : 'N/A',
+        catalogNumber: catalogNumbers.length ? catalogNumbers.join(', ') : 'N/A',
+    };
+}
+
+
+
+function getLanguageScript(release) {
+    const textRepresentation = release['text-representation'];
+    if (!textRepresentation) return 'N/A';
+
+    const parts = [textRepresentation.language, textRepresentation.script].filter(Boolean);
+    return parts.length ? parts.join(' / ') : 'N/A';
 }
 
 
@@ -485,14 +689,22 @@ const EDITION_TAG_COLORS = {
     'SPECIAL EDITION': 'white-tertiary',
 };
 
+const MIN_COLUMN_WIDTH = 50;
+
 const RELEASE_COLUMNS = [
-    { id: 'title', label: 'Title' },
-    { id: 'edition', label: 'Edition' },
-    { id: 'format', label: 'Format' },
-    { id: 'tracks', label: 'Tracks' },
-    { id: 'status', label: 'Status' },
-    { id: 'country', label: 'Country' },
-    { id: 'date', label: 'Date' },
+    { id: 'title', label: 'Title', width: 220 },
+    { id: 'edition', label: 'Edition', width: 160 },
+    { id: 'format', label: 'Format', width: 110 },
+    { id: 'tracks', label: 'Tracks', width: 80 },
+    { id: 'status', label: 'Status', width: 90 },
+    { id: 'country', label: 'Country', width: 90 },
+    { id: 'date', label: 'Date', width: 100 },
+    { id: 'label', label: 'Label', width: 140 },
+    { id: 'catalogNumber', label: 'Catalog#', width: 120 },
+    { id: 'barcode', label: 'Barcode', width: 120 },
+    { id: 'quality', label: 'Quality', width: 90 },
+    { id: 'language', label: 'Lang/Script', width: 110 },
+    { id: 'disambiguation', label: 'Disambiguation', width: 170 },
 ];
 
 const COLUMN_STATE_STORAGE_KEY = 'jimbrainz-release-columns';
@@ -501,6 +713,7 @@ function defaultColumnState() {
     return {
         order: RELEASE_COLUMNS.map(c => c.id),
         visible: Object.fromEntries(RELEASE_COLUMNS.map(c => [c.id, true])),
+        widths: Object.fromEntries(RELEASE_COLUMNS.map(c => [c.id, c.width])),
     };
 }
 
@@ -519,11 +732,17 @@ function loadColumnState() {
         }
 
         const visible = {};
+        const widths = {};
+        const savedWidths = (saved.widths && typeof saved.widths === 'object') ? saved.widths : {};
+
         for (const id of knownIds) {
             visible[id] = saved.visible[id] !== undefined ? !!saved.visible[id] : true;
+            const def = RELEASE_COLUMNS.find(c => c.id === id);
+            const savedWidth = savedWidths[id];
+            widths[id] = (typeof savedWidth === 'number' && savedWidth >= MIN_COLUMN_WIDTH) ? savedWidth : def.width;
         }
 
-        return { order, visible };
+        return { order, visible, widths };
     }
 
     catch {
@@ -546,8 +765,128 @@ const mountedReleaseGrids = new Set();
 
 function notifyColumnStateChange() {
     saveColumnState();
+    renderGlobalColumnsDropdown();
     mountedReleaseGrids.forEach(grid => grid.rerender());
 }
+
+
+
+/* ===== global filters (text, per-column, tags) - apply to every mounted release table ===== */
+
+const globalFilterState = {
+    text: '',
+    columns: Object.fromEntries(RELEASE_COLUMNS.map(c => [c.id, ''])),
+    tags: new Set(),
+};
+
+function notifyFilterStateChange() {
+    mountedReleaseGrids.forEach(grid => grid.rerender());
+}
+
+const globalFilterInput = document.getElementById('global-filter-input');
+globalFilterInput.addEventListener('input', () => {
+    globalFilterState.text = globalFilterInput.value.trim().toLowerCase();
+    notifyFilterStateChange();
+});
+
+const filtersToggleButton = document.getElementById('filters-toggle-button');
+const filtersControl = document.getElementById('global-filters-control');
+filtersToggleButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    filtersControl.classList.toggle('open');
+    columnsControlGlobal.classList.remove('open');
+});
+
+const columnsToggleButtonGlobal = document.getElementById('columns-toggle-button');
+const columnsControlGlobal = document.getElementById('global-columns-control');
+columnsToggleButtonGlobal.addEventListener('click', (e) => {
+    e.stopPropagation();
+    columnsControlGlobal.classList.toggle('open');
+    filtersControl.classList.remove('open');
+});
+
+document.addEventListener('click', (e) => {
+    if (!filtersControl.contains(e.target)) filtersControl.classList.remove('open');
+    if (!columnsControlGlobal.contains(e.target)) columnsControlGlobal.classList.remove('open');
+});
+
+function renderGlobalFiltersDropdown() {
+    const dropdown = document.getElementById('filters-dropdown');
+    dropdown.innerHTML = '';
+
+    for (const col of RELEASE_COLUMNS) {
+        const row = document.createElement('label');
+        row.className = 'columns-dropdown-item filters-dropdown-item';
+
+        const span = document.createElement('span');
+        span.textContent = col.label;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'filters-dropdown-input';
+        input.placeholder = 'contains…';
+        input.addEventListener('input', () => {
+            globalFilterState.columns[col.id] = input.value.trim().toLowerCase();
+            notifyFilterStateChange();
+        });
+        input.addEventListener('click', (e) => e.stopPropagation());
+
+        row.appendChild(span);
+        row.appendChild(input);
+        dropdown.appendChild(row);
+    }
+}
+renderGlobalFiltersDropdown();
+
+function renderGlobalColumnsDropdown() {
+    const dropdown = document.getElementById('columns-dropdown');
+    dropdown.innerHTML = '';
+
+    for (const id of columnState.order) {
+        const def = RELEASE_COLUMNS.find(c => c.id === id);
+        const label = document.createElement('label');
+        label.className = 'columns-dropdown-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = !!columnState.visible[id];
+        checkbox.addEventListener('change', () => {
+            columnState.visible[id] = checkbox.checked;
+            notifyColumnStateChange();
+        });
+
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(def.label));
+        dropdown.appendChild(label);
+    }
+}
+renderGlobalColumnsDropdown();
+
+const TAG_FILTER_OPTIONS = ['REMASTER', ...EDITION_KEYWORDS.map(k => k.label)];
+
+function renderTagFilterRow() {
+    const container = document.getElementById('tag-filter-row');
+    container.innerHTML = '';
+
+    for (const tag of TAG_FILTER_OPTIONS) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = `tag-chip ${EDITION_TAG_COLORS[tag] || 'default'}`;
+        chip.textContent = tag;
+        chip.addEventListener('click', () => {
+            if (globalFilterState.tags.has(tag)) {
+                globalFilterState.tags.delete(tag);
+                chip.classList.remove('active');
+            } else {
+                globalFilterState.tags.add(tag);
+                chip.classList.add('active');
+            }
+            notifyFilterStateChange();
+        });
+        container.appendChild(chip);
+    }
+}
+renderTagFilterRow();
 
 
 
@@ -555,42 +894,70 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
     const wrapper = document.createElement('div');
     wrapper.className = 'releases-grid-wrapper';
 
-    const toolbar = document.createElement('div');
-    toolbar.className = 'releases-toolbar';
-
-    const filterInput = document.createElement('input');
-    filterInput.type = 'text';
-    filterInput.className = 'releases-filter-input';
-    filterInput.placeholder = 'Filter releases...';
-
-    const columnsControl = document.createElement('div');
-    columnsControl.className = 'releases-columns-control';
-    columnsControl.innerHTML = `
-        <button type="button" class="columns-toggle-button">Columns ▾</button>
-        <div class="columns-dropdown"></div>
-    `;
-
-    toolbar.appendChild(filterInput);
-    toolbar.appendChild(columnsControl);
-
     const tableScroll = document.createElement('div');
     tableScroll.className = 'releases-table-scroll';
 
     const table = document.createElement('table');
     table.className = 'releases-table';
+    const colgroup = document.createElement('colgroup');
     const thead = document.createElement('thead');
     const tbody = document.createElement('tbody');
+    table.appendChild(colgroup);
     table.appendChild(thead);
     table.appendChild(tbody);
     tableScroll.appendChild(table);
 
-    wrapper.appendChild(toolbar);
     wrapper.appendChild(tableScroll);
 
-    let currentFilter = '';
+    let colElements = {};
+
+    function renderColgroup(visibleOrder) {
+        colgroup.innerHTML = '';
+        colElements = {};
+
+        const expandCol = document.createElement('col');
+        expandCol.style.width = '32px';
+        colgroup.appendChild(expandCol);
+
+        for (const id of visibleOrder) {
+            const col = document.createElement('col');
+            col.style.width = `${columnState.widths[id]}px`;
+            colgroup.appendChild(col);
+            colElements[id] = col;
+        }
+
+        const actionCol = document.createElement('col');
+        actionCol.style.width = '110px';
+        colgroup.appendChild(actionCol);
+    }
+
+    function startColumnResize(id, e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const col = colElements[id];
+        const startX = e.pageX;
+        const startWidth = col.getBoundingClientRect().width;
+
+        function onMouseMove(moveEvent) {
+            const delta = moveEvent.pageX - startX;
+            const newWidth = Math.max(MIN_COLUMN_WIDTH, Math.round(startWidth + delta));
+            col.style.width = `${newWidth}px`;
+        }
+
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            columnState.widths[id] = parseInt(col.style.width, 10);
+            notifyColumnStateChange();
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
 
     function renderHeader() {
         const visibleOrder = columnState.order.filter(id => columnState.visible[id]);
+        renderColgroup(visibleOrder);
         thead.innerHTML = '';
         const headRow = document.createElement('tr');
 
@@ -627,6 +994,17 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
                 notifyColumnStateChange();
             });
 
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'col-resize-handle';
+            resizeHandle.draggable = false;
+            resizeHandle.addEventListener('click', (e) => e.stopPropagation());
+            resizeHandle.addEventListener('dragstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            resizeHandle.addEventListener('mousedown', (e) => startColumnResize(id, e));
+            th.appendChild(resizeHandle);
+
             headRow.appendChild(th);
         }
 
@@ -635,29 +1013,6 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
         headRow.appendChild(actionTh);
 
         thead.appendChild(headRow);
-    }
-
-    function renderColumnsDropdown() {
-        const dropdown = columnsControl.querySelector('.columns-dropdown');
-        dropdown.innerHTML = '';
-
-        for (const id of columnState.order) {
-            const def = RELEASE_COLUMNS.find(c => c.id === id);
-            const label = document.createElement('label');
-            label.className = 'columns-dropdown-item';
-
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = !!columnState.visible[id];
-            checkbox.addEventListener('change', () => {
-                columnState.visible[id] = checkbox.checked;
-                notifyColumnStateChange();
-            });
-
-            label.appendChild(checkbox);
-            label.appendChild(document.createTextNode(def.label));
-            dropdown.appendChild(label);
-        }
     }
 
     function renderBody() {
@@ -677,10 +1032,33 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
             const releaseId = release.id;
             const media = release.media || [];
             const editionTags = getEditionTags(release);
-            const disambiguation = release.disambiguation || '';
+            const disambiguation = release.disambiguation || 'N/A';
+            const { label, catalogNumber } = getLabelInfo(release);
+            const barcode = release.barcode || 'N/A';
+            const quality = release.quality || 'N/A';
+            const language = getLanguageScript(release);
 
-            const searchText = [title, format, status, countryDisplay, date, ...editionTags].join(' ').toLowerCase();
-            if (currentFilter && !searchText.includes(currentFilter)) continue;
+            const fieldValues = {
+                title, edition: editionTags.join(' '), format, tracks, status,
+                country: countryDisplay, date, label, catalogNumber, barcode,
+                quality, language, disambiguation,
+            };
+
+            const searchText = Object.values(fieldValues).join(' ').toLowerCase();
+            if (globalFilterState.text && !searchText.includes(globalFilterState.text)) continue;
+
+            let columnFilterMismatch = false;
+            for (const [colId, filterValue] of Object.entries(globalFilterState.columns)) {
+                if (!filterValue) continue;
+                const fieldText = String(fieldValues[colId] ?? '').toLowerCase();
+                if (!fieldText.includes(filterValue)) {
+                    columnFilterMismatch = true;
+                    break;
+                }
+            }
+            if (columnFilterMismatch) continue;
+
+            if (globalFilterState.tags.size > 0 && !editionTags.some(t => globalFilterState.tags.has(t))) continue;
 
             let totalTracks = 0;
             for (const disc of media) totalTracks += (disc.tracks?.length || 0);
@@ -728,6 +1106,30 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
 
                 else if (id === 'date') {
                     td.innerHTML = `<h4 class="text white">${date}</h4>`;
+                }
+
+                else if (id === 'label') {
+                    td.innerHTML = `<h4 class="text default">${label}</h4>`;
+                }
+
+                else if (id === 'catalogNumber') {
+                    td.innerHTML = `<h4 class="text default-secondary">${catalogNumber}</h4>`;
+                }
+
+                else if (id === 'barcode') {
+                    td.innerHTML = `<h4 class="text default-secondary">${barcode}</h4>`;
+                }
+
+                else if (id === 'quality') {
+                    td.innerHTML = `<h4 class="text default-secondary">${quality}</h4>`;
+                }
+
+                else if (id === 'language') {
+                    td.innerHTML = `<h4 class="text default-secondary">${language}</h4>`;
+                }
+
+                else if (id === 'disambiguation') {
+                    td.innerHTML = `<h4 class="text default-muted">${disambiguation}</h4>`;
                 }
 
                 row.appendChild(td);
@@ -798,7 +1200,7 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
             const emptyCell = document.createElement('td');
             emptyCell.colSpan = colspan;
             emptyCell.className = 'releases-empty-cell';
-            emptyCell.innerHTML = `<h4 class="text default-muted">No releases match your filter</h4>`;
+            emptyCell.innerHTML = `<h4 class="text default-muted">No releases match your filters</h4>`;
             emptyRow.appendChild(emptyCell);
             tbody.appendChild(emptyRow);
         }
@@ -806,25 +1208,8 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
 
     function rerender() {
         renderHeader();
-        renderColumnsDropdown();
         renderBody();
     }
-
-    filterInput.addEventListener('input', () => {
-        currentFilter = filterInput.value.trim().toLowerCase();
-        renderBody();
-    });
-
-    columnsControl.querySelector('.columns-toggle-button').addEventListener('click', (e) => {
-        e.stopPropagation();
-        columnsControl.classList.toggle('open');
-    });
-
-    document.addEventListener('click', (e) => {
-        if (!columnsControl.contains(e.target)) {
-            columnsControl.classList.remove('open');
-        }
-    });
 
     rerender();
     mountedReleaseGrids.add({ rerender });
@@ -855,6 +1240,8 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     const title = releaseGroup.title || 'N/A';
     const year = getYear(releaseGroup['first-release-date']);
     const type = releaseGroup['primary-type'] || 'N/A';
+    const secondaryTypes = releaseGroup['secondary-types'] || [];
+    const typeDisplay = secondaryTypes.length ? `${type}, ${secondaryTypes.join(', ')}` : type;
     const score = releaseGroup.score ?? 'N/A';
     const releaseGroupId = releaseGroup.id;
     const artistId = getArtistId(releaseGroup['artist-credit']);
@@ -864,7 +1251,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     const div = document.createElement('div');
     div.className = 'results-box release-group-result';
 
-    let html = 
+    let html =
     `
         <div class="release-group-header">
             <div class="shrinkable">
@@ -874,7 +1261,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
                 <h3 class="text white releaseGrpName">
                     <a href="https://musicbrainz.org/release-group/${releaseGroupId}" target="_blank" rel="noopener noreferrer">${title} (${year})</a>
                 </h3>
-                <h3 class="text white-tertiary releaseGrpType">&nbsp;[${type}] &nbsp;</h3>
+                <h3 class="text white-tertiary releaseGrpType">&nbsp;[${typeDisplay}] &nbsp;</h3>
             </div>
             <div class="non-shrinkable">
                 <h3 class="text default matchScore">Match%: ${score}</h3>
@@ -884,7 +1271,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     `;
 
     if (releases && releases.length) {
-        html += 
+        html +=
         `
             <hr>
             <button class="releases-toggle-button" type="button">
@@ -893,10 +1280,10 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
             </button>
             <div class="release-group-releases"></div>
         `;
-    } 
+    }
 
     else if (releases === null) {
-        html += 
+        html +=
         `
             <hr>
             <button class="releases-toggle-button fetch-releases-button" type="button">
@@ -913,7 +1300,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
 
         try {
             status = await handleAddReleaseGroup(releaseGroupId, artistId)
-        } 
+        }
 
         catch (error) {
             status = `Add release group error: ${error.message}`;
@@ -930,14 +1317,14 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
 
             if (releasesContainer.classList.contains('expanded')) {
                 toggleButton.innerHTML = `<h4 class="text white releaseName">Specific releases ▽ (${releases.length})</h4>`;
-            } 
+            }
             else {
                 toggleButton.innerHTML = `<h4 class="text white releaseName">Specific releases ▷ (${releases.length})</h4>`;
             }
 
             checkScrollability();
         });
-    } 
+    }
 
 
     else if (releases === null) {
@@ -946,10 +1333,10 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
         fetchButton.addEventListener('click', async () => {
             try {
                 const result = await fetchReleases(releaseGroupId);
-                
+
                 const fetchedReleases = sortReleasesByDateDesc(result.releases);
 
-                const newHtml = 
+                const newHtml =
                 `
                     <hr>
                     <button class="releases-toggle-button" type="button">
@@ -971,14 +1358,14 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
 
                     if (releasesContainer.classList.contains('expanded')) {
                         toggleButton.innerHTML = `<h4 class="text white releaseName">Specific releases ▽ (${fetchedReleases.length})</h4>`;
-                    } 
+                    }
                     else {
                         toggleButton.innerHTML = `<h4 class="text white releaseName">Specific releases ▷ (${fetchedReleases.length})</h4>`;
                     }
 
                     checkScrollability();
                 });
-            } 
+            }
 
             catch (error) {
                 console.error(`Fetch releases error: ${error.message}`);

@@ -417,9 +417,12 @@ class LidarrClient:
             if isinstance(artist, list): 
                 artist = artist[0]
                         
+            artist_was_refreshed = False
+
             if not release_group:
                 logger.info(f"release group not found in library yet, forcing artist metadata refresh to affirm release group presence")
                 await self.refresh_artist_metadata(artist_lrid=artist["id"])
+                artist_was_refreshed = True
 
             release_group = await self.check_release_group_in_library(release_group_mbid)
 
@@ -456,8 +459,12 @@ Either try a less strict metadata profile or add release manually."""
 
             if auto_download:
                 logger.info(f"Auto download is true, triggering automatic search for release", extra={"frontend": True, "src":"lidarr"})
-                await self.refresh_artist_metadata(artist_lrid=artist["id"])
-                await asyncio.sleep(1.0)
+
+                if not artist_was_refreshed:
+                    logger.info(f"artist metadata already present, skipping redundant full-artist refresh before search")
+                else:
+                    await asyncio.sleep(1.0)
+
                 logger.info(f"triggering search for release group to start download")
                 await self.trigger_search_for_release_group(release_group_lrid=release_group['id'])
 

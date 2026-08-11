@@ -1,7 +1,6 @@
-version: "3.8"
-services: 
+services:
   lidbrainz:
-    image: dualshock/lidbrainz:dev  
+    image: ghcr.io/freedomfighter2024/jimbrainz:latest
     container_name: lidbrainz
     restart: unless-stopped
     env_file: 

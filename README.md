@@ -13,7 +13,7 @@ _Please note; this is a silly and fun container i made for my own server and to 
 
 
 ## Installation
-_Note: if you're an **UnRaid** user like me, ive added a template that can be manually added and used, instructions are [below](https://github.com/dual-shock/lidbrainz/tree/main?tab=readme-ov-file#installation-unraid)_
+_Note: if you're an **UnRaid** user like me, ive added a template that can be manually added and used, instructions are [below](https://github.com/freedomfighter2024/jimbrainz/tree/main?tab=readme-ov-file#installation-unraid)_
 ### Prerequisites:
 1. a running Lidarr instance reachable from this container
 2. some public url/email u can put in the MusicBrainz user agent
@@ -22,7 +22,7 @@ _Note: if you're an **UnRaid** user like me, ive added a template that can be ma
 5. (optional, but recommended) if youre not already using slskd and tubifarry, i highly recommend it, its awesome
 
 ### Environment:
-1. either clone the repo: ```git clone https://github.com/dual-shock/LidBrainz.git``` <br> or just grab the ```docker-compose.example.yml``` file
+1. either clone the repo: ```git clone https://github.com/freedomfighter2024/jimbrainz.git``` <br> or just grab the ```docker-compose.example.yml``` file
 2. fill in the ```.env.example``` file, and rename it to just ```.env```, if you're unsure about how to format your MusicBrainz user agent see [here](https://MusicBrainz.org/doc/MusicBrainz_API/Rate_Limiting) <br> fill in the ```docker-compose.example.yml``` and rename it to just ```docker-compose.yml``` (here you can change the exposed port and docker network, if your Lidarr is running on a custom network for example)
 
 ### Running

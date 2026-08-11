@@ -278,11 +278,6 @@ body {
 
 
 
-@keyframes blink {
-    0%, 50% { visibility: visible; }
-    51%, 100% { visibility: hidden; }
-}
-
 .search-input-cursor-holder::before {
     content: "▇";
     position: absolute;
@@ -295,9 +290,17 @@ body {
     pointer-events: none;
     z-index: 1;
 }
+/*
+? This block is a prompt marker, not a cursor - it sits in the input's left padding at a
+? fixed offset and cannot move. It used to blink, which made it read as the caret, while
+? caret-color:transparent hid the real one - so there was no way to see where you were
+? typing. It now just brightens on focus, and the real caret does the cursor's job.
+*/
 .search-input-cursor-holder:has(input:focus)::before {
-    animation: blink 1.1s step-end infinite;
     color: var(--main-text);
+    text-shadow:
+        0 0 3.25px var(--main-glow-text),
+        0 0 8.25px var(--main-glow-text);
 }
 .search-input-cursor-holder{
     width:fit-content;
@@ -314,7 +317,7 @@ body {
     color: var(--main-text);
     font-family: var(--font-family);
     font-size: 1em;
-    caret-color: transparent;
+    caret-color: var(--main-text);
 }
 .search-input::placeholder{
     color: var(--main-muted-text);

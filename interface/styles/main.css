@@ -2104,3 +2104,57 @@ span.red { color: var(--red-text); }
 .download-progress-fill.good { background-color: var(--green-text); }
 .download-progress-fill.mid { background-color: var(--yellow-text); }
 .download-progress-fill.bad { background-color: var(--red-text); }
+
+
+#candidate-signal-filters {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--muted-text);
+}
+
+.candidate-signal-filters-label {
+    font-family: var(--font-family-condensed);
+    font-size: 0.78em;
+    text-transform: lowercase;
+}
+
+#candidate-signal-sliders {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 4px 14px;
+    margin-top: 5px;
+}
+
+.candidate-signal-slider {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-family-condensed);
+    font-size: 0.8em;
+    cursor: pointer;
+    opacity: 0.75;
+}
+
+.candidate-signal-slider.active {
+    opacity: 1;
+}
+
+.candidate-signal-slider > span:first-child {
+    flex: 0 0 4.6em;
+}
+
+.candidate-signal-slider input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--main-secondary-text);
+    cursor: pointer;
+}
+
+.candidate-signal-slider.active input[type="range"] {
+    accent-color: var(--main-hover-text);
+}
+
+.candidate-signal-value {
+    flex: 0 0 1.8em;
+    text-align: right;
+}

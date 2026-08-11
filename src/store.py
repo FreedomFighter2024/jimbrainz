@@ -199,6 +199,7 @@ def summarize_transfers(job: dict, transfers_by_user: dict[str, list[dict]]) -> 
             "progress": 0.0,
             "state": None,
             "speed": 0,
+            "bytes_transferred": 0,
             "files_done": 0,
             "files_total": len(wanted),
             "matched": False,
@@ -213,7 +214,11 @@ def summarize_transfers(job: dict, transfers_by_user: dict[str, list[dict]]) -> 
         # job whose files haven't been picked up yet doesn't read as further along than it is
         "progress": sum(t.get("percentComplete", 0) or 0 for t in transfers) / max(len(wanted), 1),
         "state": transfers[0].get("state"),
+        # slskd's averageSpeed is cumulative (bytes moved / elapsed), so it only ever climbs
+        # and never reflects what's happening right now. Report the raw byte count instead and
+        # let the caller derive a real rate from the change between two samples.
         "speed": sum(t.get("averageSpeed", 0) or 0 for t in transfers),
+        "bytes_transferred": sum(t.get("bytesTransferred", 0) or 0 for t in transfers),
         "files_done": done,
         "files_total": len(wanted),
         "files_failed": len(failed),

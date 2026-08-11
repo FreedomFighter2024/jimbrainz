@@ -185,7 +185,7 @@ async def jobs(request: Request):
             summary = (summarize_transfers(job, transfers_by_user)
                        if job["status"] in OPEN_STATUSES
                        else {"progress": 100.0 if job["status"] != "failed" else 0.0,
-                             "state": None, "speed": 0,
+                             "state": None, "speed": 0, "bytes_transferred": 0,
                              "files_done": len(job["files"]) if job["status"] != "failed" else 0,
                              "files_total": len(job["files"]), "matched": False})
 

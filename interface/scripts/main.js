@@ -202,7 +202,10 @@ checkScrollability();
 
 /* ===== downloads dropdown ===== */
 
-const DOWNLOADS_POLL_MS = 4000;
+// fast while you're watching, slow in the background just to keep the badge honest
+const DOWNLOADS_POLL_OPEN_MS = 1000;
+const DOWNLOADS_POLL_BACKGROUND_MS = 5000;
+
 const downloadsControl = document.getElementById('downloads-control');
 const downloadsScrollable = document.getElementById('downloads-scrollable');
 const downloadsBadge = document.getElementById('downloads-active-badge');
@@ -211,8 +214,35 @@ let downloadsPollTimer = null;
 // organizing counts as active so the panel keeps polling through the filing step
 const ACTIVE_STATUSES = new Set(['queued', 'downloading', 'organizing']);
 
+// last byte reading per job, so a real transfer rate can be worked out from the change
+// between polls. slskd's own averageSpeed is cumulative (total bytes / total elapsed), which
+// is why it only ever creeps upward and never shows what's happening right now.
+const jobSpeedSamples = new Map();
+
 function isDownloadsOpen() {
     return downloadsControl.classList.contains('open');
+}
+
+function liveSpeedFor(job) {
+    const now = performance.now();
+    const previous = jobSpeedSamples.get(job.id);
+    jobSpeedSamples.set(job.id, { bytes: job.bytes_transferred || 0, at: now });
+
+    if (!ACTIVE_STATUSES.has(job.status)) {
+        jobSpeedSamples.delete(job.id);
+        return null;
+    }
+
+    if (!previous) return null;
+
+    const seconds = (now - previous.at) / 1000;
+    const delta = (job.bytes_transferred || 0) - previous.bytes;
+
+    // a negative delta means slskd restarted or requeued the transfer; report nothing rather
+    // than a nonsense number
+    if (seconds <= 0 || delta < 0) return null;
+
+    return delta / seconds;
 }
 
 document.getElementById('downloads-toggle-button').addEventListener('click', (e) => {
@@ -221,7 +251,7 @@ document.getElementById('downloads-toggle-button').addEventListener('click', (e)
     downloadsControl.classList.toggle('open', open);
     profileControl.classList.remove('open');
     setLogOpen(false);
-    if (open) refreshDownloads();
+    refreshDownloads();
 });
 
 document.addEventListener('click', (e) => {
@@ -239,6 +269,20 @@ async function fetchJobs() {
     return response.json();
 }
 
+function scheduleDownloadsPoll(hasActive) {
+    clearTimeout(downloadsPollTimer);
+
+    // keep polling in the background while work is outstanding so the badge stays truthful,
+    // and always poll while the panel is open even when idle, so a download started in
+    // another tab shows up here without needing a reload
+    if (!hasActive && !isDownloadsOpen()) return;
+
+    downloadsPollTimer = setTimeout(
+        refreshDownloads,
+        isDownloadsOpen() ? DOWNLOADS_POLL_OPEN_MS : DOWNLOADS_POLL_BACKGROUND_MS
+    );
+}
+
 async function refreshDownloads() {
     try {
         const { jobs, tracking_enabled } = await fetchJobs();
@@ -248,15 +292,13 @@ async function refreshDownloads() {
         downloadsBadge.hidden = active === 0;
         downloadsBadge.textContent = active;
 
-        // only keep polling while something is actually moving
-        clearTimeout(downloadsPollTimer);
-        if (active > 0 || isDownloadsOpen()) {
-            downloadsPollTimer = setTimeout(refreshDownloads, DOWNLOADS_POLL_MS);
-        }
+        scheduleDownloadsPoll(active > 0);
     }
 
     catch (error) {
         console.error(`Downloads refresh error: ${error.message}`);
+        // keep trying rather than dying silently on one bad response
+        scheduleDownloadsPoll(false);
     }
 }
 
@@ -265,9 +307,42 @@ const JOB_STATUS_CLASS = {
     organizing: 'mid', organized: 'good', failed: 'bad', cancelled: 'bad',
 };
 
-function renderDownloads(jobs, trackingEnabled) {
-    downloadsScrollable.innerHTML = '';
+function jobDetailText(job, liveSpeed) {
+    if (job.error) return job.error;
 
+    const parts = [`${job.files_done}/${job.files_total} files`];
+    if (liveSpeed) parts.push(formatSpeed(liveSpeed));
+    return parts.join(' · ');
+}
+
+function buildJobRow(job) {
+    const row = document.createElement('div');
+    row.className = 'download-job';
+    row.dataset.jobId = job.id;
+    row.innerHTML = `
+        <div class="download-job-head">
+            <h4 class="text white download-job-title"></h4>
+            <span class="download-job-status"></span>
+        </div>
+        <div class="download-job-meta">
+            <span class="text default-secondary download-job-user"></span>
+            <span class="text default-muted">·</span>
+            <span class="download-job-detail"></span>
+        </div>
+        <div class="download-progress-track">
+            <div class="download-progress-fill"></div>
+        </div>
+    `;
+    return row;
+}
+
+/**
+ * Update rows in place instead of rebuilding the list.
+ *
+ * At a 1s cadence a full innerHTML wipe would flicker, drop the scroll position, and kill any
+ * text selection - which is what made this feel like a static snapshot rather than a live view.
+ */
+function renderDownloads(jobs, trackingEnabled) {
     if (!trackingEnabled) {
         downloadsScrollable.innerHTML =
             `<h4 class="text red candidates-status">job tracking is off — the database path isn't writable, check DB_PATH</h4>`;
@@ -280,34 +355,52 @@ function renderDownloads(jobs, trackingEnabled) {
         return;
     }
 
-    for (const job of jobs) {
+    // drop the placeholder if we're coming from an empty state
+    const placeholder = downloadsScrollable.querySelector('.candidates-status');
+    if (placeholder) placeholder.remove();
+
+    const seen = new Set();
+
+    jobs.forEach((job, index) => {
+        seen.add(String(job.id));
+        const liveSpeed = liveSpeedFor(job);
+        const statusClass = JOB_STATUS_CLASS[job.status] || '';
         const percent = Math.round(job.progress || 0);
-        const row = document.createElement('div');
-        row.className = 'download-job';
 
-        const speed = job.speed ? formatSpeed(job.speed) : '';
-        const detail = job.error
-            ? job.error
-            : [`${job.files_done}/${job.files_total} files`, speed].filter(Boolean).join(' · ');
-        // a note on an otherwise-fine job (dry run, nothing found) is a warning, not a failure
-        const detailClass = job.status === 'failed' ? 'red' : job.error ? 'yellow' : 'default-secondary';
+        let row = downloadsScrollable.querySelector(`.download-job[data-job-id="${job.id}"]`);
+        if (!row) {
+            row = buildJobRow(job);
+            downloadsScrollable.appendChild(row);
+        }
 
-        row.innerHTML = `
-            <div class="download-job-head">
-                <h4 class="text white download-job-title">${job.artist || 'unknown'} — ${job.album || 'unknown'}</h4>
-                <span class="download-job-status ${JOB_STATUS_CLASS[job.status] || ''}">${job.status}</span>
-            </div>
-            <div class="download-job-meta">
-                <span class="text default-secondary">${job.username}</span>
-                <span class="text default-muted">·</span>
-                <span class="text ${detailClass}">${detail}</span>
-            </div>
-            <div class="download-progress-track">
-                <div class="download-progress-fill ${JOB_STATUS_CLASS[job.status] || ''}" style="width:${percent}%"></div>
-            </div>
-        `;
+        // keep DOM order matching the payload order without reshuffling unnecessarily
+        const atIndex = downloadsScrollable.children[index];
+        if (atIndex !== row) downloadsScrollable.insertBefore(row, atIndex || null);
 
-        downloadsScrollable.appendChild(row);
+        row.querySelector('.download-job-title').textContent =
+            `${job.artist || 'unknown'} — ${job.album || 'unknown'}`;
+
+        const statusEl = row.querySelector('.download-job-status');
+        statusEl.textContent = job.status;
+        statusEl.className = `download-job-status ${statusClass}`;
+
+        row.querySelector('.download-job-user').textContent = job.username;
+
+        const detailEl = row.querySelector('.download-job-detail');
+        detailEl.textContent = jobDetailText(job, liveSpeed);
+        detailEl.className = 'download-job-detail text ' +
+            (job.status === 'failed' ? 'red' : job.error ? 'yellow' : 'default-secondary');
+
+        const fill = row.querySelector('.download-progress-fill');
+        fill.style.width = `${percent}%`;
+        fill.className = `download-progress-fill ${statusClass}`;
+
+        row.classList.toggle('queued', job.status === 'organized');
+    });
+
+    // remove rows for jobs that dropped off the list
+    for (const row of [...downloadsScrollable.querySelectorAll('.download-job')]) {
+        if (!seen.has(row.dataset.jobId)) row.remove();
     }
 }
 
@@ -690,7 +783,11 @@ const SIGNAL_LABELS = {
 };
 
 let lastCandidateResult = null;
-const candidateFilterState = { freeSlotOnly: false, completeOnly: false, minScore: 0, formats: new Set() };
+const candidateFilterState = {
+    freeSlotOnly: false, completeOnly: false, minScore: 0, formats: new Set(),
+    // per-signal minimums, e.g. "only show me folders where every track length lines up"
+    minSignals: Object.fromEntries(Object.keys(SIGNAL_LABELS).map(k => [k, 0])),
+};
 
 /**
  * Soulseek reports transfer rates in bytes/sec (protocol "avgspeed"), which slskd passes
@@ -728,6 +825,41 @@ minScoreInput.addEventListener('input', (e) => {
     renderCandidates();
 });
 
+function renderCandidateSignalSliders() {
+    const container = document.getElementById('candidate-signal-sliders');
+    if (container.dataset.built) return;
+    container.dataset.built = '1';
+
+    for (const [signal, label] of Object.entries(SIGNAL_LABELS)) {
+        const wrapper = document.createElement('label');
+        wrapper.className = 'candidate-signal-slider';
+
+        const name = document.createElement('span');
+        name.className = 'text default-secondary';
+        name.textContent = label;
+
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = '0'; slider.max = '100'; slider.step = '5'; slider.value = '0';
+
+        const readout = document.createElement('span');
+        readout.className = 'text default candidate-signal-value';
+        readout.textContent = '0';
+
+        slider.addEventListener('input', () => {
+            candidateFilterState.minSignals[signal] = Number(slider.value);
+            readout.textContent = slider.value;
+            wrapper.classList.toggle('active', Number(slider.value) > 0);
+            renderCandidates();
+        });
+
+        wrapper.append(name, slider, readout);
+        container.appendChild(wrapper);
+    }
+}
+renderCandidateSignalSliders();
+
+
 function renderCandidateFormatFilters(candidates) {
     const container = document.getElementById('candidate-format-filters');
     container.innerHTML = '';
@@ -763,6 +895,16 @@ function candidatePassesFilters(candidate) {
 
     if (candidateFilterState.formats.size
         && !candidate.formats.some(f => candidateFilterState.formats.has(f))) return false;
+
+    for (const [signal, minimum] of Object.entries(candidateFilterState.minSignals)) {
+        if (!minimum) continue;
+        const value = candidate.signals[signal];
+
+        // null means the signal couldn't be judged - slskd didn't report track lengths, say.
+        // If you've asked for a minimum there, "unknown" cannot satisfy it.
+        if (value === null || value === undefined) return false;
+        if (Math.round(value * 100) < minimum) return false;
+    }
 
     return true;
 }

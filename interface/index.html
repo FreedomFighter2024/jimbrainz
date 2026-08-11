@@ -22,6 +22,15 @@
         </div>
         <div id="general-connection-status" class="text default glow"></div>
         <div id="top-bar-actions">
+            <div id="downloads-control">
+                <button type="button" id="downloads-toggle-button">
+                    <span>downloads ▾</span>
+                    <span id="downloads-active-badge" class="log-unread-badge" hidden>0</span>
+                </button>
+                <div id="downloads-window">
+                    <div class="scrollable" id="downloads-scrollable"></div>
+                </div>
+            </div>
             <div id="log-control">
                 <button type="button" id="log-toggle-button">
                     <span>log ▾</span>

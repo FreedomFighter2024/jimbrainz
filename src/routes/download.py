@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from src.api.slskd_endpoint import build_search_query
 from src.logger import logger
 from src.matching import rank_candidates
+from src.store import OPEN_STATUSES, index_transfers_by_user, summarize_transfers
 
 router = APIRouter()
 
@@ -31,9 +32,21 @@ class EnqueueFile(BaseModel):
     size: int
 
 
+class EnqueueRelease(BaseModel):
+    """What the download is *for*. Persisted with the job so organizing it later needs no network."""
+    artist: str = ""
+    album: str = ""
+    year: str | None = None
+    release_mbid: str | None = None
+    edition_tags: list[str] = Field(default_factory=list)
+    tracks: list[Track] = Field(default_factory=list)
+
+
 class EnqueueRequest(BaseModel):
     username: str
     files: list[EnqueueFile]
+    directory: str = ""
+    release: EnqueueRelease = Field(default_factory=EnqueueRelease)
 
 
 @router.post("/find_candidates")
@@ -122,14 +135,22 @@ def _serialize_candidate(candidate: dict) -> dict:
 async def enqueue(request: Request, body: EnqueueRequest):
     try:
         slskd_client = request.app.state.slskd_client
-        ok = await slskd_client.enqueue(
-            body.username, [f.model_dump() for f in body.files]
-        )
+        files = [f.model_dump() for f in body.files]
+
+        ok = await slskd_client.enqueue(body.username, files)
 
         if not ok:
             raise HTTPException(status_code=502, detail="slskd refused the download")
 
-        return {"status": "ok", "queued": len(body.files)}
+        #? record only after slskd accepts, so a rejected download never leaves a phantom job
+        job_id = await request.app.state.store.create_job(
+            username=body.username,
+            directory=body.directory,
+            files=files,
+            release=body.release.model_dump(),
+        )
+
+        return {"status": "ok", "queued": len(files), "job_id": job_id}
 
     except HTTPException:
         raise
@@ -139,8 +160,58 @@ async def enqueue(request: Request, body: EnqueueRequest):
         raise HTTPException(status_code=500, detail=f"Error queueing download: {e}")
 
 
+@router.get("/jobs")
+async def jobs(request: Request):
+    """
+    Tracked download jobs, merged with live progress from slskd.
+
+    Progress is computed per request rather than stored - slskd is the source of truth for
+    it and it changes every second, so persisting it would be churn for no benefit.
+    """
+    try:
+        store = request.app.state.store
+        stored = await store.list_jobs()
+
+        if not stored:
+            return {"jobs": [], "tracking_enabled": store.available}
+
+        transfers_by_user = {}
+        if any(j["status"] in OPEN_STATUSES for j in stored):
+            downloads = await request.app.state.slskd_client.get_downloads()
+            transfers_by_user = index_transfers_by_user(downloads)
+
+        merged = []
+        for job in stored:
+            summary = (summarize_transfers(job, transfers_by_user)
+                       if job["status"] in OPEN_STATUSES
+                       else {"progress": 100.0 if job["status"] != "failed" else 0.0,
+                             "state": None, "speed": 0,
+                             "files_done": len(job["files"]) if job["status"] != "failed" else 0,
+                             "files_total": len(job["files"]), "matched": False})
+
+            merged.append({
+                "id": job["id"],
+                "artist": job["artist"],
+                "album": job["album"],
+                "year": job["year"],
+                "username": job["username"],
+                "directory": job["directory"],
+                "status": job["status"],
+                "error": job["error"],
+                "created_at": job["created_at"],
+                **summary,
+            })
+
+        return {"jobs": merged, "tracking_enabled": store.available}
+
+    except Exception as e:
+        logger.error(f"Exception in /jobs endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching download jobs: {e}")
+
+
 @router.get("/downloads")
 async def downloads(request: Request):
+    """Raw slskd transfer list, untouched. Handy for debugging what the poller is seeing."""
     try:
         slskd_client = request.app.state.slskd_client
         return {"downloads": await slskd_client.get_downloads()}

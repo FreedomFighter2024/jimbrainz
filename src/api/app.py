@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
@@ -6,6 +7,8 @@ from fastapi.responses import FileResponse
 
 from src.routes import search_musicbrainz, interface_logs, monitor_slskd, download
 from src.logger import logger, cleanup_logging
+from src.poller import run_download_poller
+from src.store import JobStore
 
 from src.api.musicbrainz_endpoint import MusicBrainzClient
 from src.api.slskd_endpoint import SlskdClient
@@ -16,8 +19,22 @@ async def lifespan(app: FastAPI):
     app.state.slskd_client = SlskdClient()
     logger.info("slskd client initialized")
 
+    app.state.store = JobStore()
+    app.state.store.init()
+
+    poller_task = asyncio.create_task(
+        run_download_poller(app.state.slskd_client, app.state.store)
+    )
+
     yield
     logger.info("Shutting down API server...")
+
+    poller_task.cancel()
+    try:
+        await poller_task
+    except asyncio.CancelledError:
+        pass
+
     await app.state.musicbrainz_client.close_client()
     await app.state.slskd_client.close_client()
 

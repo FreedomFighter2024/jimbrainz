@@ -200,6 +200,119 @@ checkScrollability();
 
 
 
+/* ===== downloads dropdown ===== */
+
+const DOWNLOADS_POLL_MS = 4000;
+const downloadsControl = document.getElementById('downloads-control');
+const downloadsScrollable = document.getElementById('downloads-scrollable');
+const downloadsBadge = document.getElementById('downloads-active-badge');
+let downloadsPollTimer = null;
+
+const ACTIVE_STATUSES = new Set(['queued', 'downloading']);
+
+function isDownloadsOpen() {
+    return downloadsControl.classList.contains('open');
+}
+
+document.getElementById('downloads-toggle-button').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = !isDownloadsOpen();
+    downloadsControl.classList.toggle('open', open);
+    profileControl.classList.remove('open');
+    setLogOpen(false);
+    if (open) refreshDownloads();
+});
+
+document.addEventListener('click', (e) => {
+    if (isDownloadsOpen() && !downloadsControl.contains(e.target)) {
+        downloadsControl.classList.remove('open');
+    }
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isDownloadsOpen()) downloadsControl.classList.remove('open');
+});
+
+async function fetchJobs() {
+    const response = await fetch('/lidbrainz/download/jobs');
+    if (!response.ok) throw new Error('failed to fetch download jobs');
+    return response.json();
+}
+
+async function refreshDownloads() {
+    try {
+        const { jobs, tracking_enabled } = await fetchJobs();
+        renderDownloads(jobs, tracking_enabled);
+
+        const active = jobs.filter(j => ACTIVE_STATUSES.has(j.status)).length;
+        downloadsBadge.hidden = active === 0;
+        downloadsBadge.textContent = active;
+
+        // only keep polling while something is actually moving
+        clearTimeout(downloadsPollTimer);
+        if (active > 0 || isDownloadsOpen()) {
+            downloadsPollTimer = setTimeout(refreshDownloads, DOWNLOADS_POLL_MS);
+        }
+    }
+
+    catch (error) {
+        console.error(`Downloads refresh error: ${error.message}`);
+    }
+}
+
+const JOB_STATUS_CLASS = {
+    queued: 'mid', downloading: 'mid', complete: 'good',
+    organizing: 'mid', organized: 'good', failed: 'bad', cancelled: 'bad',
+};
+
+function renderDownloads(jobs, trackingEnabled) {
+    downloadsScrollable.innerHTML = '';
+
+    if (!trackingEnabled) {
+        downloadsScrollable.innerHTML =
+            `<h4 class="text red candidates-status">job tracking is off — the database path isn't writable, check DB_PATH</h4>`;
+        return;
+    }
+
+    if (!jobs.length) {
+        downloadsScrollable.innerHTML =
+            `<h4 class="text default-muted candidates-status">nothing downloaded yet</h4>`;
+        return;
+    }
+
+    for (const job of jobs) {
+        const percent = Math.round(job.progress || 0);
+        const row = document.createElement('div');
+        row.className = 'download-job';
+
+        const speed = job.speed ? formatSpeed(job.speed) : '';
+        const detail = job.error
+            ? job.error
+            : [`${job.files_done}/${job.files_total} files`, speed].filter(Boolean).join(' · ');
+
+        row.innerHTML = `
+            <div class="download-job-head">
+                <h4 class="text white download-job-title">${job.artist || 'unknown'} — ${job.album || 'unknown'}</h4>
+                <span class="download-job-status ${JOB_STATUS_CLASS[job.status] || ''}">${job.status}</span>
+            </div>
+            <div class="download-job-meta">
+                <span class="text default-secondary">${job.username}</span>
+                <span class="text default-muted">·</span>
+                <span class="text default-secondary">${detail}</span>
+            </div>
+            <div class="download-progress-track">
+                <div class="download-progress-fill ${JOB_STATUS_CLASS[job.status] || ''}" style="width:${percent}%"></div>
+            </div>
+        `;
+
+        downloadsScrollable.appendChild(row);
+    }
+}
+
+// pick up jobs still running from a previous page load
+refreshDownloads();
+
+
+
 /* ===== log dropdown (anchored under its own button in the top bar) ===== */
 
 const LOG_STATE_STORAGE_KEY = 'jimbrainz-log-open';
@@ -440,10 +553,17 @@ async function findCandidates(expected) {
 
 
 async function enqueueCandidate(candidate) {
+    // the release travels with the download so the server can remember what these files are
+    // for - slskd only ever knows "bob is sending you some files"
     const response = await fetch(`/lidbrainz/download/enqueue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: candidate.username, files: candidate.files })
+        body: JSON.stringify({
+            username: candidate.username,
+            files: candidate.files,
+            directory: candidate.directory,
+            release: currentExpected || {},
+        })
     });
 
     if (!response.ok) {
@@ -451,7 +571,9 @@ async function enqueueCandidate(candidate) {
         throw new Error(error.detail || 'failed to queue download');
     }
 
-    return response.json();
+    const result = await response.json();
+    refreshDownloads();
+    return result;
 }
 
 
@@ -567,13 +689,16 @@ const SIGNAL_LABELS = {
 let lastCandidateResult = null;
 const candidateFilterState = { freeSlotOnly: false, completeOnly: false, minScore: 0, formats: new Set() };
 
-/** slskd reports peer upload speed in bits/sec - that's our download rate for them. */
-function formatSpeed(bitsPerSecond) {
-    if (!bitsPerSecond) return 'unknown';
+/**
+ * Soulseek reports transfer rates in bytes/sec (protocol "avgspeed"), which slskd passes
+ * through unchanged on both search responses and transfers. Displayed as KB/s | MB/s.
+ */
+function formatSpeed(bytesPerSecond) {
+    if (!bytesPerSecond) return 'unknown';
 
-    const kb = bitsPerSecond / 1000;
-    if (kb < 1000) return `${Math.round(kb)} kb/s`;
-    return `${(kb / 1000).toFixed(1)} mb/s`;
+    const kb = bytesPerSecond / 1024;
+    if (kb < 1024) return `${Math.round(kb)} KB/s`;
+    return `${(kb / 1024).toFixed(1)} MB/s`;
 }
 
 function formatSize(bytes) {

@@ -2011,3 +2011,118 @@ span.white-tertiary { color: var(--white-tertiary-text); }
 .candidate-slot.busy {
     color: var(--white-tertiary-text);
 }
+
+
+/* ===== downloads dropdown ===== */
+
+#downloads-control {
+    position: relative;
+}
+
+#downloads-control.open > #downloads-toggle-button {
+    border-bottom-color: transparent;
+    color: var(--main-hover-text);
+}
+
+#downloads-toggle-button {
+    background-color: var(--background-color-light);
+    border: 1px solid var(--main-text);
+    color: var(--main-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.9em;
+    padding: 7px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+#downloads-toggle-button:hover {
+    color: var(--main-hover-text);
+    border-color: var(--main-hover-text);
+}
+
+#downloads-window {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% - 1px);
+    width: 440px;
+    max-height: min(60vh, 520px);
+    z-index: 500;
+    flex-direction: column;
+    background-color: var(--background-color-light);
+    border: 1px solid var(--main-text);
+    padding: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+#downloads-control.open > #downloads-window {
+    display: flex;
+}
+
+#downloads-scrollable {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.download-job {
+    border: 1px solid var(--white-secondary-text);
+    background-color: var(--background-color-input);
+    padding: 8px 10px;
+}
+
+.download-job-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.download-job-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.download-job-status {
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--white-tertiary-text);
+}
+
+.download-job-status.good { color: var(--green-text); }
+.download-job-status.mid { color: var(--yellow-text); }
+.download-job-status.bad { color: var(--red-text); }
+
+.download-job-meta {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+}
+
+.download-progress-track {
+    margin-top: 7px;
+    height: 4px;
+    background-color: var(--background-color);
+    border: 1px solid var(--muted-text);
+}
+
+.download-progress-fill {
+    height: 100%;
+    background-color: var(--main-text);
+    transition: width 0.4s ease;
+}
+
+.download-progress-fill.good { background-color: var(--green-text); }
+.download-progress-fill.mid { background-color: var(--yellow-text); }
+.download-progress-fill.bad { background-color: var(--red-text); }

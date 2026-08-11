@@ -145,11 +145,18 @@ class SlskdClient:
 
 
     async def get_downloads(self) -> list[dict]:
-        """All current downloads, grouped by user then directory."""
-        client = await self.get_client()
+        """
+        All current downloads, grouped by user then directory.
 
+        Never raises: this is read on every downloads-panel refresh and by the poller, and a
+        misconfigured or briefly unreachable slskd should degrade to "no live progress"
+        rather than breaking the whole panel. get_client() is inside the try for that reason
+        - it throws on missing config.
+        """
         try:
+            client = await self.get_client()
             return await asyncio.to_thread(client.transfers.get_all_downloads, includeRemoved=False)
+
         except Exception:
             logger.error("failed to fetch downloads from slskd", extra={"frontend": True, "src": "slskd"})
             logger.error(traceback.format_exc())

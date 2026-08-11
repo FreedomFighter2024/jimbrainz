@@ -14,3 +14,4 @@ test/
 TODO.md
 
 .dockerignore
+.devdata/

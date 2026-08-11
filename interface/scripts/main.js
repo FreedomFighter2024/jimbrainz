@@ -403,6 +403,13 @@ function getTrackString(media) {
 
 
 
+function isRemaster(release) {
+    const haystack = `${release.disambiguation || ''} ${release.title || ''}`.toLowerCase();
+    return haystack.includes('remaster');
+}
+
+
+
 function createReleaseElement(release, releaseGroupId, artistId) {
     const title = release.title || 'N/A';
     const format = release.media?.[0]?.format || 'N/A';
@@ -413,6 +420,8 @@ function createReleaseElement(release, releaseGroupId, artistId) {
     const date = release['release-events']?.[0]?.date || release.date || 'N/A';
     const releaseId = release.id;
     const media = release.media || [];
+    const remastered = isRemaster(release);
+    const disambiguation = release.disambiguation || '';
     const wrapper = document.createElement('div');
     wrapper.className = 'release-wrapper';
 
@@ -432,6 +441,7 @@ function createReleaseElement(release, releaseGroupId, artistId) {
             <h4 class="text default releaseFormat">[${format}]▷╲</h4>
             <h4 class="text default releaseTracks">(${tracks}),&nbsp;</h4>
             <h4 class="text default-secondary releaseStatus">${status}</h4>
+            ${remastered ? `<h4 class="text yellow releaseRemaster" title="${disambiguation}">[REMASTER]</h4>` : ''}
         </div>
         <div class="non-shrinkable">
             ${countryCode ? `<img src="https://flagcdn.com/${countryCode}.svg">` : `<img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/No_flag.svg">`}

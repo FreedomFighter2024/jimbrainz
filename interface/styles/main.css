@@ -646,70 +646,209 @@ flex: 1; min-height: 0; display: flex; flex-direction: column;
     padding-top: 10px;
 }
 
-.release-group-releases > .release-wrapper {
+/* ===== releases data grid ===== */
+
+.releases-grid-wrapper {
     width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.release-group-releases > .release-wrapper > .release {
+.releases-toolbar {
     display: flex;
-    flex-wrap: nowrap;
-    align-items: flex-start;
-    width:100%;
     flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
+.releases-filter-input {
+    flex-grow: 1;
+    min-width: 0;
+    background-color: var(--background-color-input);
+    border: 1px solid var(--muted-text);
+    border-radius: 3px;
+    color: var(--main-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.9em;
+    padding: 5px 8px;
+}
+
+.releases-filter-input:focus {
+    outline: none;
+    border-color: var(--main-secondary-text);
+}
+
+.releases-filter-input::placeholder {
+    color: var(--main-muted-text);
+}
+
+.releases-columns-control {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.columns-toggle-button {
+    background-color: transparent;
+    border: 1px solid var(--muted-text);
+    border-radius: 3px;
+    color: var(--white-secondary-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.9em;
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.columns-toggle-button:hover {
+    color: var(--white-text);
+    border-color: var(--white-secondary-text);
+}
+
+.columns-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 5px);
+    background-color: var(--background-color-light);
+    border: 1px solid var(--muted-text);
+    border-radius: 3px;
+    padding: 8px 10px;
+    z-index: 20;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 140px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.releases-columns-control.open .columns-dropdown {
+    display: flex;
+}
+
+.columns-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--white-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.9em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.columns-dropdown-item input[type="checkbox"] {
+    accent-color: var(--main-secondary-text);
     cursor: pointer;
 }
-.release > .shrinkable {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-}
-.release > .non-shrinkable {
-    flex-shrink:0;
-    flex-grow:0;
-    white-space:nowrap;
-    display:flex;
-    flex-direction:row;
-    margin-left:auto;
-    width:fit-content;
+
+.releases-table-scroll {
+    width: 100%;
+    overflow-x: auto;
 }
 
-.releaseName a {
+.releases-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+}
+
+.releases-table th {
+    text-align: left;
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    font-weight: var(--font-medium);
+    color: var(--white-secondary-text);
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--muted-text);
+    white-space: nowrap;
+}
+
+.releases-table th.releases-col-draggable {
+    cursor: grab;
+    user-select: none;
+}
+
+.releases-table th.releases-col-draggable.dragging {
+    opacity: 0.4;
+}
+
+.releases-table th.releases-col-expand,
+.releases-table th.releases-col-action {
+    width: 1%;
+}
+
+.releases-table td {
+    padding: 4px 10px;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.releases-table tr.release-row {
+    cursor: default;
+}
+
+.releases-table tr.release-row.has-tracks {
+    cursor: pointer;
+}
+
+.releases-table tr.release-row:hover {
+    background-color: var(--background-color-decor);
+}
+
+.releases-table td.releases-col-expand {
+    color: var(--white-tertiary-text);
+    text-align: center;
+    width: 1%;
+}
+
+.releases-table td.releases-col-action {
+    width: 1%;
+    text-align: right;
+}
+
+.releases-table td.releases-col-country img {
+    vertical-align: middle;
+    height: 0.9em;
+    margin-right: 6px;
+}
+
+.releaseGridTitle a {
     color: var(--white-text);
     text-decoration: none;
 }
-.releaseName a:hover {
+
+.releaseGridTitle a:hover {
     text-decoration: underline;
 }
 
-
-.release img {
-    vertical-align: middle;
-    height: 0.90em;
-    margin-right: 10px;
-}
-
-.release .releaseYear {
-    margin-left: 10px;
-}
-
-.release .releaseAddButton {
-    margin-left: 10px;
+.releaseAddButton {
     cursor: pointer;
 }
 
-.release .releaseAddButton:hover {
+.releaseAddButton:hover {
     text-decoration: underline;
 }
-.release .releaseAddButton:active{
+
+.releaseAddButton:active {
     transform: scale(0.98);
 }
 
-.release-wrapper {
-    display: flex;
-    flex-direction: column;
+.edition-tag {
+    display: inline-block;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 1px 6px;
+    margin: 1px 4px 1px 0;
+    font-size: 0.8em;
+}
+
+.releases-empty-cell {
+    text-align: center;
+    padding: 14px 10px !important;
+}
+
+.release-tracks-row td {
+    padding: 0 10px;
 }
 
 .release-tracks {
@@ -1100,6 +1239,9 @@ h4.white-tertiary{
 }
 h4.yellow {
     color: var(--yellow-text);
+}
+.text.main {
+    color: var(--main-text);
 }
 
 h5.green {

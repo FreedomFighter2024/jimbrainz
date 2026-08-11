@@ -1726,3 +1726,222 @@ h3.glow.green{
     background: var(--white-text);
     display:none;
 }
+
+
+/* ===== soulseek candidate picker ===== */
+
+#candidates-window {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -48%);
+    width: min(760px, 92vw);
+    height: min(70vh, 620px);
+    z-index: 600;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--background-color-light);
+    border: 1px solid var(--main-text);
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.65);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
+}
+
+#candidates-window.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+#candidates-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    padding: 10px;
+}
+
+#candidates-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+#candidates-close-button {
+    background: transparent;
+    border: none;
+    color: var(--white-secondary-text);
+    font-family: var(--font-family);
+    font-size: 1em;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 0 0 10px;
+}
+
+#candidates-close-button:hover {
+    color: var(--white-text);
+}
+
+#candidates-panel > hr {
+    display: block;
+    height: 1px;
+    border: 0;
+    border-top: 1px solid var(--main-text);
+    margin: 10px 0;
+}
+
+#candidates-subject {
+    flex-shrink: 0;
+    margin-bottom: 10px;
+}
+
+#candidates-release-label {
+    margin-bottom: 8px;
+}
+
+#candidates-query-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.candidates-query-label {
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    flex-shrink: 0;
+}
+
+#candidates-scrollable {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.candidates-status {
+    text-align: center;
+    padding: 24px 10px;
+}
+
+.candidate-box {
+    border: 1px solid var(--white-secondary-text);
+    background-color: var(--background-color-input);
+    padding: 8px 10px;
+}
+
+.candidate-box.queued {
+    border-color: var(--green-secondary-text);
+}
+
+.candidate-main {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+}
+
+.candidate-score {
+    flex-shrink: 0;
+    width: 2.6em;
+    text-align: center;
+    font-family: var(--font-family);
+    font-size: 1.3em;
+    font-weight: var(--font-bold);
+}
+
+.candidate-score.good { color: var(--green-text); }
+.candidate-score.mid { color: var(--yellow-text); }
+.candidate-score.bad { color: var(--red-text); }
+
+.candidate-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.candidate-dir {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.candidate-meta {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    margin-top: 2px;
+}
+
+.candidate-tags:not(:empty) {
+    margin-top: 4px;
+}
+
+.candidate-signals {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.candidate-signal {
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0 5px;
+    opacity: 0.85;
+}
+
+.candidate-signal.good { color: var(--green-text); }
+.candidate-signal.mid { color: var(--yellow-text); }
+.candidate-signal.bad { color: var(--red-text); }
+
+.candidate-download-button {
+    flex-shrink: 0;
+    background-color: var(--background-color-decor);
+    border: 1px solid var(--green-secondary-text);
+    padding: 6px 12px;
+    color: var(--green-text);
+    font-family: var(--font-family);
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.candidate-download-button:hover:not(:disabled) {
+    background-color: var(--green-text);
+    color: var(--background-color);
+}
+
+.candidate-download-button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.settings-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 2px;
+    border-top: 1px solid var(--muted-text);
+}
+
+/*
+? the text colour classes further up are all element scoped (h1-h5, pre, div), so a <span>
+? carrying `text default` matches nothing and falls back to black - invisible on this
+? background. These cover the spans actually used in the markup.
+*/
+span.default { color: var(--main-text); }
+span.default-secondary { color: var(--main-secondary-text); }
+span.default-muted { color: var(--main-muted-text); }
+span.white { color: var(--white-text); }
+span.white-secondary { color: var(--white-secondary-text); }
+span.white-tertiary { color: var(--white-tertiary-text); }

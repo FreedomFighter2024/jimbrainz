@@ -1,7 +1,18 @@
 from fastapi import APIRouter, HTTPException, Request
+from src.config import Config
 from src.logger import logger
 
 router = APIRouter()
+
+
+@router.get("/config")
+async def config():
+    """Server-side settings the interface needs to render (paths are env configured, not editable)."""
+    return {
+        "library_path": Config.LIBRARY_PATH,
+        "download_path": Config.SLSKD_DOWNLOAD_PATH,
+        "organizing_enabled": bool(Config.LIBRARY_PATH and Config.SLSKD_DOWNLOAD_PATH),
+    }
 
 @router.get("/ping")
 async def ping(request: Request):

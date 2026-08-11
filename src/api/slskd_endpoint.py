@@ -1,9 +1,26 @@
 import asyncio
+import re
 import traceback
 import slskd_api
 from requests.exceptions import HTTPError, ConnectionError
 from src.config import Config
 from src.logger import logger
+
+
+def build_search_query(artist: str, album: str) -> str:
+    """
+    Soulseek search is a plain substring match over shared filenames, not a metadata index.
+    Punctuation and edition text are actively harmful here - the Tubifarry maintainer's own
+    guidance is that over-specific queries return nothing, because "deluxe edition" almost
+    never appears in the folder names people actually share.
+
+    So the query stays deliberately dumb: artist + album. Edition preference is applied later
+    when ranking what comes back (src/matching.py), which is where it can help instead of hurt.
+    """
+    combined = f"{artist or ''} {album or ''}"
+    combined = re.sub(r"[\[\](){}_\-.,'\"!?/\\:;&+]", " ", combined)
+    combined = re.sub(r"\s+", " ", combined)
+    return combined.strip()
 
 
 class SlskdClient:
@@ -38,6 +55,105 @@ class SlskdClient:
     async def close_client(self) -> None:
         logger.info("closing slskd client")
         self.client = None
+
+
+    async def search(
+        self,
+        query: str,
+        search_timeout_ms: int = 8000,
+        poll_interval: float = 0.5,
+        max_wait: float = 25.0,
+    ) -> list[dict]:
+        """
+        Run a Soulseek search and wait for it to settle.
+
+        slskd searches are asynchronous: you POST one, peers trickle in responses, and it
+        flips isComplete when the timeout expires. slskd_api is synchronous so every call goes
+        through asyncio.to_thread, same as ping() already does.
+        """
+        logger.info(f"searching slskd for: {query}", extra={"frontend": True, "src": "slskd"})
+        client = await self.get_client()
+
+        state = await asyncio.to_thread(
+            client.searches.search_text,
+            searchText=query,
+            searchTimeout=search_timeout_ms,
+        )
+        search_id = state.get("id")
+
+        if not search_id:
+            logger.error("slskd did not return a search id", extra={"frontend": True, "src": "slskd"})
+            return []
+
+        elapsed = 0.0
+        while elapsed < max_wait:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            state = await asyncio.to_thread(client.searches.state, search_id)
+            if state.get("isComplete"):
+                break
+
+        else:
+            logger.warning(
+                f"slskd search didnt complete within {max_wait}s, using whatever came back",
+                extra={"frontend": True, "src": "slskd"},
+            )
+
+        responses = await asyncio.to_thread(client.searches.search_responses, search_id)
+        logger.info(
+            f"slskd returned {len(responses)} responses for: {query}",
+            extra={"frontend": True, "src": "slskd"},
+        )
+
+        #? don't let one-shot searches pile up in slskd's UI forever
+        try:
+            await asyncio.to_thread(client.searches.delete, search_id)
+        except Exception:
+            logger.warning(f"couldnt clean up slskd search {search_id}, harmless")
+
+        return responses
+
+
+    async def enqueue(self, username: str, files: list[dict]) -> bool:
+        """
+        Queue a download. `files` must be [{'filename': ..., 'size': ...}] exactly as returned
+        by search_responses - slskd matches on those two fields.
+        """
+        logger.info(
+            f"queueing {len(files)} files from {username}",
+            extra={"frontend": True, "src": "slskd"},
+        )
+        client = await self.get_client()
+
+        payload = [{"filename": f["filename"], "size": f["size"]} for f in files]
+
+        try:
+            ok = await asyncio.to_thread(client.transfers.enqueue, username=username, files=payload)
+
+            if ok:
+                logger.info(f"queued {len(files)} files from {username}", extra={"frontend": True, "src": "slskd"})
+            else:
+                logger.error(f"slskd refused the download from {username}", extra={"frontend": True, "src": "slskd"})
+
+            return bool(ok)
+
+        except Exception:
+            logger.error(f"failed to queue download from {username}", extra={"frontend": True, "src": "slskd"})
+            logger.error(traceback.format_exc())
+            return False
+
+
+    async def get_downloads(self) -> list[dict]:
+        """All current downloads, grouped by user then directory."""
+        client = await self.get_client()
+
+        try:
+            return await asyncio.to_thread(client.transfers.get_all_downloads, includeRemoved=False)
+        except Exception:
+            logger.error("failed to fetch downloads from slskd", extra={"frontend": True, "src": "slskd"})
+            logger.error(traceback.format_exc())
+            return []
 
 
     async def ping(self) -> dict:

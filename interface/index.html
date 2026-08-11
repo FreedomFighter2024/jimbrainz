@@ -52,6 +52,24 @@
                 </div>
             </div>
         </div>
+        <div id="candidates-window">
+            <div id="candidates-panel">
+                <div id="candidates-header">
+                    <h3 class="text default">░ ▒ ▓ soulseek candidates ▓ ▒ ░</h3>
+                    <button type="button" id="candidates-close-button">✕</button>
+                </div>
+                <hr>
+                <div id="candidates-subject">
+                    <h4 class="text white" id="candidates-release-label">—</h4>
+                    <div id="candidates-query-row">
+                        <span class="text default-muted candidates-query-label">query</span>
+                        <input type="text" id="candidates-query-input" class="releases-filter-input">
+                        <button type="button" id="candidates-requery-button" class="columns-toggle-button">Re-search</button>
+                    </div>
+                </div>
+                <div class="scrollable" id="candidates-scrollable"></div>
+            </div>
+        </div>
         <div id="middle-content">
             <div id="search-section">
                 <div class="input-box">
@@ -97,41 +115,25 @@
             <div class="settings-box" id="download-profile">
                 <h3 class="text default">░ ▒ ▓ download profile ▓ ▒ ░</h3>
                 <hr>
-                <div class="accordion-row" id="metadata-accordion-row">
+                <div class="accordion-row" id="format-accordion-row">
                     <button type="button" class="accordion-row-header">
-                        <span class="accordion-row-label text default">Metadata</span>
-                        <span class="accordion-row-value" id="metadata-profile-current">—</span>
+                        <span class="accordion-row-label text default">Format</span>
+                        <span class="accordion-row-value" id="format-preference-current">—</span>
                         <span class="accordion-row-caret">▾</span>
                     </button>
                     <div class="accordion-row-body">
-                        <div id="metadata-profile-select" class="text default"></div>
+                        <div id="format-preference-select" class="text default"></div>
                     </div>
                 </div>
-                <div class="accordion-row" id="quality-accordion-row">
-                    <button type="button" class="accordion-row-header">
-                        <span class="accordion-row-label text default">Quality</span>
-                        <span class="accordion-row-value" id="quality-profile-current">—</span>
-                        <span class="accordion-row-caret">▾</span>
-                    </button>
-                    <div class="accordion-row-body">
-                        <div id="quality-profile-select" class="text default"></div>
-                    </div>
-                </div>
-                <div class="accordion-row" id="folder-accordion-row">
-                    <button type="button" class="accordion-row-header">
-                        <span class="accordion-row-label text default">Folder</span>
-                        <span class="accordion-row-value" id="folder-profile-current">—</span>
-                        <span class="accordion-row-caret">▾</span>
-                    </button>
-                    <div class="accordion-row-body">
-                        <div id="folder-profile-select" class="text default"></div>
-                    </div>
+                <div class="settings-info-row">
+                    <span class="accordion-row-label text default">Library</span>
+                    <span class="accordion-row-value" id="library-path-display">—</span>
                 </div>
                 <div id="download-settings-select" class="text default">
                     <label id="download-settings-label" for="auto-download-checkbox" class="white">
                         <div id="auto-download-checkbox-container" class="custom-checkbox">
                             <input id="auto-download-checkbox" type="checkbox" class="white" name="auto-download-checkbox">
-                            <div id="download-settings-label-text" class="label-text">auto-download</div>
+                            <div id="download-settings-label-text" class="label-text">auto-grab best match</div>
                         </div>
                     </label>
                 </div>

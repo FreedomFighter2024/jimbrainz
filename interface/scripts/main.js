@@ -4,7 +4,7 @@ import {sleep} from './utils.js';
 
 
 document.addEventListener('DOMContentLoaded', async () => {
-    init({refreshLidarrInfo})
+    init({refreshServerConfig})
 });
 
 
@@ -46,13 +46,13 @@ function loadAllCoverImages(parentContainer) {
 
 
 
-async function fetchLidarrInfo() {
-    console.log("getting lidarr info")
-    const response = await fetch(`/lidbrainz/add_to_lidarr/system_info`);
+async function fetchServerConfig() {
+    console.log("getting server config")
+    const response = await fetch(`/lidbrainz/monitor_slskd/config`);
 
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'Failed to fetch system info');
+        throw new Error(error.detail || 'Failed to fetch server config');
     }
 
     return response.json();
@@ -60,20 +60,19 @@ async function fetchLidarrInfo() {
 
 
 
-async function refreshLidarrInfo() {
-    console.log("refreshng lidarr info")
+async function refreshServerConfig() {
+    console.log("refreshing server config")
     try {
-        const lidarrInfo = await fetchLidarrInfo();
-        await sleep(100)
-        await populateMetadataProfiles(lidarrInfo.metadata_profiles);
-        await sleep(150)
-        await populateQualityProfiles(lidarrInfo.quality_profiles);
-        await sleep(150)
-        await populateFolderProfiles(lidarrInfo.root_folders);
-        return lidarrInfo.lidarr_url;
+        const serverConfig = await fetchServerConfig();
+        populateFormatPreference();
+        updateAccordionValueLabel('library-path-display', serverConfig.library_path || 'not configured');
+        return serverConfig;
     }
 
-    catch (error) {}
+    catch (error) {
+        // still render the format picker, it's purely client side
+        populateFormatPreference();
+    }
 }
 
 
@@ -131,124 +130,60 @@ function setupAccordion() {
 }
 setupAccordion();
 
-const autoDownloadCheckbox = document.getElementById('auto-download-checkbox');
-if (typeof downloadDefaults.autoDownload === 'boolean') {
-    autoDownloadCheckbox.checked = downloadDefaults.autoDownload;
+const autoGrabCheckbox = document.getElementById('auto-download-checkbox');
+if (typeof downloadDefaults.autoGrab === 'boolean') {
+    autoGrabCheckbox.checked = downloadDefaults.autoGrab;
 }
-autoDownloadCheckbox.addEventListener('change', () => {
-    saveDownloadDefaults({ autoDownload: autoDownloadCheckbox.checked });
+autoGrabCheckbox.addEventListener('change', () => {
+    saveDownloadDefaults({ autoGrab: autoGrabCheckbox.checked });
 });
 
 
 
-async function populateMetadataProfiles(profiles) {
-    console.log("populating metadata profs")
-    const container = document.getElementById('metadata-profile-select');
+const FORMAT_PREFERENCES = [
+    { id: 'any', name: 'Any format' },
+    { id: 'prefer_lossless', name: 'Prefer lossless' },
+    { id: 'lossless_only', name: 'Lossless only' },
+];
+
+function populateFormatPreference() {
+    console.log("populating format preference")
+    const container = document.getElementById('format-preference-select');
     container.innerHTML = '';
 
-    const savedId = downloadDefaults.metadataProfileId;
-    const savedExists = profiles.some(p => p.id === savedId);
-    const selectedId = savedExists ? savedId : profiles[0]?.id;
+    const savedId = downloadDefaults.formatPreference;
+    const savedExists = FORMAT_PREFERENCES.some(f => f.id === savedId);
+    const selectedId = savedExists ? savedId : 'prefer_lossless';
 
-    profiles.forEach(profile => {
-        const metadataProfileElementId = `metadata-profile-${profile.id}`;
+    FORMAT_PREFERENCES.forEach(format => {
+        const elementId = `format-preference-${format.id}`;
         container.innerHTML +=
         `
-            <input type="radio" id="${metadataProfileElementId}" name="metadata-profile" value="${profile.id}" ${profile.id === selectedId ? 'checked' : ''}>
-            <label for="${metadataProfileElementId}">└─╲ ${profile.name}</label>
+            <input type="radio" id="${elementId}" name="format-preference" value="${format.id}" ${format.id === selectedId ? 'checked' : ''}>
+            <label for="${elementId}">\u2514\u2500\u2572 ${format.name}</label>
         `;
     });
 
-    updateAccordionValueLabel('metadata-profile-current', profiles.find(p => p.id === selectedId)?.name);
+    updateAccordionValueLabel('format-preference-current', FORMAT_PREFERENCES.find(f => f.id === selectedId)?.name);
 
     container.addEventListener('change', () => {
-        const checked = document.querySelector('#metadata-profile-select > input[type="radio"]:checked');
+        const checked = document.querySelector('#format-preference-select > input[type="radio"]:checked');
         if (!checked) return;
-        const profile = profiles.find(p => String(p.id) === checked.value);
-        updateAccordionValueLabel('metadata-profile-current', profile?.name);
-        saveDownloadDefaults({ metadataProfileId: profile ? profile.id : checked.value });
-        closeAccordionRow('metadata-accordion-row');
-    });
-}
-
-
-
-async function populateQualityProfiles(profiles) {
-    console.log("populating quality profs")
-    const container = document.getElementById('quality-profile-select');
-    container.innerHTML = '';
-
-    const savedId = downloadDefaults.qualityProfileId;
-    const savedExists = profiles.some(p => p.id === savedId);
-    const selectedId = savedExists ? savedId : profiles[0]?.id;
-
-    profiles.forEach(profile => {
-        const qualityProfileElementId = `quality-profile-${profile.id}`;
-        container.innerHTML +=
-        `
-            <input type="radio" id="${qualityProfileElementId}" name="quality-profile" value="${profile.id}" ${profile.id === selectedId ? 'checked' : ''}>
-            <label for="${qualityProfileElementId}">└─╲ ${profile.name}</label>
-        `;
-    });
-
-    updateAccordionValueLabel('quality-profile-current', profiles.find(p => p.id === selectedId)?.name);
-
-    container.addEventListener('change', () => {
-        const checked = document.querySelector('#quality-profile-select > input[type="radio"]:checked');
-        if (!checked) return;
-        const profile = profiles.find(p => String(p.id) === checked.value);
-        updateAccordionValueLabel('quality-profile-current', profile?.name);
-        saveDownloadDefaults({ qualityProfileId: profile ? profile.id : checked.value });
-        closeAccordionRow('quality-accordion-row');
-    });
-}
-
-
-
-async function populateFolderProfiles(profiles) {
-    console.log("populating folders")
-    const container = document.getElementById('folder-profile-select');
-    container.innerHTML = '';
-
-    const savedPath = downloadDefaults.folderPath;
-    const savedExists = profiles.some(p => p.path === savedPath);
-    const selectedPath = savedExists ? savedPath : profiles[0]?.path;
-
-    profiles.forEach(profile => {
-        const folderProfileElementId = `folder-profile-${profile.id}`;
-        container.innerHTML +=
-        `
-            <input type="radio" id="${folderProfileElementId}" name="folder-profile" value="${profile.path}" ${profile.path === selectedPath ? 'checked' : ''}>
-            <label for="${folderProfileElementId}">└─╲ ${profile.name}</label>
-        `;
-    });
-
-    updateAccordionValueLabel('folder-profile-current', profiles.find(p => p.path === selectedPath)?.name);
-
-    container.addEventListener('change', () => {
-        const checked = document.querySelector('#folder-profile-select > input[type="radio"]:checked');
-        if (!checked) return;
-        const profile = profiles.find(p => p.path === checked.value);
-        updateAccordionValueLabel('folder-profile-current', profile?.name);
-        saveDownloadDefaults({ folderPath: checked.value });
-        closeAccordionRow('folder-accordion-row');
+        const format = FORMAT_PREFERENCES.find(f => f.id === checked.value);
+        updateAccordionValueLabel('format-preference-current', format?.name);
+        saveDownloadDefaults({ formatPreference: checked.value });
+        closeAccordionRow('format-accordion-row');
     });
 }
 
 
 
 function getSettings() {
-    const metadataProfileId = document.querySelector('#metadata-profile-select > input[type="radio"]:checked').value;
-    const qualityProfileId = document.querySelector('#quality-profile-select > input[type="radio"]:checked').value;
-    const folderPath = document.querySelector('#folder-profile-select > input[type="radio"]:checked').value;
-    const autoDownload = document.getElementById('auto-download-checkbox').checked;
-    const settings = {
-        metadataProfileId,
-        qualityProfileId,
-        folderPath,
-        autoDownload
+    const checkedFormat = document.querySelector('#format-preference-select > input[type="radio"]:checked');
+    return {
+        formatPreference: checkedFormat ? checkedFormat.value : 'prefer_lossless',
+        autoGrab: document.getElementById('auto-download-checkbox').checked,
     };
-    return settings
 }
 
 
@@ -495,49 +430,215 @@ function processSearchResults(results) {
     loadAllCoverImages(container);
 }
 
-async function handleAddReleaseGroup(releaseGroupId, artistId) {
+async function findCandidates(expected) {
     const settings = getSettings();
-    const params = new URLSearchParams({
-        release_group_mbid: releaseGroupId,
-        artist_mbid: artistId,
-        metadata_profile_id: settings.metadataProfileId,
-        quality_profile_id: settings.qualityProfileId,
-        root_folder_path: settings.folderPath,
-        auto_download: settings.autoDownload
+    const response = await fetch(`/lidbrainz/download/find_candidates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...expected, format_preference: settings.formatPreference })
     });
-    const response = await fetch(`/lidbrainz/add_to_lidarr/fully_add_release?${params}`);
 
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'failed to add release group');
+        throw new Error(error.detail || 'search failed');
     }
 
-    const result = await response.json();
-    return result;
+    return response.json();
 }
 
 
 
-async function handleAddRelease(releaseGroupId, artistId, releaseId) {
-    const settings = getSettings();
-    const params = new URLSearchParams({
-        release_group_mbid: releaseGroupId,
-        artist_mbid: artistId,
-        release_mbid: releaseId,
-        metadata_profile_id: settings.metadataProfileId,
-        quality_profile_id: settings.qualityProfileId,
-        root_folder_path: settings.folderPath,
-        auto_download: settings.autoDownload
+async function enqueueCandidate(candidate) {
+    const response = await fetch(`/lidbrainz/download/enqueue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: candidate.username, files: candidate.files })
     });
-    const response = await fetch(`/lidbrainz/add_to_lidarr/fully_add_release?${params}`);
 
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'failed to add release');
+        throw new Error(error.detail || 'failed to queue download');
     }
 
-    const result = await response.json();
-    return result;
+    return response.json();
+}
+
+
+
+/* ===== soulseek candidate picker ===== */
+
+const candidatesWindow = document.getElementById('candidates-window');
+const candidatesScrollable = document.getElementById('candidates-scrollable');
+const candidatesQueryInput = document.getElementById('candidates-query-input');
+let currentExpected = null;
+
+function setCandidatesOpen(open) {
+    candidatesWindow.classList.toggle('open', open);
+}
+
+document.getElementById('candidates-close-button').addEventListener('click', () => setCandidatesOpen(false));
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && candidatesWindow.classList.contains('open')) setCandidatesOpen(false);
+});
+
+document.getElementById('candidates-requery-button').addEventListener('click', () => {
+    if (!currentExpected) return;
+    runCandidateSearch({ ...currentExpected, query_override: candidatesQueryInput.value.trim() });
+});
+
+
+
+function buildExpectedFromRelease(release, releaseGroupContext) {
+    // MusicBrainz numbers tracks per-disc, so a 2xCD set has two "track 1"s. The matcher keys
+    // its file mapping on position, so flatten to a running number across all discs.
+    const tracks = [];
+    let position = 0;
+
+    for (const disc of (release.media || [])) {
+        for (const track of (disc.tracks || [])) {
+            position += 1;
+            tracks.push({
+                position,
+                title: track.recording?.title || track.title || '',
+                length_ms: track.recording?.length ?? track.length ?? null,
+            });
+        }
+    }
+
+    const rawDate = release['release-events']?.[0]?.date || release.date || '';
+
+    return {
+        artist: releaseGroupContext.artist,
+        album: release.title || releaseGroupContext.album,
+        year: rawDate ? rawDate.substring(0, 4) : releaseGroupContext.year,
+        release_mbid: release.id,
+        edition_tags: getEditionTags(release),
+        tracks,
+    };
+}
+
+
+
+function buildExpectedFromReleaseGroup(releaseGroupContext) {
+    // No specific release picked, so there's no tracklist to match against. The matcher
+    // drops the tracklist-dependent signals rather than scoring these as failures.
+    return {
+        artist: releaseGroupContext.artist,
+        album: releaseGroupContext.album,
+        year: releaseGroupContext.year,
+        release_mbid: null,
+        edition_tags: [],
+        tracks: [],
+    };
+}
+
+
+
+async function openCandidatesPanel(expected, label) {
+    currentExpected = expected;
+    document.getElementById('candidates-release-label').textContent = label;
+    setCandidatesOpen(true);
+    await runCandidateSearch(expected);
+}
+
+
+
+async function runCandidateSearch(expected) {
+    candidatesScrollable.innerHTML = `<h4 class="text default-muted candidates-status">searching soulseek…</h4>`;
+
+    try {
+        const result = await findCandidates(expected);
+        candidatesQueryInput.value = result.query;
+        renderCandidates(result);
+    }
+
+    catch (error) {
+        console.error(`Candidate search error: ${error.message}`);
+        candidatesScrollable.innerHTML =
+            `<h4 class="text red candidates-status">search failed: ${error.message}</h4>`;
+    }
+}
+
+
+
+const SIGNAL_LABELS = {
+    title_match: 'titles',
+    track_count: 'count',
+    duration_match: 'lengths',
+    edition: 'edition',
+    format: 'format',
+    peer: 'peer',
+};
+
+function renderCandidates(result) {
+    candidatesScrollable.innerHTML = '';
+
+    if (!result.candidates.length) {
+        candidatesScrollable.innerHTML =
+            `<h4 class="text default-muted candidates-status">no matches from ${result.response_count} responses — try editing the query above</h4>`;
+        return;
+    }
+
+    for (const candidate of result.candidates) {
+        const box = document.createElement('div');
+        box.className = 'candidate-box';
+
+        const scorePercent = Math.round(candidate.score * 100);
+        const trackSummary = candidate.expected_tracks
+            ? `${candidate.matched_tracks}/${candidate.expected_tracks} tracks`
+            : `${candidate.audio_file_count} files`;
+
+        const signalMarkup = Object.entries(candidate.signals)
+            .filter(([, value]) => value !== null)
+            .map(([key, value]) => {
+                const pct = Math.round(value * 100);
+                return `<span class="candidate-signal ${pct >= 75 ? 'good' : pct >= 40 ? 'mid' : 'bad'}">${SIGNAL_LABELS[key] || key} ${pct}</span>`;
+            })
+            .join('');
+
+        const editionMarkup = candidate.detected_edition_tags
+            .map(tag => `<h4 class="text ${EDITION_TAG_COLORS[tag] || 'default'} edition-tag">${tag}</h4>`)
+            .join('');
+
+        box.innerHTML = `
+            <div class="candidate-main">
+                <div class="candidate-score ${scorePercent >= 75 ? 'good' : scorePercent >= 40 ? 'mid' : 'bad'}">${scorePercent}</div>
+                <div class="candidate-body">
+                    <h4 class="text white candidate-dir" title="${candidate.directory}">${candidate.directory_name}</h4>
+                    <div class="candidate-meta">
+                        <span class="text default-secondary">${candidate.username}</span>
+                        <span class="text default-muted">·</span>
+                        <span class="text default-secondary">${trackSummary}</span>
+                        <span class="text default-muted">·</span>
+                        <span class="text default-secondary">${candidate.formats.join(', ') || 'unknown'}</span>
+                    </div>
+                    <div class="candidate-tags">${editionMarkup}</div>
+                    <div class="candidate-signals">${signalMarkup}</div>
+                </div>
+                <button type="button" class="candidate-download-button">Download</button>
+            </div>
+        `;
+
+        const button = box.querySelector('.candidate-download-button');
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            button.textContent = 'queueing…';
+
+            try {
+                await enqueueCandidate(candidate);
+                button.textContent = 'queued ✓';
+                box.classList.add('queued');
+            }
+
+            catch (error) {
+                console.error(`Enqueue error: ${error.message}`);
+                button.textContent = 'failed';
+                button.disabled = false;
+            }
+        });
+
+        candidatesScrollable.appendChild(box);
+    }
 }
 
 
@@ -890,7 +991,7 @@ renderTagFilterRow();
 
 
 
-function buildReleasesGrid(releases, releaseGroupId, artistId) {
+function buildReleasesGrid(releases, releaseGroupId, artistId, releaseGroupContext) {
     const wrapper = document.createElement('div');
     wrapper.className = 'releases-grid-wrapper';
 
@@ -1137,17 +1238,16 @@ function buildReleasesGrid(releases, releaseGroupId, artistId) {
 
             const actionCell = document.createElement('td');
             actionCell.className = 'releases-col-action';
-            actionCell.innerHTML = `<h4 class="text green releaseAddButton">Add release</h4>`;
+            actionCell.innerHTML = `<h4 class="text green releaseAddButton">Find</h4>`;
             actionCell.querySelector('.releaseAddButton').addEventListener('click', async (e) => {
                 e.stopPropagation();
 
-                try {
-                    await handleAddRelease(releaseGroupId, artistId, releaseId);
-                }
-
-                catch (error) {
-                    console.error(`Add release error: ${error.message}`);
-                }
+                const expected = buildExpectedFromRelease(release, releaseGroupContext);
+                const editionSuffix = expected.edition_tags.length ? ` [${expected.edition_tags.join(', ')}]` : '';
+                await openCandidatesPanel(
+                    expected,
+                    `${releaseGroupContext.artist} - ${expected.album}${editionSuffix}`
+                );
             });
             row.appendChild(actionCell);
 
@@ -1245,6 +1345,8 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     const score = releaseGroup.score ?? 'N/A';
     const releaseGroupId = releaseGroup.id;
     const artistId = getArtistId(releaseGroup['artist-credit']);
+    // carried down into the releases grid so each row can build a soulseek search for itself
+    const releaseGroupContext = { artist, album: title, year, releaseGroupId, artistId };
     const imageWrapper = document.createElement('div');
     imageWrapper.className = 'results-box-image-container';
     imageWrapper.setAttribute('data-mbid', releaseGroupId);
@@ -1265,7 +1367,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
             </div>
             <div class="non-shrinkable">
                 <h3 class="text default matchScore">Match%: ${score}</h3>
-                <button class="text default addButton" type="button">Add</button>
+                <button class="text default addButton" type="button">Find</button>
             </div>
         </div>
     `;
@@ -1296,21 +1398,16 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     div.innerHTML = html;
 
     div.querySelector('.addButton').addEventListener('click', async () => {
-        let status;
-
-        try {
-            status = await handleAddReleaseGroup(releaseGroupId, artistId)
-        }
-
-        catch (error) {
-            status = `Add release group error: ${error.message}`;
-        }
+        await openCandidatesPanel(
+            buildExpectedFromReleaseGroup(releaseGroupContext),
+            `${artist} - ${title}`
+        );
     });
 
     if (releases && releases.length) {
         const releasesContainer = div.querySelector('.release-group-releases');
         const toggleButton = div.querySelector('.releases-toggle-button');
-        releasesContainer.appendChild(buildReleasesGrid(releases, releaseGroupId, artistId));
+        releasesContainer.appendChild(buildReleasesGrid(releases, releaseGroupId, artistId, releaseGroupContext));
 
         toggleButton.addEventListener('click', () => {
             releasesContainer.classList.toggle('expanded');
@@ -1351,7 +1448,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
                 div.insertAdjacentHTML('beforeend', newHtml);
                 const releasesContainer = div.querySelector('.release-group-releases');
                 const toggleButton = div.querySelector('.releases-toggle-button');
-                releasesContainer.appendChild(buildReleasesGrid(fetchedReleases, releaseGroupId, artistId));
+                releasesContainer.appendChild(buildReleasesGrid(fetchedReleases, releaseGroupId, artistId, releaseGroupContext));
 
                 toggleButton.addEventListener('click', () => {
                     releasesContainer.classList.toggle('expanded');

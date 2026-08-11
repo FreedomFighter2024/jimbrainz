@@ -1,6 +1,9 @@
 services:
   jimbrainz:
-    image: ghcr.io/real-lizardwizard/jimbrainz:latest
+    # :experimental is built from the experimental/* branches - this is the slskd-direct
+    # version with no Lidarr. :latest is the stable Lidarr-based line and will NOT understand
+    # the settings below, so don't swap it in without also reverting this file.
+    image: ghcr.io/real-lizardwizard/jimbrainz:experimental
     container_name: jimbrainz
     restart: unless-stopped
     env_file:

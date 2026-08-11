@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'experimental/**'
   workflow_dispatch:
 
 env:
@@ -31,12 +33,27 @@ jobs:
       - name: Compute image tags
         id: tags
         run: |
-          IMAGE_NAME="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
-          tags="${REGISTRY}/${IMAGE_NAME}:latest"
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            tags="${tags}
-          ${REGISTRY}/${IMAGE_NAME}:${GITHUB_REF_NAME#v}"
+          # docker tags must be lowercase; the org name isn't
+          image="${REGISTRY}/$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            tags="${image}:${version}"
+
+            # :latest only ever moves for a real release. Never a prerelease (1.0.0-rc1),
+            # never a branch build - otherwise anyone pulling :latest silently gets
+            # unfinished code, which is the whole reason experimental has its own tag.
+            if [[ "${version}" != *-* ]]; then
+              tags="${tags}"$'\n'"${image}:latest"
+            fi
+
+          elif [[ "${GITHUB_REF}" == refs/heads/experimental/* ]]; then
+            tags="${image}:experimental"
+
+          else
+            tags="${image}:$(echo "${GITHUB_REF_NAME}" | tr '/' '-')"
           fi
+
           {
             echo "tags<<EOF"
             echo "$tags"
@@ -56,3 +73,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

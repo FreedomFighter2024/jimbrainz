@@ -44,6 +44,16 @@ _Note: if you're an **UnRaid** user like me, ive added a template that can be ma
 
 **The one that trips everyone up:** `SLSKD_DOWNLOAD_PATH` has to point at the *same files* slskd writes its finished downloads to, as seen from inside this container. If the two containers disagree about that path, organizing quietly finds nothing. It's the most likely first-run problem by a mile.
 
+### Which image tag?
+
+| tag | what it is |
+| --- | --- |
+| `:experimental` | this branch — slskd direct, no Lidarr. Rebuilt on every push to `experimental/*`. |
+| `:latest` | the stable Lidarr-based line (0.2.x). Does **not** understand the settings above. |
+| `:0.2.1` etc | pinned versions |
+
+The example compose file on this branch points at `:experimental`. It moves whenever the branch does, so pin a version instead if you want it to hold still.
+
 ### Running
 run docker compose from the same folder as your cloned repo / docker-compose file:<br><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`docker-compose up -d`<br><br>this by default starts the container on localhost:8080, or whatever port you configured it to.
 

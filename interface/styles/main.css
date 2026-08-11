@@ -203,42 +203,6 @@ body {
                 
             }
 
-#lidbrainz-connection{
-    background-color: var(--background-color-light);
-    border: 1px solid var(--main-text);
-    padding: 10px; 
-    
-    flex:1;
-    
-display: flex; flex-direction: column; min-height: 0
-    
-}
-#lidbrainz-event-log{
-    
-    
-flex: 1; min-height: 0; display: flex; flex-direction: column;
-}
-    #lidbrainz-event-log > h3 {
-        text-align: center;
-        margin-bottom: 10px;
-    }
-    #lidbrainz-event-log > hr{
-        display: block;
-        height: 1px;
-        border: 0;
-        border-top: 1px solid var(--main-text);
-        margin-top: 0px;
-        margin-bottom:10px;
-    }
-    #logs-scrollable{
-        display:flex;
-        flex-direction: column;
-        overflow-y: auto;
-        min-height: 0;
-        flex: 1; min-height: 0;
-        scrollbar-color: var(--white-secondary-text) transparent;
-        
-    }
         .event-item{
             display:flex;
             flex-direction: column;
@@ -1476,8 +1440,12 @@ h3.glow.green{
     display: flex;
     align-items: center;
     gap: 7px;
+    width: 100%;
     cursor: pointer;
     padding: 2px 0;
+    background: transparent;
+    border: none;
+    text-align: left;
     font-family: var(--font-family-condensed);
     font-size: 0.85em;
     color: var(--white-secondary-text);
@@ -1487,10 +1455,34 @@ h3.glow.green{
     color: var(--white-text);
 }
 
-.facet-option input[type="checkbox"] {
-    accent-color: var(--main-secondary-text);
-    cursor: pointer;
+.facet-marker {
     flex-shrink: 0;
+    font-family: var(--font-family);
+    color: var(--white-tertiary-text);
+}
+
+.facet-option.include {
+    color: var(--main-hover-text);
+}
+
+.facet-option.include .facet-marker {
+    color: var(--main-text);
+    text-shadow: 0 0 3.25px var(--main-glow-text), 0 0 8.25px var(--main-glow-text);
+}
+
+/* excluded values stay listed rather than vanishing, so it's obvious what's being hidden */
+.facet-option.exclude {
+    color: var(--red-text);
+}
+
+.facet-option.exclude .facet-option-label {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+
+.facet-option.exclude .facet-marker {
+    color: var(--red-text);
+    text-shadow: 0 0 3.25px var(--red-glow-text), 0 0 8.25px var(--red-glow-text);
 }
 
 .facet-option-label {
@@ -1504,10 +1496,6 @@ h3.glow.green{
     flex-shrink: 0;
     color: var(--main-muted-text);
     font-size: 0.9em;
-}
-
-.facet-option.checked {
-    color: var(--main-hover-text);
 }
 
 .facet-empty {
@@ -1550,55 +1538,46 @@ h3.glow.green{
     padding: 0 3px;
 }
 
+/*
+? log is a dropdown hanging off its own button now rather than a floating window. The button
+? and panel share one continuous border: when open the button's bottom border goes
+? transparent and the panel tucks up under it by 1px so they read as a single shape.
+*/
+#log-control {
+    position: relative;
+}
+
+#log-control.open > #log-toggle-button {
+    border-bottom-color: transparent;
+    color: var(--main-hover-text);
+}
+
 #log-window {
-    position: fixed;
-    left: 20px;
-    top: 90px;
-    width: 380px;
-    height: min(65vh, 560px);
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% - 1px);
+    width: 460px;
+    height: min(60vh, 520px);
     z-index: 500;
+    flex-direction: column;
+    background-color: var(--background-color-light);
+    border: 1px solid var(--main-text);
+    padding: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+#log-control.open > #log-window {
+    display: flex;
+}
+
+#logs-scrollable {
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
-    opacity: 0;
-    visibility: hidden;
-    transform: translateX(-12px);
-    pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
-}
-
-#log-window.open {
-    opacity: 1;
-    visibility: visible;
-    transform: translateX(0);
-    pointer-events: auto;
-    transition: opacity 0.18s ease, transform 0.18s ease;
-}
-
-#log-window-header {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-}
-
-#log-window-header > h3 {
-    margin-bottom: 0;
-}
-
-#log-close-button {
-    background: transparent;
-    border: none;
-    color: var(--white-secondary-text);
-    font-family: var(--font-family);
-    font-size: 1em;
-    cursor: pointer;
-    line-height: 1;
-    padding: 0 0 0 10px;
-}
-
-#log-close-button:hover {
-    color: var(--white-text);
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-color: var(--white-secondary-text) transparent;
 }
 
 #event-log {

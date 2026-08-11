@@ -116,6 +116,7 @@ const profileControl = document.getElementById('profile-control');
 document.getElementById('profile-toggle-button').addEventListener('click', (e) => {
     e.stopPropagation();
     profileControl.classList.toggle('open');
+    if (typeof setLogOpen === 'function') setLogOpen(false);
 });
 document.addEventListener('click', (e) => {
     if (!profileControl.contains(e.target)) profileControl.classList.remove('open');
@@ -199,17 +200,20 @@ checkScrollability();
 
 
 
-/* ===== floating log window ===== */
+/* ===== log dropdown (anchored under its own button in the top bar) ===== */
 
 const LOG_STATE_STORAGE_KEY = 'jimbrainz-log-open';
-const logWindow = document.getElementById('log-window');
+const logControl = document.getElementById('log-control');
 const logToggleButton = document.getElementById('log-toggle-button');
-const logCloseButton = document.getElementById('log-close-button');
 const logUnreadBadge = document.getElementById('log-unread-badge');
 let unreadLogCount = 0;
 
+function isLogOpen() {
+    return logControl.classList.contains('open');
+}
+
 function setLogOpen(open) {
-    logWindow.classList.toggle('open', open);
+    logControl.classList.toggle('open', open);
 
     try {
         localStorage.setItem(LOG_STATE_STORAGE_KEY, open ? '1' : '0');
@@ -239,22 +243,21 @@ function isLogOpenSaved() {
 
 setLogOpen(isLogOpenSaved());
 
-logToggleButton.addEventListener('click', () => {
-    setLogOpen(!logWindow.classList.contains('open'));
+logToggleButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setLogOpen(!isLogOpen());
+    profileControl.classList.remove('open');
 });
-logCloseButton.addEventListener('click', () => setLogOpen(false));
 
 document.addEventListener('click', (e) => {
-    if (logWindow.classList.contains('open') && !logWindow.contains(e.target) && !logToggleButton.contains(e.target)) {
-        setLogOpen(false);
-    }
+    if (isLogOpen() && !logControl.contains(e.target)) setLogOpen(false);
 });
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && logWindow.classList.contains('open')) setLogOpen(false);
+    if (e.key === 'Escape' && isLogOpen()) setLogOpen(false);
 });
 
 const logObserver = new MutationObserver((mutations) => {
-    if (logWindow.classList.contains('open')) return;
+    if (isLogOpen()) return;
 
     for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
@@ -979,10 +982,34 @@ const FACET_DEFS = [
         (release['label-info'] || []).map(li => li.label?.name).filter(Boolean) },
 ];
 
+// Each facet tracks two sets so a value can be required *or* ruled out - the point being
+// things like "any pressing except the deluxe edition", which a plain checkbox can't say.
 const globalFilterState = {
     text: '',
-    facets: Object.fromEntries(FACET_DEFS.map(f => [f.id, new Set()])),
+    facets: Object.fromEntries(FACET_DEFS.map(f => [f.id, { include: new Set(), exclude: new Set() }])),
 };
+
+const FACET_STATES = ['neutral', 'include', 'exclude'];
+const FACET_MARKERS = { neutral: '[ ]', include: '[+]', exclude: '[-]' };
+
+function facetStateOf(facetId, value) {
+    const facet = globalFilterState.facets[facetId];
+    if (facet.include.has(value)) return 'include';
+    if (facet.exclude.has(value)) return 'exclude';
+    return 'neutral';
+}
+
+function cycleFacetState(facetId, value) {
+    const facet = globalFilterState.facets[facetId];
+    const next = FACET_STATES[(FACET_STATES.indexOf(facetStateOf(facetId, value)) + 1) % FACET_STATES.length];
+
+    facet.include.delete(value);
+    facet.exclude.delete(value);
+    if (next === 'include') facet.include.add(value);
+    if (next === 'exclude') facet.exclude.add(value);
+
+    return next;
+}
 
 function notifyFilterStateChange() {
     mountedReleaseGrids.forEach(grid => grid.rerender());
@@ -993,13 +1020,17 @@ function notifyFilterStateChange() {
 function releaseMatchesFilters(release, searchText) {
     if (globalFilterState.text && !searchText.includes(globalFilterState.text)) return false;
 
-    // multi-select inside one facet is OR, across facets it's AND - standard faceted search
+    // multi-select inside one facet is OR, across facets it's AND - standard faceted search.
+    // Exclusions are checked first and always win: one excluded value drops the release even
+    // if it also matches something in the include set.
     for (const def of FACET_DEFS) {
-        const selected = globalFilterState.facets[def.id];
-        if (!selected.size) continue;
+        const { include, exclude } = globalFilterState.facets[def.id];
+        if (!include.size && !exclude.size) continue;
 
         const values = def.valuesOf(release);
-        if (!values.some(v => selected.has(v))) return false;
+
+        if (exclude.size && values.some(v => exclude.has(v))) return false;
+        if (include.size && !values.some(v => include.has(v))) return false;
     }
 
     return true;
@@ -1014,7 +1045,10 @@ globalFilterInput.addEventListener('input', () => {
 document.getElementById('clear-filters-button').addEventListener('click', () => {
     globalFilterState.text = '';
     globalFilterInput.value = '';
-    for (const set of Object.values(globalFilterState.facets)) set.clear();
+    for (const facet of Object.values(globalFilterState.facets)) {
+        facet.include.clear();
+        facet.exclude.clear();
+    }
     notifyFilterStateChange();
 });
 
@@ -1095,30 +1129,30 @@ function renderFacets() {
         group.innerHTML = `<h4 class="text default facet-group-title">${def.label}</h4>`;
 
         for (const [value, count] of values) {
-            const selected = globalFilterState.facets[def.id].has(value);
-            const option = document.createElement('label');
-            option.className = `facet-option${selected ? ' checked' : ''}`;
+            const state = facetStateOf(def.id, value);
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = `facet-option ${state}`;
+            option.title = 'click to include, again to exclude, again to reset';
 
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = selected;
-            checkbox.addEventListener('change', () => {
-                const set = globalFilterState.facets[def.id];
-                if (checkbox.checked) set.add(value);
-                else set.delete(value);
-                notifyFilterStateChange();
-            });
+            const marker = document.createElement('span');
+            marker.className = 'facet-marker';
+            marker.textContent = FACET_MARKERS[state];
 
             const labelSpan = document.createElement('span');
             labelSpan.className = 'facet-option-label';
             labelSpan.textContent = value;
-            labelSpan.title = value;
 
             const countSpan = document.createElement('span');
             countSpan.className = 'facet-option-count';
             countSpan.textContent = count;
 
-            option.append(checkbox, labelSpan, countSpan);
+            option.addEventListener('click', () => {
+                cycleFacetState(def.id, value);
+                notifyFilterStateChange();
+            });
+
+            option.append(marker, labelSpan, countSpan);
             group.appendChild(option);
         }
 

@@ -31,6 +31,7 @@ jobs:
       - name: Compute image tags
         id: tags
         run: |
+          IMAGE_NAME="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
           tags="${REGISTRY}/${IMAGE_NAME}:latest"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             tags="${tags}

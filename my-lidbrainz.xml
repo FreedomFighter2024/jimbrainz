@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>lidbrainz</Name>
-  <Repository>ghcr.io/freedomfighter2024/jimbrainz:latest</Repository>
-  <Registry>https://github.com/freedomfighter2024/jimbrainz/pkgs/container/jimbrainz</Registry>
+  <Repository>ghcr.io/real-lizardwizard/jimbrainz:latest</Repository>
+  <Registry>https://github.com/real-lizardwizard/jimbrainz/pkgs/container/jimbrainz</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
-  <Support>https://github.com/freedomfighter2024/jimbrainz</Support>
-  <Project>https://github.com/freedomfighter2024/jimbrainz</Project>
+  <Support>https://github.com/real-lizardwizard/jimbrainz</Support>
+  <Project>https://github.com/real-lizardwizard/jimbrainz</Project>
   <Overview>search bar for musicbrainz to send to lidarr</Overview>
   <Category>Tools: Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
   <TemplateURL>false</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/freedomfighter2024/jimbrainz/refs/heads/main/interface/assets/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/real-lizardwizard/jimbrainz/refs/heads/main/interface/assets/icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>

@@ -1,6 +1,6 @@
 services:
   lidbrainz:
-    image: ghcr.io/freedomfighter2024/jimbrainz:latest
+    image: ghcr.io/real-lizardwizard/jimbrainz:latest
     container_name: lidbrainz
     restart: unless-stopped
     env_file: 

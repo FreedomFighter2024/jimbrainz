@@ -324,3 +324,114 @@ def test_organize_job_reports_when_nothing_is_on_disk(tmp_path):
 
     assert results["organized"] == 0
     assert results["plan"]["problems"]
+
+
+# ---------------------------------------------------------------- companions & cleanup
+
+def seed_with_extras(tmp_path, audio, extras):
+    folder = tmp_path / "downloads" / "MHTRTC"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in audio + extras:
+        (folder / name).write_bytes(b"x")
+    return tmp_path / "downloads"
+
+
+def test_cover_art_is_carried_into_the_library(tmp_path):
+    """Only audio is ever enqueued, so art left in slskd's folder would simply be lost."""
+    root = seed_with_extras(tmp_path, ["01 - Wildlife Analysis.flac"], ["cover.jpg", "album.log"])
+    library = tmp_path / "music"
+    job = make_job([r"share\BoC\MHTRTC\01 - Wildlife Analysis.flac"])
+
+    plan = plan_organization(job, str(root), str(library))
+    assert plan["companion_count"] == 2
+
+    execute_plan(plan, RELEASE, mode="copy")
+    album = library / "Boards of Canada" / "Music Has the Right to Children (1998)"
+    assert (album / "cover.jpg").exists()
+    assert (album / "album.log").exists()
+
+
+def test_unrelated_file_types_are_not_dragged_along(tmp_path):
+    root = seed_with_extras(tmp_path, ["01 - Wildlife Analysis.flac"], ["setup.exe", "notes.doc"])
+    plan = plan_organization(make_job([r"share\BoC\MHTRTC\01 - Wildlife Analysis.flac"]),
+                             str(root), str(tmp_path / "music"))
+    assert plan["companion_count"] == 0
+
+
+def test_move_removes_the_emptied_source_folder(tmp_path):
+    root = seed_with_extras(tmp_path, ["01 - Wildlife Analysis.flac"], ["cover.jpg"])
+    library = tmp_path / "music"
+    job = make_job([r"share\BoC\MHTRTC\01 - Wildlife Analysis.flac"])
+
+    results = asyncio.run(organize_job(job, str(root), str(library), "move"))
+
+    assert results["removed_dirs"]
+    assert not (root / "MHTRTC").exists()
+
+
+def test_copy_never_removes_the_source(tmp_path):
+    """copy exists precisely so the original stays put."""
+    root = seed_with_extras(tmp_path, ["01 - Wildlife Analysis.flac"], [])
+    job = make_job([r"share\BoC\MHTRTC\01 - Wildlife Analysis.flac"])
+
+    results = asyncio.run(organize_job(job, str(root), str(tmp_path / "music"), "copy"))
+
+    assert "removed_dirs" not in results
+    assert (root / "MHTRTC" / "01 - Wildlife Analysis.flac").exists()
+
+
+def test_source_is_kept_when_something_was_skipped(tmp_path):
+    """A half-finished job must not have its source deleted out from under it."""
+    root = seed_with_extras(tmp_path, ["01 - Wildlife Analysis.flac"], [])
+    library = tmp_path / "music"
+    destination = library / "Boards of Canada" / "Music Has the Right to Children (1998)" \
+        / "01 - Wildlife Analysis.flac"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"already here")
+
+    job = make_job([r"share\BoC\MHTRTC\01 - Wildlife Analysis.flac"])
+    results = asyncio.run(organize_job(job, str(root), str(library), "move"))
+
+    assert results["skipped"] == 1
+    assert results["removed_dirs"] == []
+    assert (root / "MHTRTC" / "01 - Wildlife Analysis.flac").exists()
+
+
+def test_a_directory_outside_the_download_root_is_never_removed(tmp_path):
+    """The containment guard: a stray path must not let the delete escape."""
+    from src.organizer import cleanup_source_dirs
+
+    outside = tmp_path / "somewhere-else"
+    outside.mkdir()
+    plan = {"source_dirs": [str(outside)]}
+
+    removed = cleanup_source_dirs(plan, str(tmp_path / "downloads"), {"failed": 0, "skipped": 0})
+
+    assert removed == []
+    assert outside.exists()
+
+
+def test_the_download_root_itself_is_never_removed(tmp_path):
+    from src.organizer import cleanup_source_dirs
+
+    root = tmp_path / "downloads"
+    root.mkdir()
+    removed = cleanup_source_dirs({"source_dirs": [str(root)]}, str(root), {"failed": 0, "skipped": 0})
+
+    assert removed == []
+    assert root.exists()
+
+
+def test_a_folder_with_unexpected_leftovers_is_reported_not_wiped(tmp_path):
+    """rmdir refuses non-empty by construction - anything left is not ours to delete."""
+    from src.organizer import cleanup_source_dirs
+
+    root = tmp_path / "downloads"
+    folder = root / "MHTRTC"
+    folder.mkdir(parents=True)
+    (folder / "something-we-did-not-download.mkv").write_bytes(b"x")
+
+    removed = cleanup_source_dirs({"source_dirs": [str(folder)]}, str(root), {"failed": 0, "skipped": 0})
+
+    assert removed == []
+    assert (folder / "something-we-did-not-download.mkv").exists()

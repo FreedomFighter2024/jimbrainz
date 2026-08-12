@@ -2186,3 +2186,60 @@ span.red { color: var(--red-text); }
     color: var(--white-text);
     border-color: var(--white-secondary-text);
 }
+
+
+#downloads-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-shrink: 0;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--muted-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+}
+
+#downloads-clear-button {
+    background: transparent;
+    border: 1px solid var(--muted-text);
+    border-radius: 3px;
+    color: var(--white-secondary-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.95em;
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#downloads-clear-button:hover:not(:disabled) {
+    color: var(--white-text);
+    border-color: var(--white-secondary-text);
+}
+
+#downloads-clear-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.download-cancel-button {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--white-tertiary-text);
+    font-family: var(--font-family);
+    font-size: 0.9em;
+    line-height: 1;
+    padding: 0 0 0 8px;
+    cursor: pointer;
+}
+
+.download-cancel-button:hover:not(:disabled) {
+    color: var(--red-text);
+}
+
+.download-cancel-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}

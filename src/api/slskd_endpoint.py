@@ -151,6 +151,39 @@ class SlskdClient:
             return False
 
 
+    async def cancel_download(self, username: str, transfer_id: str, remove: bool = True) -> bool:
+        """Cancel one in-flight transfer. `remove` also drops it from slskd's own list."""
+        try:
+            client = await self.get_client()
+            return bool(await asyncio.to_thread(
+                client.transfers.cancel_download, username=username, id=transfer_id, remove=remove
+            ))
+
+        except Exception:
+            logger.error(f"failed to cancel transfer {transfer_id} from {username}")
+            logger.error(traceback.format_exc())
+            return False
+
+
+    async def queue_position(self, username: str, transfer_id: str) -> int | None:
+        """
+        Where we sit in a peer's upload queue.
+
+        slskd only answers this per transfer, so it's asked for sparingly - a queued job
+        rather than every file on every poll.
+        """
+        try:
+            client = await self.get_client()
+            position = await asyncio.to_thread(
+                client.transfers.get_queue_position, username=username, id=transfer_id
+            )
+            return int(position) if isinstance(position, (int, str)) and str(position).isdigit() else None
+
+        except Exception:
+            #? peers drop out constantly; a missing position isn't worth logging loudly
+            return None
+
+
     async def get_downloads(self) -> list[dict]:
         """
         All current downloads, grouped by user then directory.

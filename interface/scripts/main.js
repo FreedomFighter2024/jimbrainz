@@ -269,6 +269,27 @@ async function fetchJobs() {
     return response.json();
 }
 
+async function cancelJob(jobId) {
+    const response = await fetch(`/jimbrainz/download/jobs/${jobId}/cancel`, { method: 'POST' });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'failed to cancel');
+    }
+    return response.json();
+}
+
+document.getElementById('downloads-clear-button').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+        await fetch('/jimbrainz/download/jobs/clear', { method: 'POST' });
+        jobSpeedSamples.clear();
+        refreshDownloads();
+    }
+    catch (error) {
+        console.error(`Clear jobs error: ${error.message}`);
+    }
+});
+
 function scheduleDownloadsPoll(hasActive) {
     clearTimeout(downloadsPollTimer);
 
@@ -292,6 +313,11 @@ async function refreshDownloads() {
         downloadsBadge.hidden = active === 0;
         downloadsBadge.textContent = active;
 
+        const finished = jobs.length - active;
+        document.getElementById('downloads-summary').textContent =
+            jobs.length ? `${active} active · ${finished} finished` : '';
+        document.getElementById('downloads-clear-button').disabled = finished === 0;
+
         scheduleDownloadsPoll(active > 0);
     }
 
@@ -311,6 +337,13 @@ function jobDetailText(job, liveSpeed) {
     if (job.error) return job.error;
 
     const parts = [`${job.files_done}/${job.files_total} files`];
+
+    // where we are in the peer's upload queue - the difference between "stuck" and
+    // "waiting my turn behind 40 people", which is otherwise invisible
+    if (job.queue_position !== null && job.queue_position !== undefined) {
+        parts.push(`queue #${job.queue_position}`);
+    }
+
     if (liveSpeed) parts.push(formatSpeed(liveSpeed));
     return parts.join(' · ');
 }
@@ -323,6 +356,7 @@ function buildJobRow(job) {
         <div class="download-job-head">
             <h4 class="text white download-job-title"></h4>
             <span class="download-job-status"></span>
+            <button type="button" class="download-cancel-button" title="cancel this download">✕</button>
         </div>
         <div class="download-job-meta">
             <span class="text default-secondary download-job-user"></span>
@@ -394,6 +428,26 @@ function renderDownloads(jobs, trackingEnabled) {
         const fill = row.querySelector('.download-progress-fill');
         fill.style.width = `${percent}%`;
         fill.className = `download-progress-fill ${statusClass}`;
+
+        // cancelling only means anything while something is still moving
+        const cancelButton = row.querySelector('.download-cancel-button');
+        cancelButton.hidden = !ACTIVE_STATUSES.has(job.status);
+
+        if (!cancelButton.dataset.wired) {
+            cancelButton.dataset.wired = '1';
+            cancelButton.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                cancelButton.disabled = true;
+                try {
+                    await cancelJob(job.id);
+                    refreshDownloads();
+                }
+                catch (error) {
+                    console.error(`Cancel error: ${error.message}`);
+                    cancelButton.disabled = false;
+                }
+            });
+        }
 
         row.classList.toggle('queued', job.status === 'organized');
     });

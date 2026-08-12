@@ -44,6 +44,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 #? queued/downloading/complete are phase 2. organizing/organized land with the organizer.
 OPEN_STATUSES = ("queued", "downloading")
 TERMINAL_STATUSES = ("organized", "failed", "cancelled")
+#? what "clear finished" is allowed to delete - anything still moving is excluded
+CLEARABLE_STATUSES = ("complete", "organized", "failed", "cancelled")
 
 
 def _now() -> str:
@@ -181,6 +183,43 @@ class JobStore:
 
         except Exception:
             logger.error(f"failed to update job {job_id} to {status}")
+
+
+    async def delete_jobs(self, statuses: tuple[str, ...]) -> int:
+        """Forget finished jobs. Only ever removes rows in the given terminal states."""
+        if not self.available:
+            return 0
+
+        def write():
+            placeholders = ",".join("?" for _ in statuses)
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    f"DELETE FROM jobs WHERE status IN ({placeholders})", statuses
+                )
+                return cursor.rowcount
+
+        try:
+            return await asyncio.to_thread(write)
+
+        except Exception:
+            logger.error("failed to clear finished jobs")
+            return 0
+
+    async def get_job(self, job_id: int) -> dict | None:
+        if not self.available:
+            return None
+
+        def read():
+            with self._connect() as connection:
+                row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+                return self._row_to_job(row) if row else None
+
+        try:
+            return await asyncio.to_thread(read)
+
+        except Exception:
+            logger.error(f"failed to read job {job_id}")
+            return None
 
 
 def summarize_transfers(job: dict, transfers_by_user: dict[str, list[dict]]) -> dict:

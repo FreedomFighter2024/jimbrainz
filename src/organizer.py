@@ -15,6 +15,7 @@ starts at dry_run so a first deploy with a mis-mapped volume reports what it wou
 instead of scattering a music library.
 """
 
+import asyncio
 import re
 import shutil
 from pathlib import Path
@@ -30,6 +31,12 @@ from src.matching import file_extension, match_tracks_to_files, split_remote_pat
 ORGANIZE_MODES = ("off", "dry_run", "copy", "move")
 
 INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+#? Non-audio files worth carrying into the library alongside the tracks. Cover art especially -
+#? leaving it behind in slskd's folder loses it, since only audio is ever enqueued explicitly.
+COMPANION_EXTENSIONS = {
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "cue", "log", "nfo", "txt", "m3u", "m3u8", "sfv"
+}
 
 
 def sanitize_filename(name: str, fallback: str = "unknown") -> str:
@@ -92,6 +99,34 @@ def find_local_file(download_root: str, remote_filename: str, remote_directory: 
     return matches[0]
 
 
+def is_within(child: Path, parent: Path) -> bool:
+    """
+    True only if `child` really sits underneath `parent`.
+
+    Guards the one genuinely destructive operation in here - removing a source directory.
+    Resolving both sides first means a symlink or a ".." in a configured path can't be used
+    to walk the delete outside slskd's download folder.
+    """
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def find_companion_files(source_dir: Path, placed: set[str]) -> list[Path]:
+    """Art and sidecar files sitting next to the tracks, which are worth keeping."""
+    if not source_dir.is_dir():
+        return []
+
+    return [
+        entry for entry in sorted(source_dir.iterdir())
+        if entry.is_file()
+        and entry.name not in placed
+        and file_extension(entry.name) in COMPANION_EXTENSIONS
+    ]
+
+
 def plan_organization(job: dict, download_root: str, library_root: str) -> dict:
     """
     Work out every file operation this job implies. Touches nothing.
@@ -146,10 +181,36 @@ def plan_organization(job: dict, download_root: str, library_root: str) -> dict:
             "exists": target.exists(),
         })
 
+    album_dir = Path(operations[0]["target"]).parent if operations else None
+
+    #? Carry cover art and sidecars across too. They're never enqueued (only audio is), so if
+    #? slskd happened to fetch them they'd otherwise be stranded - and leaving anything behind
+    #? means the source folder can never be tidied up either.
+    source_dirs = {Path(op["source"]).parent for op in operations}
+    placed_names = {Path(op["source"]).name for op in operations}
+    companions = []
+
+    if album_dir is not None:
+        for source_dir in sorted(source_dirs):
+            for companion in find_companion_files(source_dir, placed_names):
+                target = album_dir / sanitize_filename(companion.name, companion.name)
+                if target in used_targets:
+                    continue
+                used_targets.add(target)
+                companions.append({
+                    "source": str(companion),
+                    "target": str(target),
+                    "track": None,
+                    "companion": True,
+                    "exists": target.exists(),
+                })
+
     return {
         "job_id": job.get("id"),
-        "album_dir": str(Path(operations[0]["target"]).parent) if operations else None,
-        "operations": operations,
+        "album_dir": str(album_dir) if album_dir else None,
+        "operations": operations + companions,
+        "companion_count": len(companions),
+        "source_dirs": sorted(str(d) for d in source_dirs),
         "problems": problems,
         "matched_tracks": len(mapping),
         "total_tracks": len(tracks),
@@ -241,7 +302,9 @@ def execute_plan(plan: dict, release: dict, mode: str = "dry_run") -> dict:
             else:
                 shutil.copy2(str(source), str(target))
 
-            write_tags(target, release, operation.get("track"))
+            if not operation.get("companion"):
+                write_tags(target, release, operation.get("track"))
+
             results["organized"] += 1
 
         except Exception as e:
@@ -251,10 +314,54 @@ def execute_plan(plan: dict, release: dict, mode: str = "dry_run") -> dict:
     return results
 
 
+def cleanup_source_dirs(plan: dict, download_root: str, results: dict) -> list[str]:
+    """
+    Remove the now-empty slskd folders a completed move left behind.
+
+    Every guard here is deliberate, because this is the only code in jimbrainz that deletes
+    anything:
+
+      - move only. copy exists precisely to leave the original alone.
+      - nothing failed or was skipped, so we never delete beside a half-finished job.
+      - the directory must resolve to somewhere inside the download root, so a stray path or
+        symlink can't walk the delete out into the wider filesystem.
+      - never the download root itself.
+      - rmdir, not rmtree: it refuses on a non-empty directory by construction. Anything left
+        is something we didn't put there, so it's reported and kept rather than assumed junk.
+    """
+    if results.get("failed") or results.get("skipped"):
+        return []
+
+    root = Path(download_root)
+    removed = []
+
+    for raw in plan.get("source_dirs", []):
+        directory = Path(raw)
+
+        if not directory.is_dir():
+            continue
+
+        if directory.resolve() == root.resolve() or not is_within(directory, root):
+            logger.warning(f"refusing to remove {directory}, it is not inside {download_root}")
+            continue
+
+        try:
+            directory.rmdir()
+            removed.append(str(directory))
+            logger.info(f"removed empty download folder {directory.name}")
+
+        except OSError:
+            leftovers = sorted(p.name for p in directory.iterdir())
+            logger.warning(
+                f"left {directory.name} in place, still holds: {', '.join(leftovers[:6])}",
+                extra={"frontend": True, "src": "slskd"},
+            )
+
+    return removed
+
+
 async def organize_job(job: dict, download_root: str, library_root: str, mode: str) -> dict:
     """Plan then execute, with the logging the UI's event log surfaces."""
-    import asyncio
-
     label = f"{job.get('artist')} - {job.get('album')}"
     plan = await asyncio.to_thread(plan_organization, job, download_root, library_root)
 
@@ -268,9 +375,16 @@ async def organize_job(job: dict, download_root: str, library_root: str, mode: s
 
     results = await asyncio.to_thread(execute_plan, plan, job.get("release") or {}, mode)
 
+    if mode == "move":
+        results["removed_dirs"] = await asyncio.to_thread(
+            cleanup_source_dirs, plan, download_root, results
+        )
+
     verb = "would organize" if results.get("dry_run") else "organized"
+    companions = plan.get("companion_count") or 0
+    extra = f" (+{companions} cover/sidecar file(s))" if companions else ""
     logger.info(
-        f"{verb} {results['organized']} file(s) for {label} into {plan['album_dir']}",
+        f"{verb} {results['organized']} file(s){extra} for {label} into {plan['album_dir']}",
         extra={"frontend": True, "src": "slskd"},
     )
 

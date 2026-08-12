@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field
 from src.api.slskd_endpoint import build_search_query
 from src.logger import logger
 from src.matching import rank_candidates
-from src.store import OPEN_STATUSES, index_transfers_by_user, summarize_transfers
+from src.store import (CLEARABLE_STATUSES, OPEN_STATUSES, index_transfers_by_user,
+                       summarize_transfers)
 
 router = APIRouter()
 
@@ -189,6 +190,15 @@ async def jobs(request: Request):
                              "files_done": len(job["files"]) if job["status"] != "failed" else 0,
                              "files_total": len(job["files"]), "matched": False})
 
+            queue_position = None
+            if job["status"] == "queued" and summary.get("matched"):
+                #? only for jobs actually sat in a queue, and only the first file - slskd
+                #? answers this one transfer at a time, so asking for every file every poll
+                #? would hammer it for information that's identical across the folder anyway
+                queue_position = await _first_queue_position(
+                    request.app.state.slskd_client, job, transfers_by_user
+                )
+
             merged.append({
                 "id": job["id"],
                 "artist": job["artist"],
@@ -199,6 +209,7 @@ async def jobs(request: Request):
                 "status": job["status"],
                 "error": job["error"],
                 "created_at": job["created_at"],
+                "queue_position": queue_position,
                 **summary,
             })
 
@@ -219,3 +230,68 @@ async def downloads(request: Request):
     except Exception as e:
         logger.error(f"Exception in /downloads endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching downloads: {e}")
+
+
+async def _first_queue_position(slskd_client, job: dict, transfers_by_user: dict) -> int | None:
+    wanted = {f["filename"] for f in job["files"]}
+
+    for transfer in transfers_by_user.get(job["username"], []):
+        if transfer.get("filename") in wanted and transfer.get("id"):
+            return await slskd_client.queue_position(job["username"], transfer["id"])
+
+    return None
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(request: Request, job_id: int):
+    """
+    Stop a download and mark the job cancelled.
+
+    Cancels every transfer slskd currently holds for this job. Files already written stay on
+    disk in slskd's folder - deleting a partial download is the user's call, not ours.
+    """
+    try:
+        store = request.app.state.store
+        job = await store.get_job(job_id)
+
+        if job is None:
+            raise HTTPException(status_code=404, detail="No such download job")
+
+        slskd_client = request.app.state.slskd_client
+        downloads = await slskd_client.get_downloads()
+        transfers_by_user = index_transfers_by_user(downloads)
+
+        wanted = {f["filename"] for f in job["files"]}
+        cancelled = 0
+
+        for transfer in transfers_by_user.get(job["username"], []):
+            if transfer.get("filename") in wanted and transfer.get("id"):
+                if await slskd_client.cancel_download(job["username"], transfer["id"]):
+                    cancelled += 1
+
+        await store.update_status(job_id, "cancelled", "cancelled from jimbrainz")
+        logger.info(
+            f"cancelled {job['artist']} - {job['album']} ({cancelled} transfer(s))",
+            extra={"frontend": True, "src": "slskd"},
+        )
+
+        return {"status": "ok", "cancelled": cancelled}
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"Exception in /jobs/{job_id}/cancel: {e}")
+        raise HTTPException(status_code=500, detail=f"Error cancelling download: {e}")
+
+
+@router.post("/jobs/clear")
+async def clear_jobs(request: Request):
+    """Forget finished jobs. Anything still moving is deliberately left alone."""
+    try:
+        removed = await request.app.state.store.delete_jobs(CLEARABLE_STATUSES)
+        return {"status": "ok", "removed": removed}
+
+    except Exception as e:
+        logger.error(f"Exception in /jobs/clear: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing jobs: {e}")

@@ -53,6 +53,11 @@
             </div>
         </div>
     </div>
+    <!--
+      Tab bar, rendered by the Preact bundle. It sets data-tab on #main-container and CSS
+      decides which pane is visible, so switching tabs never imperatively shows/hides
+      anything across the vanilla/Preact boundary.
+    --><div id="tabs-root"></div>
     <div id="main-content">
         <div id="filter-column">
             <div id="filter-column-header">
@@ -75,7 +80,7 @@
                     <div id="search-limit-container">
                         <h3 class="text default">Limit:</h3>
                         <button type="button" id="limit-decrease" class="text default limit-button glow">▽</button>
-                        <span id="limit-value" class="text default glow">5</span>
+                        <span id="limit-value" class="text default glow">50</span>
                         <button type="button" id="limit-increase" class="text default limit-button glow">△</button>
                     </div>
                     <button type="button" id="search-input-button">Search</button>
@@ -94,6 +99,9 @@
             </div>
         </div>
     </div>
+    <!-- the library view, rendered by the Preact bundle. Sibling of #main-content so the
+         two panes swap cleanly; see the [data-tab] rules in main.css. -->
+    <div id="library-root"></div>
     <div id="candidates-window">
         <div id="candidates-panel">
             <div id="candidates-header">

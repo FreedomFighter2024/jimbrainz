@@ -265,3 +265,36 @@ def test_organize_failure_does_not_mark_the_download_failed(tmp_path, monkeypatc
     asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
 
     assert status_of(store, job_id) == "complete"
+
+
+def test_job_whose_files_all_already_existed_is_not_reported_as_organized(tmp_path, monkeypatch):
+    """
+    The silent failure that made a second edition of an album look like it had been filed.
+
+    Every file is skipped because something already occupies its destination, so nothing from
+    THIS download reached the library - but `organized` was the fall-through status, so the UI
+    showed a green, finished job for an album that never arrived.
+    """
+    from src.config import Config
+    downloads = tmp_path / "downloads" / "album"
+    downloads.mkdir(parents=True)
+    (downloads / "01.flac").write_bytes(b"x")
+    (downloads / "02.flac").write_bytes(b"x")
+
+    monkeypatch.setattr(Config, "SLSKD_DOWNLOAD_PATH", str(tmp_path / "downloads"))
+    monkeypatch.setattr(Config, "LIBRARY_PATH", str(tmp_path / "music"))
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "copy")
+
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+
+    #? file it once, so the second attempt finds every destination taken
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+    assert status_of(store, job_id) == "organized"
+
+    second = seed_job(store)
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+
+    job = next(j for j in asyncio.run(store.list_jobs()) if j["id"] == second)
+    assert job["status"] == "complete"
+    assert "already existed" in job["error"]

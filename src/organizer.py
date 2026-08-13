@@ -20,8 +20,10 @@ import re
 import shutil
 from pathlib import Path
 
+from src.editions import edition_discriminator, resolve_edition_label
 from src.logger import logger
-from src.matching import file_extension, match_tracks_to_files, split_remote_path
+from src.matching import (AUDIO_EXTENSIONS, file_extension, match_tracks_to_files,
+                          split_remote_path)
 
 
 #? off      - never organize, downloads just sit in slskd's folder
@@ -47,24 +49,51 @@ def sanitize_filename(name: str, fallback: str = "unknown") -> str:
     return (cleaned[:200] or fallback)
 
 
-def build_target_path(library_root: str, release: dict, track: dict | None, extension: str) -> Path:
+def build_album_dirname(release: dict, discriminator: str = "") -> str:
     """
-    {library}/{artist}/{album} ({year})/{NN} - {title}.{ext}
+    `Album (Year)`, plus ` [Edition]` when this release is a distinguishable edition.
+
+    The suffix is omitted entirely for ordinary albums - most releases have exactly one
+    edition and do not need decorating. It appears only when there is something real to say,
+    which is what keeps the library readable while still letting the deluxe and the standard
+    press of the same record coexist.
+
+    `discriminator` is the escape hatch for two genuinely different releases that still
+    produce the same name; plan_organization() supplies it only after seeing an actual
+    collision on disk.
+    """
+    album = sanitize_filename(release.get("album"), "Unknown Album")
+    year = (release.get("year") or "").strip()
+    name = f"{album} ({year})" if year else album
+
+    parts = [part for part in (resolve_edition_label(release), discriminator) if part]
+    if parts:
+        name = f"{name} [{' - '.join(parts)}]"
+
+    return sanitize_filename(name)
+
+
+def build_target_path(
+    library_root: str,
+    release: dict,
+    track: dict | None,
+    extension: str,
+    discriminator: str = "",
+) -> Path:
+    """
+    {library}/{artist}/{album} ({year}) [{edition}]/{NN} - {title}.{ext}
 
     Tracks that couldn't be matched to the tracklist keep their original filename rather than
     being given a made-up number - a wrong track number is worse than none.
     """
     artist = sanitize_filename(release.get("artist"), "Unknown Artist")
-    album = sanitize_filename(release.get("album"), "Unknown Album")
-    year = (release.get("year") or "").strip()
-    album_dir = f"{album} ({year})" if year else album
 
     if track and track.get("position") and track.get("title"):
         filename = f"{int(track['position']):02d} - {sanitize_filename(track['title'])}.{extension}"
     else:
         filename = sanitize_filename(track.get("filename") if track else None, "untitled") + f".{extension}"
 
-    return Path(library_root) / artist / sanitize_filename(album_dir) / filename
+    return Path(library_root) / artist / build_album_dirname(release, discriminator) / filename
 
 
 def find_local_file(download_root: str, remote_filename: str, remote_directory: str = "") -> Path | None:
@@ -127,6 +156,89 @@ def find_companion_files(source_dir: Path, placed: set[str]) -> list[Path]:
     ]
 
 
+def read_album_mbid(directory: Path) -> str | None:
+    """
+    The MusicBrainz release id already filed in this folder, if any.
+
+    Identity rather than appearance: two releases are the same edition when they share a
+    release MBID, whatever their folders happen to be called. Reads the first audio file it
+    can and stops - every track in a folder belongs to the same release, so there is nothing
+    to gain from opening the rest.
+
+    Returns None for a folder jimbrainz didn't organize (no MBID tag), which the caller must
+    treat as "unknown", NOT as "different" - guessing wrong there would fork someone's
+    existing library into duplicate folders.
+    """
+    import mutagen
+
+    if not directory.is_dir():
+        return None
+
+    for entry in sorted(directory.iterdir()):
+        if not entry.is_file() or not file_extension(entry.name) in AUDIO_EXTENSIONS:
+            continue
+
+        try:
+            audio = mutagen.File(str(entry), easy=True)
+        except Exception:
+            continue
+
+        if audio is None:
+            continue
+
+        values = audio.get("musicbrainz_albumid") or []
+        if values:
+            return str(values[0]).strip() or None
+
+        #? a readable audio file that simply has no MBID tag is answer enough - the folder
+        #? wasn't organized by us, so stop rather than opening every track hoping otherwise
+        return None
+
+    return None
+
+
+def resolve_album_dir(library_root: str, release: dict) -> tuple[Path, str]:
+    """
+    Where this release's folder should be, avoiding a different release's folder.
+
+    The ordinary case resolves on the first try. The interesting case is two releases whose
+    names collide anyway - the same album, year and disambiguation, differing only by
+    pressing - where we escalate to the catalogue number or the release id rather than
+    letting one silently overwrite (or, as before, be silently skipped against) the other.
+
+    Crucially this does NOT treat an untagged folder as a collision. A library that predates
+    jimbrainz has no MBIDs, and forking every one of those albums into a second folder would
+    be far worse than sharing one.
+    """
+    artist = sanitize_filename(release.get("artist"), "Unknown Artist")
+    artist_dir = Path(library_root) / artist
+    wanted_mbid = (release.get("release_mbid") or "").strip()
+
+    for discriminator in ("", edition_discriminator(release)):
+        candidate = artist_dir / build_album_dirname(release, discriminator)
+
+        if not candidate.exists():
+            return candidate, discriminator
+
+        existing = read_album_mbid(candidate)
+
+        #? free to share the folder: either it is demonstrably the same release, or it is
+        #? untagged and we have no business assuming otherwise
+        if existing is None or not wanted_mbid or existing == wanted_mbid:
+            return candidate, discriminator
+
+        if not discriminator:
+            logger.info(
+                f"'{candidate.name}' already holds a different release, "
+                f"filing this edition separately",
+                extra={"frontend": True, "src": "slskd"},
+            )
+
+    #? both attempts are taken by other releases, which needs the release id to break
+    fallback = artist_dir / build_album_dirname(release, wanted_mbid[:8] or "alt")
+    return fallback, wanted_mbid[:8] or "alt"
+
+
 def plan_organization(job: dict, download_root: str, library_root: str) -> dict:
     """
     Work out every file operation this job implies. Touches nothing.
@@ -144,6 +256,10 @@ def plan_organization(job: dict, download_root: str, library_root: str) -> dict:
     track_by_filename = {
         entry["file"]["filename"]: entry["track"] for entry in mapping.values()
     }
+
+    #? decided once for the whole job, so every track lands in the same folder even if the
+    #? escalation kicked in - resolving per file could split an album across two directories
+    _, discriminator = resolve_album_dir(library_root, release)
 
     operations = []
     problems = []
@@ -166,6 +282,7 @@ def plan_organization(job: dict, download_root: str, library_root: str) -> dict:
             release,
             track or {"filename": Path(basename).stem},
             extension,
+            discriminator,
         )
 
         #? two source files resolving to one target would silently destroy one of them
@@ -242,7 +359,18 @@ def write_tags(path: Path, release: dict, track: dict | None) -> None:
         "albumartist": release.get("artist"),
         "artist": release.get("artist"),
         "date": release.get("year"),
+        #? the edition's identity, and the only one of these every container supports. The
+        #? library scanner groups on it: two folders sharing an MBID are the same edition
+        #? however they happen to be named, and that is what survives someone renaming a
+        #? folder by hand.
         "musicbrainz_albumid": release.get("release_mbid"),
+        #? these feed resolve_edition_label() if the edition ever has to be recomputed from
+        #? disk. Not universally supported - the loop below skips whatever a container
+        #? rejects, which is why the MBID above carries the identity on its own.
+        "musicbrainz_releasegroupid": release.get("release_group_mbid"),
+        "releasecountry": release.get("country"),
+        "media": release.get("media_format"),
+        "catalognumber": release.get("catalog_number"),
     }
 
     if track:

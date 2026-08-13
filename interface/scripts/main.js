@@ -219,6 +219,20 @@ window.jimbrainz.closeOtherDropdowns = () => {
     setLogOpen(false);
 };
 
+/*
+ * Run a MusicBrainz search on the vanilla side, for the library view's clickable artist and
+ * album names.
+ *
+ * Fills the real inputs rather than calling handleSearch with arguments, so the search box
+ * ends up showing the query that produced the results - landing on a populated results list
+ * with empty inputs reads like a bug, and it means the user can edit and re-run it.
+ */
+window.jimbrainz.runSearch = ({ artist = '', album = '' } = {}) => {
+    artistSearchInput.value = artist;
+    releaseSearchInput.value = album;
+    handleSearch();
+};
+
 
 
 
@@ -535,6 +549,9 @@ function buildExpectedFromRelease(release, releaseGroupContext) {
     }
 
     const rawDate = release['release-events']?.[0]?.date || release.date || '';
+    const labelInfo = (release['label-info'] || [])
+        .map(entry => entry['catalog-number'])
+        .filter(Boolean);
 
     return {
         artist: releaseGroupContext.artist,
@@ -543,6 +560,20 @@ function buildExpectedFromRelease(release, releaseGroupContext) {
         release_mbid: release.id,
         edition_tags: getEditionTags(release),
         tracks,
+
+        // everything below is what lets the organizer file two editions of the same album
+        // into separate folders instead of one silently skipping against the other. See
+        // src/editions.py - `disambiguation` is by far the most useful of them, being
+        // MusicBrainz's own words for how this release differs from its siblings.
+        release_group_mbid: releaseGroupContext.releaseGroupId || null,
+        disambiguation: release.disambiguation || null,
+        media_format: (release.media || []).map(m => m.format).filter(Boolean).join(' + ') || null,
+        // the raw ISO code, NOT getCountryCode() - that one rewrites the "worldwide" codes
+        // XW/XE into 'un'/'eu' for flag display, and src/editions.py needs to recognise and
+        // discard them rather than labelling a folder "[UN]"
+        country: release['release-events']?.[0]?.area?.['iso-3166-1-codes']?.[0]
+                 || release.country || null,
+        catalog_number: labelInfo.join(', ') || null,
     };
 }
 

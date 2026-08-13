@@ -42,6 +42,23 @@ class EnqueueRelease(BaseModel):
     edition_tags: list[str] = Field(default_factory=list)
     tracks: list[Track] = Field(default_factory=list)
 
+    #? Everything below feeds src/editions.py, which works out the folder an edition is filed
+    #? into. Stored with the job rather than looked up at organize time on purpose: the same
+    #? reason the tracklist is denormalized here, namely that MusicBrainz is regularly
+    #? unreachable and filing a finished download must not depend on it.
+    release_group_mbid: str | None = None
+    #? MusicBrainz's own edition descriptor ("deluxe edition", "2011 remaster"). The single
+    #? best source for naming an edition, because it is the field editors use to tell
+    #? releases apart in the first place.
+    disambiguation: str | None = None
+    media_format: str | None = None
+    country: str | None = None
+    catalog_number: str | None = None
+    #? An explicit override that beats every derived source. Nothing sets it yet - it is the
+    #? hook for a future metadata manager, so that picking an edition by hand is a matter of
+    #? writing this field rather than changing how editions are resolved.
+    edition_label: str | None = None
+
 
 class EnqueueRequest(BaseModel):
     username: str

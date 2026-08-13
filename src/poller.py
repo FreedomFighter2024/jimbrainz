@@ -112,6 +112,17 @@ async def _organize_if_enabled(job: dict, store) -> None:
                 job["id"], "complete", "nothing could be organized, check SLSKD_DOWNLOAD_PATH"
             )
 
+        elif not results["organized"]:
+            #? every file was skipped because something was already at its destination, so
+            #? nothing from THIS download reached the library. That used to fall through to
+            #? "organized" below and report a green, finished job for an album that never
+            #? arrived - the failure mode that made a second edition of an album look like it
+            #? had been filed when it had not.
+            await store.update_status(
+                job["id"], "complete",
+                f"all {results['skipped']} file(s) already existed, nothing was filed",
+            )
+
         else:
             await store.update_status(job["id"], "organized")
 

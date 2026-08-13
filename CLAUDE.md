@@ -84,9 +84,16 @@ Each of these cost real time. Don't rediscover them.
 - **`theme.css` is `@import`ed from `main.css`, so it caches independently.** Editing the
   palette and reloading shows the OLD colours. Bust it explicitly when verifying, and
   hard-refresh after deploying.
-- **Text colour classes are element-scoped** (`h4.default`, `h5.white`…). A `<span>` carrying
-  `class="text default"` matches *nothing* and renders black on black. `span.*` rules were
-  added to cover this; if new colours appear, add the span variant too.
+- ~~Text colour classes are element-scoped~~ **Fixed at the root.** Colour was an element ×
+  colour matrix (`h4.default`, `h5.white`, `span.white-secondary`…), so every unforeseen
+  pairing inherited instead — `<div class="text white-secondary">` had no rule and rendered
+  black on black. There are now element-agnostic `.white`, `.default-secondary` etc. at lower
+  specificity than the legacy rules, so old pairings are untouched and new ones just work.
+  **`body` also sets `font-family` and `color`**, so a missed element now degrades to looking
+  ordinary rather than disappearing. Prefer the generic classes for new markup.
+- **Nothing had set a font on `body`**, so any element without its own rule fell back to
+  Times at 16px. That is how the releases-grid `▷` arrows and `#results-summary` shipped in
+  a serif face. Fixed by the `body` baseline above.
 - **slskd's `averageSpeed` is cumulative** (total bytes ÷ total elapsed), so it only ever
   creeps upward and never shows the current rate. Real speed is derived from `bytesTransferred`
   deltas between polls. Don't "simplify" back to `averageSpeed`.
@@ -256,4 +263,12 @@ A green suite here means the logic is sound, not that it works against real infr
 4. A settings pane (naming templates, organization, quality profiles) — explicitly deferred by
    the user until the library window is done.
 5. A design pass on the CSS. The "cobbled-together" complaint is not addressed by the
-   migration and needs its own deliberate effort.
+   migration and needs its own deliberate effort. A first pass fixed the *systemic* faults —
+   no inherited baseline, colour-by-element-matrix, a duplicated button rule that made the
+   log button 6px taller than its neighbours. **What's left is a type scale.** Measured:
+   ~15 hand-picked `em` values with no relationship to each other, 10 distinct button
+   heights and 10 distinct paddings. Because every value is `em` relative to the 16px
+   browser base, this can't be fixed by setting a base size on `body` — the headings would
+   all shrink. It needs a real scale defined once and applied, which is a visual decision,
+   not a mechanical one. Un-sized `<span>`/`<div>` still land at 16px against neighbours at
+   14.4px; `#results-summary` and the grid expand column are patched individually for now.

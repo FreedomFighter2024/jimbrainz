@@ -58,6 +58,20 @@ body {
     position: relative;
     height: 100vh;
     overflow:hidden;
+
+    /*
+    ! The baseline everything inherits from. Nothing targeted body before, so each element
+    ! had to be styled individually and anything missed fell all the way back to the browser
+    ! defaults - Times at 16px, in black. On a near-black background that reads as text
+    ! simply not being there, which is how #library-path-display and the releases-grid
+    ! expand arrows shipped invisible/serif without anyone spotting them.
+    !
+    ! Set the common case here and let inheritance do the work. Anything that wants the
+    ! wide face or a different colour still says so; the difference is that forgetting now
+    ! degrades to "looks like everything else" instead of "disappears".
+    */
+    font-family: var(--font-family-condensed);
+    color: var(--white-secondary-text);
 }
 
 
@@ -104,7 +118,7 @@ body {
     width: max-content;
 }
     .connection-connector-line {
-        font-size:0.80em;
+        font-size:0.8em;
         margin-bottom:-0.2em;
         margin-left:0.80em;
     }
@@ -231,7 +245,7 @@ body {
                     color: var(--main-hover-text);
                     font-weight:var(--font-bold);
                     font-style: italic;
-                    font-size: 0.80em;
+                    font-size: 0.8em;
                     font-family:var(--font-family);
                     
                     
@@ -246,7 +260,7 @@ body {
                     color: #d9e8ce;
                     font-weight:var(--font-bold);
                     font-style: italic;
-                    font-size: 0.80em;
+                    font-size: 0.8em;
                     font-family:var(--font-family);
                     
                     padding-left:6px;
@@ -565,7 +579,7 @@ body {
     border: none;
     color: var(--white-secondary-text);
     font-family: var(--font-family-condensed);
-    font-size: 1.0em;
+    font-size: 1em;
     font-weight: var(--font-retina);
     cursor: pointer;
     padding-top:10px;
@@ -609,6 +623,20 @@ body {
     gap: 10px;
     margin-top: 10px;
     flex-shrink: 0;
+}
+
+/*
+? "9 of 12 releases". A bare <span>, so it had no font-size of its own and inherited the
+? 16px browser base while every control beside it sits at 0.9em/14.4px - it read as a
+? different, larger typeface next to them.
+?
+? This is a symptom, not the disease: there is no type scale, just ~15 em values chosen per
+? component, so anything unsized lands at 16px and sticks out. A real scale is the deferred
+? design pass; it can't be fixed by setting a base size on body, because these em values are
+? all relative to 16px and every heading would shrink.
+*/
+#results-summary {
+    font-size: 0.9em;
 }
 
 #tag-filter-row {
@@ -823,6 +851,9 @@ body {
     color: var(--white-tertiary-text);
     text-align: center;
     width: 1%;
+    /* the ▷ glyph is the cell's own text rather than a child element, so without this it
+       inherits the 16px base and renders larger than the row it belongs to */
+    font-size: 0.9em;
 }
 
 .releases-table td.releases-col-action {
@@ -1022,7 +1053,7 @@ pre{
 }
 label{
     font-family: var(--font-family-condensed);
-    font-size:0.90em;
+    font-size:0.9em;
     font-weight:500;
 }
 h1{
@@ -1043,17 +1074,50 @@ h3 {
 }
 h4 {
     font-family: var(--font-family-condensed);
-    font-size:0.90em;
+    font-size:0.9em;
     font-weight:var(--font-retina)
 }
 h5 {
     font-family: var(--font-family-condensed);
-    font-size:0.80em;
+    font-size:0.8em;
     font-weight:var(--font-retina)
 }
 
 
 /* ? TEXT COLOR */
+
+/*
+! Colour was written as an element x colour matrix - h3.white, h4.white, h5.white,
+! span.white, div.white, .tag-chip.white-secondary - which means every new pairing needs a
+! new rule, and any pairing nobody thought of inherits instead. That is a bug generator, not
+! a system: `<div class="text white-secondary">` had no rule at all and rendered black.
+!
+! These are the same tokens with the element dropped, so a colour class works on anything.
+! They are deliberately LOWER specificity (0,1,0) than the element-scoped rules below
+! (0,1,1), so every existing pairing keeps whatever it resolves to today and these only
+! fill the holes. Prefer these for new markup; the block below is legacy.
+!
+! Note the element rules are NOT all redundant duplicates - h4.red/h5.red use
+! --red-secondary-text while h1.red/h3.red use --red-text. That divergence looks accidental
+! but changing it is a visual decision, so it has been left alone.
+*/
+.default          { color: var(--main-text); }
+.default-secondary{ color: var(--main-secondary-text); }
+.default-muted    { color: var(--main-muted-text); }
+.default-hover    { color: var(--main-secondary-text); }
+.default-hover:hover { color: var(--main-hover-text); }
+.main             { color: var(--main-text); }
+.main-secondary   { color: var(--main-secondary-text); }
+
+.white            { color: var(--white-text); }
+.white-secondary  { color: var(--white-secondary-text); }
+.white-tertiary   { color: var(--white-tertiary-text); }
+
+.green            { color: var(--green-text); }
+.green-secondary  { color: var(--green-secondary-text); }
+.red              { color: var(--red-text); }
+.yellow           { color: var(--yellow-text); }
+
 pre.default{
     color: var(--main-text);
 }
@@ -1293,8 +1357,14 @@ h3.glow.green{
     position: relative;
 }
 
+/*
+! All three top-bar dropdown triggers, in one place. They were three separate copies of the
+! same declarations, which is how one of them drifted to a different padding without it
+! being obvious anything was wrong.
+*/
 #profile-toggle-button,
-#log-toggle-button {
+#log-toggle-button,
+#downloads-toggle-button {
     background-color: var(--background-color-light);
     border: 1px solid var(--main-text);
     color: var(--main-text);
@@ -1309,7 +1379,8 @@ h3.glow.green{
 }
 
 #profile-toggle-button:hover,
-#log-toggle-button:hover {
+#log-toggle-button:hover,
+#downloads-toggle-button:hover {
     color: var(--main-hover-text);
     border-color: var(--main-hover-text);
 }
@@ -1494,23 +1565,11 @@ h3.glow.green{
     padding: 10px 0;
 }
 
-#log-toggle-button {
-    background-color: var(--background-color-light);
-    border: 1px solid var(--main-text);
-    color: var(--main-text);
-    font-family: var(--font-family-condensed);
-    font-size: 0.9em;
-    padding: 10px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-#log-toggle-button:hover {
-    color: var(--main-hover-text);
-    border-color: var(--main-hover-text);
-}
+/*
+! A second, later copy of #log-toggle-button used to live here with padding:10px instead of
+! the shared 7px 12px, so it won on source order and the log button sat 6px taller than the
+! two beside it. Deleted - the shared rule above is the only definition now.
+*/
 
 .log-unread-badge {
     background-color: var(--red-text);
@@ -2026,24 +2085,7 @@ span.red { color: var(--red-text); }
     color: var(--main-hover-text);
 }
 
-#downloads-toggle-button {
-    background-color: var(--background-color-light);
-    border: 1px solid var(--main-text);
-    color: var(--main-text);
-    font-family: var(--font-family-condensed);
-    font-size: 0.9em;
-    padding: 7px 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    white-space: nowrap;
-}
-
-#downloads-toggle-button:hover {
-    color: var(--main-hover-text);
-    border-color: var(--main-hover-text);
-}
+/* #downloads-toggle-button is styled with the other two dropdown triggers, further up. */
 
 #downloads-window {
     display: none;

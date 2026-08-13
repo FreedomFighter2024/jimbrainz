@@ -200,266 +200,25 @@ checkScrollability();
 
 
 
-/* ===== downloads dropdown ===== */
+/* ===== downloads dropdown (ported to Preact - see ui/src/components/DownloadsPanel.tsx) ===== */
 
-// fast while you're watching, slow in the background just to keep the badge honest
-const DOWNLOADS_POLL_OPEN_MS = 1000;
-const DOWNLOADS_POLL_BACKGROUND_MS = 5000;
+/*
+ * The downloads panel is rendered by the Preact bundle now, into #downloads-root. What used
+ * to be ~260 lines here - polling, byte-delta speed sampling, and a hand-written keyed
+ * reconciler that looked rows up by data-job-id and shuffled them with insertBefore - is
+ * gone. Only the two calls that genuinely cross the boundary are left.
+ *
+ * This file is a module, so its functions aren't reachable from another bundle. Both sides
+ * meet on window.jimbrainz instead. See ui/src/bridge.ts; keep it shrinking.
+ */
+window.jimbrainz = window.jimbrainz || {};
 
-const downloadsControl = document.getElementById('downloads-control');
-const downloadsScrollable = document.getElementById('downloads-scrollable');
-const downloadsBadge = document.getElementById('downloads-active-badge');
-let downloadsPollTimer = null;
-
-// organizing counts as active so the panel keeps polling through the filing step
-const ACTIVE_STATUSES = new Set(['queued', 'downloading', 'organizing']);
-
-// last byte reading per job, so a real transfer rate can be worked out from the change
-// between polls. slskd's own averageSpeed is cumulative (total bytes / total elapsed), which
-// is why it only ever creeps upward and never shows what's happening right now.
-const jobSpeedSamples = new Map();
-
-function isDownloadsOpen() {
-    return downloadsControl.classList.contains('open');
-}
-
-function liveSpeedFor(job) {
-    const now = performance.now();
-    const previous = jobSpeedSamples.get(job.id);
-    jobSpeedSamples.set(job.id, { bytes: job.bytes_transferred || 0, at: now });
-
-    if (!ACTIVE_STATUSES.has(job.status)) {
-        jobSpeedSamples.delete(job.id);
-        return null;
-    }
-
-    if (!previous) return null;
-
-    const seconds = (now - previous.at) / 1000;
-    const delta = (job.bytes_transferred || 0) - previous.bytes;
-
-    // a negative delta means slskd restarted or requeued the transfer; report nothing rather
-    // than a nonsense number
-    if (seconds <= 0 || delta < 0) return null;
-
-    return delta / seconds;
-}
-
-document.getElementById('downloads-toggle-button').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const open = !isDownloadsOpen();
-    downloadsControl.classList.toggle('open', open);
+// called by the panel when it opens - only one dropdown should be open at a time
+window.jimbrainz.closeOtherDropdowns = () => {
     profileControl.classList.remove('open');
     setLogOpen(false);
-    refreshDownloads();
-});
-
-document.addEventListener('click', (e) => {
-    if (isDownloadsOpen() && !downloadsControl.contains(e.target)) {
-        downloadsControl.classList.remove('open');
-    }
-});
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isDownloadsOpen()) downloadsControl.classList.remove('open');
-});
-
-async function fetchJobs() {
-    const response = await fetch('/jimbrainz/download/jobs');
-    if (!response.ok) throw new Error('failed to fetch download jobs');
-    return response.json();
-}
-
-async function cancelJob(jobId) {
-    const response = await fetch(`/jimbrainz/download/jobs/${jobId}/cancel`, { method: 'POST' });
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'failed to cancel');
-    }
-    return response.json();
-}
-
-document.getElementById('downloads-clear-button').addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-        await fetch('/jimbrainz/download/jobs/clear', { method: 'POST' });
-        jobSpeedSamples.clear();
-        refreshDownloads();
-    }
-    catch (error) {
-        console.error(`Clear jobs error: ${error.message}`);
-    }
-});
-
-function scheduleDownloadsPoll(hasActive) {
-    clearTimeout(downloadsPollTimer);
-
-    // keep polling in the background while work is outstanding so the badge stays truthful,
-    // and always poll while the panel is open even when idle, so a download started in
-    // another tab shows up here without needing a reload
-    if (!hasActive && !isDownloadsOpen()) return;
-
-    downloadsPollTimer = setTimeout(
-        refreshDownloads,
-        isDownloadsOpen() ? DOWNLOADS_POLL_OPEN_MS : DOWNLOADS_POLL_BACKGROUND_MS
-    );
-}
-
-async function refreshDownloads() {
-    try {
-        const { jobs, tracking_enabled } = await fetchJobs();
-        renderDownloads(jobs, tracking_enabled);
-
-        const active = jobs.filter(j => ACTIVE_STATUSES.has(j.status)).length;
-        downloadsBadge.hidden = active === 0;
-        downloadsBadge.textContent = active;
-
-        const finished = jobs.length - active;
-        document.getElementById('downloads-summary').textContent =
-            jobs.length ? `${active} active · ${finished} finished` : '';
-        document.getElementById('downloads-clear-button').disabled = finished === 0;
-
-        scheduleDownloadsPoll(active > 0);
-    }
-
-    catch (error) {
-        console.error(`Downloads refresh error: ${error.message}`);
-        // keep trying rather than dying silently on one bad response
-        scheduleDownloadsPoll(false);
-    }
-}
-
-const JOB_STATUS_CLASS = {
-    queued: 'mid', downloading: 'mid', complete: 'good',
-    organizing: 'mid', organized: 'good', failed: 'bad', cancelled: 'bad',
 };
 
-function jobDetailText(job, liveSpeed) {
-    if (job.error) return job.error;
-
-    const parts = [`${job.files_done}/${job.files_total} files`];
-
-    // where we are in the peer's upload queue - the difference between "stuck" and
-    // "waiting my turn behind 40 people", which is otherwise invisible
-    if (job.queue_position !== null && job.queue_position !== undefined) {
-        parts.push(`queue #${job.queue_position}`);
-    }
-
-    if (liveSpeed) parts.push(formatSpeed(liveSpeed));
-    return parts.join(' · ');
-}
-
-function buildJobRow(job) {
-    const row = document.createElement('div');
-    row.className = 'download-job';
-    row.dataset.jobId = job.id;
-    row.innerHTML = `
-        <div class="download-job-head">
-            <h4 class="text white download-job-title"></h4>
-            <span class="download-job-status"></span>
-            <button type="button" class="download-cancel-button" title="cancel this download">✕</button>
-        </div>
-        <div class="download-job-meta">
-            <span class="text default-secondary download-job-user"></span>
-            <span class="text default-muted">·</span>
-            <span class="download-job-detail"></span>
-        </div>
-        <div class="download-progress-track">
-            <div class="download-progress-fill"></div>
-        </div>
-    `;
-    return row;
-}
-
-/**
- * Update rows in place instead of rebuilding the list.
- *
- * At a 1s cadence a full innerHTML wipe would flicker, drop the scroll position, and kill any
- * text selection - which is what made this feel like a static snapshot rather than a live view.
- */
-function renderDownloads(jobs, trackingEnabled) {
-    if (!trackingEnabled) {
-        downloadsScrollable.innerHTML =
-            `<h4 class="text red candidates-status">job tracking is off — the database path isn't writable, check DB_PATH</h4>`;
-        return;
-    }
-
-    if (!jobs.length) {
-        downloadsScrollable.innerHTML =
-            `<h4 class="text default-muted candidates-status">nothing downloaded yet</h4>`;
-        return;
-    }
-
-    // drop the placeholder if we're coming from an empty state
-    const placeholder = downloadsScrollable.querySelector('.candidates-status');
-    if (placeholder) placeholder.remove();
-
-    const seen = new Set();
-
-    jobs.forEach((job, index) => {
-        seen.add(String(job.id));
-        const liveSpeed = liveSpeedFor(job);
-        const statusClass = JOB_STATUS_CLASS[job.status] || '';
-        const percent = Math.round(job.progress || 0);
-
-        let row = downloadsScrollable.querySelector(`.download-job[data-job-id="${job.id}"]`);
-        if (!row) {
-            row = buildJobRow(job);
-            downloadsScrollable.appendChild(row);
-        }
-
-        // keep DOM order matching the payload order without reshuffling unnecessarily
-        const atIndex = downloadsScrollable.children[index];
-        if (atIndex !== row) downloadsScrollable.insertBefore(row, atIndex || null);
-
-        row.querySelector('.download-job-title').textContent =
-            `${job.artist || 'unknown'} — ${job.album || 'unknown'}`;
-
-        const statusEl = row.querySelector('.download-job-status');
-        statusEl.textContent = job.status;
-        statusEl.className = `download-job-status ${statusClass}`;
-
-        row.querySelector('.download-job-user').textContent = job.username;
-
-        const detailEl = row.querySelector('.download-job-detail');
-        detailEl.textContent = jobDetailText(job, liveSpeed);
-        detailEl.className = 'download-job-detail text ' +
-            (job.status === 'failed' ? 'red' : job.error ? 'yellow' : 'default-secondary');
-
-        const fill = row.querySelector('.download-progress-fill');
-        fill.style.width = `${percent}%`;
-        fill.className = `download-progress-fill ${statusClass}`;
-
-        // cancelling only means anything while something is still moving
-        const cancelButton = row.querySelector('.download-cancel-button');
-        cancelButton.hidden = !ACTIVE_STATUSES.has(job.status);
-
-        if (!cancelButton.dataset.wired) {
-            cancelButton.dataset.wired = '1';
-            cancelButton.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                cancelButton.disabled = true;
-                try {
-                    await cancelJob(job.id);
-                    refreshDownloads();
-                }
-                catch (error) {
-                    console.error(`Cancel error: ${error.message}`);
-                    cancelButton.disabled = false;
-                }
-            });
-        }
-
-        row.classList.toggle('queued', job.status === 'organized');
-    });
-
-    // remove rows for jobs that dropped off the list
-    for (const row of [...downloadsScrollable.querySelectorAll('.download-job')]) {
-        if (!seen.has(row.dataset.jobId)) row.remove();
-    }
-}
-
-// pick up jobs still running from a previous page load
-refreshDownloads();
 
 
 
@@ -727,7 +486,9 @@ async function enqueueCandidate(candidate) {
     }
 
     const result = await response.json();
-    refreshDownloads();
+    // show the new job straight away rather than on the panel's next timer tick. Optional
+    // because the two bundles load independently - if it isn't there yet, the poll covers it.
+    window.jimbrainz?.refreshDownloads?.();
     return result;
 }
 

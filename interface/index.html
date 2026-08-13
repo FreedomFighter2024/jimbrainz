@@ -22,19 +22,11 @@
         </div>
         <div id="general-connection-status" class="text default glow"></div>
         <div id="top-bar-actions">
-            <div id="downloads-control">
-                <button type="button" id="downloads-toggle-button">
-                    <span>downloads ▾</span>
-                    <span id="downloads-active-badge" class="log-unread-badge" hidden>0</span>
-                </button>
-                <div id="downloads-window">
-                    <div id="downloads-toolbar">
-                        <span id="downloads-summary" class="text default-muted"></span>
-                        <button type="button" id="downloads-clear-button">clear finished</button>
-                    </div>
-                    <div class="scrollable" id="downloads-scrollable"></div>
-                </div>
-            </div>
+            <!--
+              Mount point for the Preact bundle (ui/), which renders the whole downloads
+              control in here. Empty on purpose - #downloads-root is display:contents so it
+              adds no box of its own and the flex layout of #top-bar-actions is unchanged.
+            --><div id="downloads-root"></div>
             <div id="log-control">
                 <button type="button" id="log-toggle-button">
                     <span>log ▾</span>
@@ -144,5 +136,13 @@
     </div>
 </div>
 <script type="module" src="scripts/main.js"></script>
+<!--
+  Built from ui/ by `npm run build`. Unhashed on purpose so this static file can name it,
+  which is why src/api/app.py sends no-cache for it - see vite.config.ts.
+
+  Running from source without building ui/ leaves this 404ing and the downloads panel
+  missing from the page. That's the one thing to check first if downloads "disappear".
+-->
+<script type="module" src="dist/jimbrainz-ui.js"></script>
 </body>
 </html>

@@ -16,8 +16,8 @@ Repo: `real-lizardwizard/jimbrainz` · owner is James Barnett (jamesambarnett@gm
 
 | branch | what |
 | --- | --- |
-| `main` | the stable Lidarr-based line, v0.2.1. Untouched by the rewrite. |
-| `experimental/slskdn-no-lidarr` | **all the work below.** slskd-direct, no Lidarr. |
+| `main` | the old Lidarr-based line, v0.2.1. Untouched by the rewrite, and now behind it. |
+| `experimental/slskdn-no-lidarr` | **all the work below.** slskd-direct, no Lidarr. Releases are tagged from here — v0.3.0 onward. |
 
 ### Why Lidarr was dropped
 
@@ -48,7 +48,9 @@ src/
   organizer.py     the ONLY code that writes to the user's filesystem.
   api/             musicbrainz_endpoint.py, slskd_endpoint.py, app.py
   routes/          search_musicbrainz, download, monitor_slskd, interface_logs
-interface/         vanilla JS/CSS (being migrated to Preact+Vite+TS — see below)
+interface/         vanilla JS/CSS. Still the served page; shrinking as panels are ported.
+  dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
+ui/                Preact + Vite + TypeScript. New work goes here — see below.
 tests/             96 tests, all Python, all fixture-driven
 ```
 
@@ -97,6 +99,20 @@ Each of these cost real time. Don't rediscover them.
   silently overwrites the good value from `.env`. This produced an unusable empty `SLSKD_URL`.
 - **`.env` values must not have trailing `# comments`.** Compose and python-dotenv disagree
   about inline comments. Examples go on their own lines.
+- **`hidden` did nothing to any badge.** `.log-unread-badge` and `.signals-badge` both set
+  `display`, which beats the browser's `[hidden] { display: none }` — so all three badges sat
+  on screen showing `0` while their JS believed it had hidden them. Found by checking
+  `getBoundingClientRect()` after `el.hidden` read back `true`; it is invisible to any check
+  that trusts the property. `main.css` now forces `[hidden]` to win. **`hidden` reading
+  `true` is not evidence an element is hidden — measure it.**
+- **The downloads panel vanishes if `ui/` hasn't been built.** `interface/index.html` loads
+  `dist/jimbrainz-ui.js`, which is gitignored and generated. Running from source without
+  `npm run build` leaves it 404ing and that panel simply absent. Check this first.
+- **npm silently skips native binaries when Node is too old.** Vite 8 needs Node
+  `^20.19.0 || >=22.12.0`; on 20.12.2 `npm install` merely *warns*, drops the unsupported
+  optional `@rolldown/binding-*` package, and the failure only appears at build time as
+  "Cannot find module './rolldown-binding.darwin-arm64.node'". The lockfile still records
+  every platform, so Docker's node:22 stage is unaffected — this is a local-only trap.
 - **The browser preview pane serves stale composites.** It has shown a panel as transparent
   and shown pre-fix state after a reload, more than once. **Verify against computed styles /
   DOM state, not screenshots.**
@@ -126,15 +142,28 @@ Measured with 148 releases × 12 tracks:
 **Neither is a framework problem.** Both are reintroducible in Preact/React verbatim. Fix them
 regardless of stack — it's ~30 lines.
 
-## Frontend migration (decided, in progress)
+## Frontend migration (in progress — toolchain and Downloads panel done)
 
-**Chosen: Preact + Vite + TypeScript.** Adopt incrementally, starting with the new library
-window; migrate existing panels opportunistically.
+**Preact + Vite + TypeScript, in `ui/`.** Adopted incrementally: the vanilla app still serves
+the page, and ported panels are mounted into it by one extra module script.
 
-**→ Full plan, API surface to type, port order and traps: [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md).
-Start there.** Nothing has been scaffolded yet; the next session begins with the toolchain.
+**→ Full plan, API surface, port order and traps: [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md).**
 
-Why, from measurements of the current code:
+**Done:** toolchain, the typed API layer for every endpoint, localStorage compatibility, and
+the **Downloads panel** (port order #2, taken before the library window because it needed no
+new backend and so could be proven against real data immediately).
+
+**How the two halves coexist:**
+
+- `interface/index.html` provides empty mount points (`#downloads-root`, `display: contents`
+  so the flex layout is untouched) and loads `dist/jimbrainz-ui.js` after `main.js`.
+- Ported components reuse the **existing class names and IDs verbatim**, so `main.css` applies
+  unchanged. A visual difference means a porting mistake, not a restyle.
+- Both files are ES modules and can't call each other, so the handful of cross-boundary calls
+  meet on `window.jimbrainz` (`ui/src/bridge.ts`). Two entries today:
+  `refreshDownloads` and `closeOtherDropdowns`. **An empty bridge means the migration is done.**
+
+Why, from measurements of the current code (the Downloads row is now realised):
 
 | hand-rolled machinery | count |
 | --- | --- |
@@ -143,10 +172,17 @@ Why, from measurements of the current code:
 | `innerHTML` assignments | 43 |
 | separate mutable state objects | 7 |
 | `buildReleasesGrid` (unreusable table) | 312 lines |
-| hand-written keyed reconciliation | 81 lines |
+| hand-written keyed reconciliation | 81 lines → **deleted**, replaced by `key={job.id}` |
 
 Those 29 call sites *are* the "things not updating" complaint. The 81 lines of
-`data-job-id` lookup + `insertBefore` + `seen` set is a worse virtual DOM.
+`data-job-id` lookup + `insertBefore` + `seen` set was a worse virtual DOM, and `key={job.id}`
+replaced all of it.
+
+**Don't expect the port to shrink the codebase — it doesn't.** Downloads went from 260 lines
+of `main.js` to 507 across six files in `ui/`. Roughly half of that is comments and type
+declarations, and the reusable parts (`lib/format.ts`, `lib/jobs.ts`) get spent again by the
+candidates panel. The return is the deleted reconciler, compile-time checking, and rows that
+can't silently stop updating — not fewer lines.
 
 Preact over React: same API, ~4 KB vs ~45 KB, `preact/compat` keeps the React ecosystem
 (TanStack Table etc.) available. TypeScript would have caught the real
@@ -162,8 +198,12 @@ the original author's own comment calls it "a whole mess") and the lag above.
 - Commit messages explain *why*, and name what was verified vs assumed.
 - Versions: `v0.x` tags. **1.0.0 is reserved for when this is genuinely polished** — a
   deliberate choice, don't jump to it.
-- Image tags: `:experimental` = this branch (rebuilt on every push); `:latest` = stable
-  Lidarr line. `:latest` only ever moves for a real release, never a branch or prerelease.
+- Image tags: `:experimental` = this branch (rebuilt on every push); `:latest` = the newest
+  real release. `:latest` only ever moves for a real release, never a branch or prerelease —
+  the workflow enforces this by skipping `:latest` for any version containing a hyphen.
+  **As of v0.3.0 `:latest` is the slskd-direct line, not the Lidarr one.** It was tagged from
+  `experimental/slskdn-no-lidarr`, so `main` still holds v0.2.1 and anyone visiting the repo's
+  default branch sees the old Lidarr README. Merging this branch to `main` is still owed.
 
 ## Local development
 
@@ -172,7 +212,20 @@ the original author's own comment calls it "a whole mess") and the lag above.
 .venv/bin/python -m pytest tests/ -q  # 96 tests
 ```
 
-`.env`, `.devdata/`, `run_dev.sh`, `.claude/` are gitignored dev scaffolding.
+Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
+
+```bash
+npm install
+npm run build      # tsc --noEmit && vite build -> interface/dist/, required to see downloads
+npm run typecheck  # tsc alone; runs on older Node when the build won't
+npm run dev        # harness on :5173, proxies /jimbrainz + /styles to :8080 (start the backend first)
+```
+
+`npm run dev` serves `ui/index.html`, a harness for working on one component in isolation with
+HMR — **not** the real page. The real page is still `interface/index.html` served by FastAPI on
+8080, and it only picks up frontend changes after `npm run build`.
+
+`.env`, `.devdata/`, `run_dev.sh`, `.claude/`, `node_modules/`, `interface/dist/` are gitignored.
 
 ## What the tests cannot tell you
 
@@ -190,11 +243,15 @@ A green suite here means the logic is sound, not that it works against real infr
 
 ## Next up
 
-1. **Scaffold Preact + Vite + TypeScript** — nothing exists yet. Follow
-   [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md).
-2. **A library window showing what's already on disk** — the user's next feature request, and
-   the migration's first workload. Needs a backend endpoint too: scan `LIBRARY_PATH` and read
-   tags (mutagen is already a dependency). No such endpoint exists yet.
+0. **Verify the Downloads port against a running backend.** It typechecks and the markup
+   matches the old renderer class-for-class, but it has never rendered a real job — that
+   needs Node ≥20.19, `npm run build`, and a live slskd. Watch specifically: the live speed
+   figure (byte deltas, not `job.speed`), the queue position line, and cancel.
+1. **A library window showing what's already on disk** — the user's next feature request.
+   Needs a backend endpoint too: scan `LIBRARY_PATH` and read tags (mutagen is already a
+   dependency). No such endpoint exists yet. Build it in `ui/` — the toolchain is ready.
+2. Continue the port in the order in [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md):
+   candidates panel, filter column, releases grid, top bar. Downloads is done.
 3. Fix the two performance bugs — do this as part of the port, not after.
 4. A settings pane (naming templates, organization, quality profiles) — explicitly deferred by
    the user until the library window is done.

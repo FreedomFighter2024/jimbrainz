@@ -3,45 +3,77 @@
 Everything a fresh session needs to start. The decision is settled (see CLAUDE.md); this is
 the how.
 
+## Status
+
+| | |
+| --- | --- |
+| Toolchain (`ui/`) | **done** — Vite 8, Preact 10, TS strict. `npm run typecheck` is clean. |
+| Typed API layer | **done** — every endpoint in the table below, in `ui/src/api/`. |
+| localStorage compatibility | **done** — `ui/src/state/persisted.ts`. Column-state reconciliation still owed, see there. |
+| Downloads panel | **ported**, and **not yet run against a live backend**. |
+| Multi-stage Dockerfile | **done** — `ui` stage builds into `interface/dist`. |
+| Cache-header fix | **done** — hashed chunks immutable, entry bundle revalidates. |
+| Everything else | untouched. Vanilla still owns it. |
+
+**Needs Node `^20.19.0 || >=22.12.0`.** On older Node, `npm install` warns but silently drops
+rolldown's native binary and the build dies with "Cannot find module
+'./rolldown-binding.*.node'". `npm run typecheck` still works there.
+
 ## Ground rules
 
 1. **Incremental, not big-bang.** There are zero frontend tests. A full rewrite has no safety
    net, so port panel by panel and keep the app working at every commit.
-2. **The library window is the first workload.** It's new, so there's nothing to break — build
-   it in Preact and let it prove the setup before touching working panels.
+2. ~~**The library window is the first workload.**~~ **Superseded.** The Downloads panel went
+   first instead: the library window needs a backend endpoint that doesn't exist yet, so it
+   would have proved the setup against invented data, while Downloads exercises polling, live
+   updates, keyed lists and mutations against a backend that already works. The reasoning
+   still holds for anything genuinely new — build it in Preact rather than extending vanilla.
 3. **Do not carry the two performance bugs across** (details below). They're the actual cause
    of the "lag" complaint, and they're just as reproducible in Preact.
 4. **The CSS survives as-is initially.** 2,245 lines of accreted styling own the CRT aesthetic.
    Port markup to components first, restyle later as a separate deliberate pass. Changing both
    at once means you can't tell which broke it.
 
-## Toolchain setup
+## Toolchain setup — as built
 
 ```
-ui/                      # new — Vite root
-  index.html
+ui/
+  index.html             # DEV HARNESS ONLY - not built, not served. See below.
   src/
-    main.tsx
-    api/                 # typed fetch wrappers, one per backend module
+    main.tsx             # mount table: element id -> component
+    bridge.ts            # window.jimbrainz - the seam with the vanilla app
+    api/                 # types.ts + one wrapper module per backend module
     components/
-    state/
-  tsconfig.json
+    hooks/               # useDownloadJobs - polling, cadence, mutations
+    lib/                 # format, jobs vocabulary, speed sampling
+    state/               # persisted.ts - the three localStorage keys
+  tsconfig.json          # strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes
   vite.config.ts
   package.json
 interface/               # existing vanilla app — stays until fully replaced
+  dist/                  # build output, gitignored
 ```
 
-`vite.config.ts` essentials:
+**The build input is `src/main.tsx`, not `index.html`.** While the port is incremental the
+page users get is still the hand-written `interface/index.html`, which loads the bundle as one
+extra module script. So the build emits JS, not a page, and the entry filename is pinned
+unhashed (`jimbrainz-ui.js`) because a static HTML file has to name it. Split chunks keep
+their hashes.
 
-```ts
-export default defineConfig({
-  plugins: [preact()],
-  build: { outDir: '../interface/dist', emptyOutDir: true },
-  server: { proxy: { '/jimbrainz': 'http://127.0.0.1:8080' } },  // dev against the real API
-})
-```
+When the migration finishes and Vite owns the page, delete `rollupOptions.input` and let it
+build `index.html` normally.
 
-The proxy matters: it lets `npm run dev` hit the real FastAPI backend without CORS work.
+Two consequences worth knowing:
+
+- **An unhashed entry is a mutable URL**, so `src/api/app.py` must send `no-cache` for it.
+  That's already wired; don't undo it.
+- **No CSS is imported by any component**, deliberately — the existing `main.css` still owns
+  everything. A JS-entry build does not auto-inject an emitted stylesheet, so the first
+  component that imports CSS has to solve that. Don't discover it by accident.
+
+`ui/index.html` is a harness for building one component in isolation with HMR. It proxies
+`/jimbrainz`, `/styles` and `/assets` to `127.0.0.1:8080`, so start the backend first, and
+remember it is *not* the real page — only `npm run build` updates that.
 
 ### Dockerfile
 
@@ -61,15 +93,19 @@ FROM python:3.14-slim
 COPY --from=ui /interface/dist ./interface/dist
 ```
 
-**Check `src/api/app.py` when you do this.** The `revalidate_interface_assets` middleware
-matches `/scripts/`, `/styles/`, `/assets/` — Vite emits hashed filenames under a different
-path. Hashed assets are immutable and *should* be cached hard; only `index.html` needs
-`no-cache`. Update the middleware or you'll reintroduce the "I upgraded and nothing changed"
-problem the middleware exists to prevent.
+**Done, with one deviation:** the second stage copies `--from=ui` *after* `COPY interface/`,
+so a stale `interface/dist` left by a local build is overwritten rather than shipped.
 
-## API surface to type
+`src/api/app.py` was updated at the same time, as this section warned it must be:
+`/dist/assets/` (hashed, content-addressed) is served `immutable, max-age=31536000`, while
+`/dist/` (the unhashed entry bundle) joins `/scripts/`, `/styles/`, `/assets/` on `no-cache`.
+Leaving the middleware alone would have reintroduced "I upgraded and nothing changed" for
+precisely the ported half of the interface.
 
-Write `ui/src/api/types.ts` from these. All prefixed `/jimbrainz/`.
+## API surface to type — done
+
+All of this is typed in `ui/src/api/types.ts` with per-module wrappers beside it. Kept here as
+the reference. All prefixed `/jimbrainz/`.
 
 | endpoint | method | notes |
 | --- | --- | --- |
@@ -80,10 +116,10 @@ Write `ui/src/api/types.ts` from these. All prefixed `/jimbrainz/`.
 | `monitor_slskd/config` | GET | `{library_path, download_path, organizing_enabled, organize_mode, slskd_url, slskd_url_problem, slskd_apikey_set}` |
 | `download/find_candidates` | POST | body: `{artist, album, year, release_mbid, edition_tags, tracks[], format_preference, query_override}` → `{query, response_count, candidates[]}` |
 | `download/enqueue` | POST | body: `{username, files[], directory, release}` → `{status, queued, job_id}` |
-| `download/jobs` | GET | `{jobs[], tracking_enabled}` |
+| `download/jobs` | GET | `{jobs[], tracking_enabled}`. `files_failed` is only present when slskd matched transfers — optional, not always-zero. |
 | `download/jobs/{id}/cancel` | POST | |
 | `download/jobs/clear` | POST | |
-| `interface_logs/interface_logs` | GET | **SSE stream**, not fetch. `{event_type, event_content, src}` |
+| `interface_logs/interface_logs` | GET | **SSE stream**, not fetch. **Correction:** the frame is `{event_time, event_type, event_content, src?}` — this table was written from the endpoint, but `SSEHandler.emit()` in `src/logger.py` also sends a pre-formatted `event_time` and only attaches `src` when the record carried one. Frames without a `src` are real and must render. |
 
 Canonical shapes are in `src/routes/download.py` (pydantic models) and
 `src/matching.py::score_candidate` (candidate shape). Derive the TS types from those rather
@@ -93,16 +129,23 @@ than from the current JS.
 
 Users have these set; don't orphan them.
 
-- `jimbrainz-download-defaults` — `{formatPreference, autoGrab}`
-- `jimbrainz-release-columns` — `{order, visible, widths}`
-- `jimbrainz-log-open` — `'1'|'0'`
+- `jimbrainz-download-defaults` — `{formatPreference, autoGrab}`, JSON, possibly partial
+- `jimbrainz-release-columns` — `{order, visible, widths}`, JSON
+- `jimbrainz-log-open` — the literal string `'1'`/`'0'`, **not** JSON. Writing `true` here
+  reads back as closed on any un-ported page.
+
+All three are handled in `ui/src/state/persisted.ts`. One thing is deliberately still owed:
+the vanilla column-state loader reconciles the saved order against the current column set and
+backfills anything new — which is what stops a version that adds a column from hiding it
+forever. That needs the column definitions, so it lands with the releases grid (#5). Don't
+drop it.
 
 ## What to port, in order
 
 | # | component | source | notes |
 | --- | --- | --- | --- |
-| 1 | **Library window** | *new* | the point of the exercise; nothing to break |
-| 2 | Downloads panel | `renderDownloads` + 81 lines of manual reconciliation | biggest immediate win — `key={job.id}` deletes all of it |
+| 1 | **Library window** | *new* | still pending — needs a backend endpoint first |
+| 2 | ~~Downloads panel~~ | ~~`renderDownloads` + 81 lines of manual reconciliation~~ | **done.** `key={job.id}` deleted all of it. Went first; see ground rule 2. |
 | 3 | Candidates panel | `renderCandidates`, filters, signal sliders | self-contained |
 | 4 | Filter column | `renderFacets`, tri-state facets | |
 | 5 | Releases grid | `buildReleasesGrid` (312 lines) | hardest. Consider TanStack Table via `preact/compat` — it replaces the column resize/reorder/visibility code wholesale, and TanStack Virtual fixes the DOM-size problem structurally |
@@ -120,7 +163,7 @@ signals or a couple of contexts will do — no Redux.
 | `candidateFilterState` (incl. `minSignals`) | candidates-panel local state |
 | `downloadDefaults` (persisted) | settings state |
 | `lastCandidateResult` | query result |
-| `jobSpeedSamples` | keep as a plain `Map` in a ref — it's a rolling sample, not UI state |
+| `jobSpeedSamples` | **done** — a plain `Map` in a ref (`ui/src/lib/speed.ts`), folded in the poll callback rather than during render, so rendering stays pure |
 | `mountedReleaseGrids` | **delete entirely** — a hand-rolled subscription system that props replace |
 
 ## Two bugs that must not survive the port
@@ -137,8 +180,13 @@ Profiled, with numbers, in CLAUDE.md. Both are trivially reintroducible in Preac
 
 ## Verification while working
 
+- `npm run typecheck` from `ui/` — cheap, and works on Node versions the build won't.
 - `.venv/bin/python -m pytest tests/ -q` — 96 tests, all backend. Unaffected by this work;
   if they break, something is wrong beyond the frontend.
+- **There are still no frontend tests, and a clean typecheck proves very little about a
+  ported panel.** Downloads typechecks and matches the old markup class-for-class, but has
+  never rendered a real job. Anything involving live data — polling cadence, derived speed,
+  queue position, cancel — has to be watched against a running backend before it's believed.
 - **Verify UI against computed styles and DOM state, not screenshots.** The preview pane has
   repeatedly served stale composites — it once showed a panel as transparent when computed
   styles proved it opaque.
@@ -150,3 +198,9 @@ Profiled, with numbers, in CLAUDE.md. Both are trivially reintroducible in Preac
 `interface/scripts/` and `interface/index.html` are gone, `interface/dist/` is the only
 served frontend, and the Dockerfile's `ui` stage builds it. Until then both coexist — that's
 expected, not a mess to clean up prematurely.
+
+**The practical progress meter is `ui/src/bridge.ts`.** Every entry on `window.jimbrainz` is a
+call the ported code still has to make into the old app, or vice versa. It holds two today
+(`refreshDownloads`, `closeOtherDropdowns`). Adding one is sometimes the right call for a
+panel in flight; leaving one is not. When the bridge is empty and `main.js` has nothing left
+to run, delete both and switch Vite to building `index.html`.

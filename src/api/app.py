@@ -49,6 +49,16 @@ def start() -> FastAPI:
         lifespan=lifespan
     )
 
+    #? Vite writes these with a content hash in the filename, so a given URL's contents can
+    #? never change. Revalidating them would be pure waste, and caching them hard is what
+    #? makes the hashing worth doing at all.
+    IMMUTABLE_PREFIXES = ("/dist/assets/",)
+
+    #? Everything whose URL stays the same while its contents change: the hand-written
+    #? interface files, and the Vite entry bundle - deliberately unhashed so the static
+    #? index.html can name it (see ui/vite.config.ts), which is exactly what makes it mutable.
+    REVALIDATE_PREFIXES = ("/scripts/", "/styles/", "/assets/", "/dist/")
+
     @app.middleware("http")
     async def revalidate_interface_assets(request, call_next):
         """
@@ -59,11 +69,20 @@ def start() -> FastAPI:
         changed", which is miserable to diagnose. `no-cache` still allows a conditional
         request, so with StaticFiles' ETags the normal case is a cheap 304 rather than a
         re-download. It cost real time during development before being noticed here.
+
+        The hashed-asset carve-out matters as the Preact migration lands: matching only
+        /scripts/ and /styles/ would have left the new bundle uncovered and reintroduced that
+        exact bug for the half of the interface that had been ported.
         """
         response = await call_next(request)
 
         path = request.url.path
-        if path == "/" or path.startswith(("/scripts/", "/styles/", "/assets/")):
+
+        #? checked first - /dist/assets/x-HASH.js matches both tuples
+        if path.startswith(IMMUTABLE_PREFIXES):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+
+        elif path == "/" or path.startswith(REVALIDATE_PREFIXES):
             response.headers["Cache-Control"] = "no-cache"
 
         return response

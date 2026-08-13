@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>jimbrainz — ui dev harness</title>
+
+    <!--
+      Dev harness only. `npm run build` does not build this file (vite.config.ts sets the
+      build input to src/main.tsx); production still serves interface/index.html.
+
+      It exists so ported components can be worked on in isolation with HMR, against the
+      real backend and the real stylesheet - both proxied from 127.0.0.1:8080, so start
+      `.venv/bin/python -m src.main` before `npm run dev`.
+    -->
+    <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+    <div class="background-layer"></div>
+    <div id="main-container" class="crt">
+        <div id="top-bar">
+            <div id="top-bar-actions">
+                <!-- same mount point interface/index.html provides -->
+                <div id="downloads-root"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

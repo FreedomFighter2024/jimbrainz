@@ -8,7 +8,18 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    border:0px solid red; 
+    border:0px solid red;
+}
+
+/*
+! The browser's own `[hidden] { display: none }` is the weakest possible rule, so ANY class
+! that sets `display` silently defeats the hidden attribute. Every badge in here does exactly
+! that (.log-unread-badge and .signals-badge both set display), which meant the unread-log
+! and signal-threshold badges sat on screen showing "0" permanently while their JS believed
+! it had hidden them. `hidden` is used only by those badges, so this is safe to make absolute.
+*/
+[hidden] {
+    display: none !important;
 }
 
 
@@ -1995,6 +2006,16 @@ span.red { color: var(--red-text); }
 
 
 /* ===== downloads dropdown ===== */
+
+/*
+ * Mount point for the Preact bundle, which renders #downloads-control into it.
+ * display:contents makes this wrapper generate no box at all, so #downloads-control stays a
+ * direct flex child of #top-bar-actions and every rule below applies exactly as it did when
+ * the markup was hand-written in index.html.
+ */
+#downloads-root {
+    display: contents;
+}
 
 #downloads-control {
     position: relative;

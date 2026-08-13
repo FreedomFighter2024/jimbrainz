@@ -131,6 +131,9 @@ regardless of stack — it's ~30 lines.
 **Chosen: Preact + Vite + TypeScript.** Adopt incrementally, starting with the new library
 window; migrate existing panels opportunistically.
 
+**→ Full plan, API surface to type, port order and traps: [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md).
+Start there.** Nothing has been scaffolded yet; the next session begins with the toolchain.
+
 Why, from measurements of the current code:
 
 | hand-rolled machinery | count |
@@ -187,8 +190,13 @@ A green suite here means the logic is sound, not that it works against real infr
 
 ## Next up
 
-1. Preact + Vite + TypeScript scaffold (decided, starting now).
-2. **A second window showing what's already on disk** — a library browser, the user's next
-   feature request. Build this in Preact as the migration's first real workload.
-3. A settings pane (naming templates, organization, quality profiles) — explicitly deferred.
-4. The two performance fixes above.
+1. **Scaffold Preact + Vite + TypeScript** — nothing exists yet. Follow
+   [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md).
+2. **A library window showing what's already on disk** — the user's next feature request, and
+   the migration's first workload. Needs a backend endpoint too: scan `LIBRARY_PATH` and read
+   tags (mutagen is already a dependency). No such endpoint exists yet.
+3. Fix the two performance bugs — do this as part of the port, not after.
+4. A settings pane (naming templates, organization, quality profiles) — explicitly deferred by
+   the user until the library window is done.
+5. A design pass on the CSS. The "cobbled-together" complaint is not addressed by the
+   migration and needs its own deliberate effort.

@@ -1,8 +1,10 @@
 services:
   jimbrainz:
-    # :experimental is built from the experimental/* branches - this is the slskd-direct
-    # version with no Lidarr. :latest is the stable Lidarr-based line and will NOT understand
-    # the settings below, so don't swap it in without also reverting this file.
+    # :experimental is built from the experimental/* branches - the slskd-direct version with
+    # no Lidarr, and ahead of the last release. As of 0.3.0 :latest is that same slskd-direct
+    # line, so swapping it in here is safe and holds still; use :0.3.0 to pin exactly.
+    # Only :0.2.1 and older are the original Lidarr-based version, and those will NOT
+    # understand the settings below.
     image: ghcr.io/real-lizardwizard/jimbrainz:experimental
     container_name: jimbrainz
     restart: unless-stopped

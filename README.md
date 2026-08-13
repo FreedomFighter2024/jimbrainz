@@ -48,11 +48,17 @@ _Note: if you're an **UnRaid** user like me, ive added a template that can be ma
 
 | tag | what it is |
 | --- | --- |
-| `:experimental` | this branch — slskd direct, no Lidarr. Rebuilt on every push to `experimental/*`. |
-| `:latest` | the stable Lidarr-based line (0.2.x). Does **not** understand the settings above. |
-| `:0.2.1` etc | pinned versions |
+| `:latest` | **the current release** — slskd direct, no Lidarr. 0.3.x, and what the settings above describe. |
+| `:0.3.0` etc | pinned releases of that same line |
+| `:experimental` | the `experimental/*` branch, rebuilt on every push. Ahead of `:latest`, and moves under you. |
+| `:0.2.1` and older | the original Lidarr-based line, still on `main`. Does **not** understand the settings above. |
 
-The example compose file on this branch points at `:experimental`. It moves whenever the branch does, so pin a version instead if you want it to hold still.
+> **If you were already pulling `:latest`, read this.** Up to 0.2.1 that tag was the
+> Lidarr-based version. As of **0.3.0 it is this slskd-direct rewrite**, which has no Lidarr
+> support at all and takes different settings. Pulling `:latest` will replace one with the
+> other. Pin **`:0.2.1`** if you want the Lidarr version to keep working.
+
+The example compose file on this branch points at `:experimental`. It moves whenever the branch does, so use `:latest` or pin a version if you want it to hold still.
 
 ### Running
 run docker compose from the same folder as your cloned repo / docker-compose file:<br><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`docker-compose up -d`<br><br>this by default starts the container on localhost:8080, or whatever port you configured it to.

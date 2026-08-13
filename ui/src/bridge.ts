@@ -21,6 +21,13 @@ export interface JimbrainzBridge {
    * download so the new job appears at once instead of on the next timer tick.
    */
   refreshDownloads?: () => void
+
+  /**
+   * Runs a MusicBrainz search on the vanilla side. Set by main.js, called from the library
+   * view when an artist or album name is clicked — the search UI hasn't been ported yet, so
+   * "take me to this artist" has to hand off rather than re-implement it.
+   */
+  runSearch?: (query: { artist?: string; album?: string }) => void
 }
 
 declare global {

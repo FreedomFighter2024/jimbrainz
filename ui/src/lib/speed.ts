@@ -14,7 +14,21 @@ import { isActive } from './jobs'
 export interface ByteSample {
   bytes: number
   at: number
+  /** Last rate actually measured for this job, carried across ticks that saw no movement. */
+  rate: number | null
+  /** Consecutive polls with no byte movement. Resets on any real change. */
+  idle: number
 }
+
+/**
+ * How many consecutive no-movement polls to keep reporting the last rate for.
+ *
+ * We poll faster than slskd updates its byte counters, so a zero delta usually means "no
+ * news since last time", not "the transfer stopped" - reporting nothing on those ticks makes
+ * the speed flicker between a number and "unknown". Four ticks is ~2s at the open cadence,
+ * after which a job really has stalled and claiming a speed would be a lie.
+ */
+const MAX_IDLE_TICKS = 4
 
 export type SpeedSamples = Map<number, ByteSample>
 
@@ -43,18 +57,36 @@ export function sampleSpeeds(
 
     const bytes = job.bytes_transferred || 0
     const previous = samples.get(job.id)
-    samples.set(job.id, { bytes, at: now })
 
-    if (!previous) continue
+    if (!previous) {
+      samples.set(job.id, { bytes, at: now, rate: null, idle: 0 })
+      continue
+    }
 
     const seconds = (now - previous.at) / 1000
     const delta = bytes - previous.bytes
 
-    // a negative delta means slskd restarted or requeued the transfer; report nothing
-    // rather than a nonsense number
-    if (seconds <= 0 || delta < 0) continue
+    // a negative delta means slskd restarted or requeued the transfer; drop everything
+    // known about it rather than reporting a nonsense number
+    if (seconds <= 0 || delta < 0) {
+      samples.set(job.id, { bytes, at: now, rate: null, idle: 0 })
+      continue
+    }
 
-    speeds.set(job.id, delta / seconds)
+    if (delta === 0) {
+      const idle = previous.idle + 1
+      // deliberately keeps the previous anchor rather than moving it to `now`: the bytes
+      // that arrive next accumulated over the whole quiet stretch, so measuring them
+      // against only the final tick would overstate the rate badly
+      samples.set(job.id, { ...previous, idle })
+
+      if (previous.rate !== null && idle <= MAX_IDLE_TICKS) speeds.set(job.id, previous.rate)
+      continue
+    }
+
+    const rate = delta / seconds
+    samples.set(job.id, { bytes, at: now, rate, idle: 0 })
+    speeds.set(job.id, rate)
   }
 
   // jobs that vanished from the payload entirely (cleared, deleted) would otherwise leak

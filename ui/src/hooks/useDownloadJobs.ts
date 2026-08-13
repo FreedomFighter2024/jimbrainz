@@ -5,8 +5,18 @@ import type { DownloadJob } from '../api/types'
 import { isActive } from '../lib/jobs'
 import { sampleSpeeds, type SpeedSamples } from '../lib/speed'
 
-// fast while you're watching, slow in the background just to keep the badge honest
-const POLL_OPEN_MS = 1000
+/*
+ * Fast while you're watching, slow in the background just to keep the badge honest.
+ *
+ * The open cadence is faster than slskd refreshes its own byte counters, so a good share of
+ * these polls return identical numbers. That's fine for progress - it just means the bar
+ * doesn't move - but it's why ../lib/speed.ts holds the last measured rate across quiet
+ * ticks instead of reporting "unknown" every other second.
+ *
+ * Each open poll is one request to jimbrainz and, while anything is downloading, one onward
+ * request to slskd. Going below ~500ms starts being rude to slskd for no visible gain.
+ */
+const POLL_OPEN_MS = 500
 const POLL_BACKGROUND_MS = 5000
 
 export interface DownloadJobsState {

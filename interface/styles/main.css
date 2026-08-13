@@ -2164,7 +2164,10 @@ span.red { color: var(--red-text); }
 .download-progress-fill {
     height: 100%;
     background-color: var(--main-text);
-    transition: width 0.4s ease;
+    /* must stay under the poll interval in useDownloadJobs.ts (500ms) - a transition longer
+       than the gap between updates means the bar is still animating toward the previous
+       value when the next one lands, so it always trails the real figure */
+    transition: width 0.2s ease;
 }
 
 .download-progress-fill.good { background-color: var(--green-text); }
@@ -2306,3 +2309,313 @@ span.red { color: var(--red-text); }
     opacity: 0.4;
     cursor: default;
 }
+
+
+/* ============================================================================
+ * ? TABS + LIBRARY
+ *
+ * Rendered by the Preact bundle (ui/src/components/Tabs.tsx, LibraryView.tsx) but styled
+ * here with everything else, deliberately: the library is meant to feel like the same
+ * application as the search view, and that is much easier to keep true when both read from
+ * one stylesheet using the same tokens.
+ * ==========================================================================*/
+
+/*
+ * Which pane is visible is decided here rather than by JavaScript. The tab component only
+ * writes data-tab onto #main-container - one of the panes is the vanilla search UI and the
+ * other is Preact, and having either of them imperatively toggle the other's display would
+ * mean two owners for one element's visibility.
+ */
+#library-root {
+    display: none;
+    flex: 1;
+    min-height: 0;
+}
+
+#main-container[data-tab="library"] #main-content { display: none; }
+#main-container[data-tab="library"] #library-root { display: flex; }
+
+#view-tabs {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    padding: 0 20px;
+    margin-top: 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--muted-text);
+}
+
+.view-tab {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    color: var(--white-tertiary-text);
+    font-family: var(--font-family-condensed);
+    font-size: 1.1em;
+    font-weight: var(--font-medium);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 22px;
+    cursor: pointer;
+    /* sits on top of the container's bottom border so the active tab joins the pane below */
+    margin-bottom: -1px;
+}
+
+.view-tab:hover {
+    color: var(--main-hover-text);
+}
+
+.view-tab.active {
+    background-color: var(--background-color-light);
+    border-color: var(--main-text);
+    border-bottom: 1px solid var(--background-color-light);
+    color: var(--main-text);
+}
+
+/* ---- library layout: mirrors #main-content / #filter-column deliberately ---- */
+
+#library-content {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+}
+
+#library-filter-column {
+    flex: 0 0 220px;
+    width: 220px;
+    padding: 10px 10px 10px 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 8px;
+}
+
+#library-filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+#library-clear-filters {
+    background: transparent;
+    border: 1px solid var(--muted-text);
+    border-radius: 3px;
+    color: var(--white-secondary-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.8em;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+#library-clear-filters:hover:not(:disabled) { color: var(--main-hover-text); }
+#library-clear-filters:disabled { opacity: 0.4; cursor: default; }
+
+#library-filter-column > hr {
+    display: block;
+    height: 1px;
+    border: 0;
+    border-top: 1px solid var(--main-text);
+    flex-shrink: 0;
+}
+
+#library-artists {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.library-facet {
+    background: transparent;
+    border: 0;
+    color: var(--white-secondary-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    text-align: left;
+    padding: 2px 0;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.library-facet:hover { color: var(--main-hover-text); }
+.library-facet.active { color: var(--main-text); font-weight: var(--font-bold); }
+.library-facet-count { color: var(--white-tertiary-text); }
+
+#library-middle {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    padding: 10px 20px 10px 10px;
+    gap: 10px;
+}
+
+#library-toolbar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+#library-filter-input { flex: 0 0 220px; }
+#library-summary { font-size: 0.9em; }
+#library-toolbar > .columns-toggle-button { margin-left: auto; }
+
+#library-scrollable {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* ---- one album ---- */
+
+.library-album {
+    border: 1px solid var(--white-secondary-text);
+    background-color: var(--background-color-input);
+    padding: 8px 10px;
+    flex-shrink: 0;
+}
+
+/* an album you hold more than one version of - the whole reason this view exists */
+.library-album.multi-edition {
+    border-left: 3px solid var(--main-text);
+}
+
+.library-album-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.library-expand {
+    background: transparent;
+    border: 0;
+    color: var(--white-tertiary-text);
+    cursor: pointer;
+    font-size: 0.9em;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.library-expand:hover { color: var(--main-hover-text); }
+
+.library-album-titles {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+/* clickable artist/album names, which hand off to a MusicBrainz search */
+.library-link {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    font-family: var(--font-family-condensed);
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.library-link:hover { color: var(--main-hover-text); text-decoration: underline; }
+
+.library-album-name {
+    color: var(--white-text);
+    font-size: 0.95em;
+    font-weight: var(--font-bold);
+}
+
+.library-artist-name {
+    color: var(--main-secondary-text);
+    font-size: 0.85em;
+}
+
+.library-year {
+    color: var(--white-tertiary-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+    flex-shrink: 0;
+}
+
+.library-edition {
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--white-tertiary-text);
+    border: 1px solid var(--muted-text);
+    padding: 0 5px;
+}
+
+/* stands out only when there is actually another edition to tell it apart from */
+.library-edition.has-siblings {
+    color: var(--main-text);
+    border-color: var(--main-text);
+}
+
+.library-warning {
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    text-transform: uppercase;
+    color: var(--yellow-text);
+}
+
+.library-album-meta {
+    display: flex;
+    gap: 10px;
+    margin-top: 3px;
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+    justify-content: space-between;
+}
+
+.library-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;   /* keep the album folder visible when the path is too long, not the root */
+    text-align: right;
+}
+
+.library-tracks {
+    margin-top: 8px;
+    border-top: 1px solid var(--muted-text);
+    padding-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.library-track {
+    display: flex;
+    gap: 10px;
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+    color: var(--white-secondary-text);
+}
+
+.library-track-number { flex: 0 0 2em; color: var(--white-tertiary-text); }
+.library-track-title  { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-track-time   { flex: 0 0 3.5em; text-align: right; color: var(--white-tertiary-text); }
+.library-track-format { flex: 0 0 3.5em; text-align: right; color: var(--white-tertiary-text); }
+
+.library-status  { padding: 20px 0; text-align: center; }
+.library-empty   { font-size: 0.85em; padding: 6px 0; }
+.library-scan-note { font-size: 0.78em; padding: 8px 0; text-align: center; }

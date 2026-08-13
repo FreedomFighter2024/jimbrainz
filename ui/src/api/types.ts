@@ -269,6 +269,73 @@ export interface ReleasesResponse {
   releases: Release[]
 }
 
+/* ===== library ===== */
+
+export interface LibraryTrack {
+  filename: string
+  title: string
+  /** null when the file carries no readable track number. Sorts last rather than as 0. */
+  position: number | null
+  /** seconds */
+  length: number
+  size: number
+  format: string
+  artist: string
+  album: string
+  albumartist: string
+  date: string
+  release_mbid: string
+}
+
+export interface LibraryAlbum {
+  /**
+   * Stable identity. The MusicBrainz release id when the files carry one, otherwise
+   * `path:<relative dir>`. Two folders sharing an MBID are the same edition however they're
+   * named; a folder without one can only ever be itself.
+   */
+  key: string
+  artist: string
+  album: string
+  year: string
+  /** Human label ("Deluxe edition"). '' for a single-edition album, 'Standard' when it has siblings. */
+  edition: string
+  release_mbid: string
+  /** Relative to LIBRARY_PATH. */
+  path: string
+  track_count: number
+  total_size: number
+  /** seconds */
+  duration: number
+  formats: string[]
+  tracks: LibraryTrack[]
+  modified_at: number
+  /** The folder's files disagree about the album name — usually a real tagging problem. */
+  mixed_tags: boolean
+  /** How many versions of this (artist, album) are on disk. 1 is the ordinary case. */
+  edition_count: number
+}
+
+export interface LibraryArtist {
+  artist: string
+  album_count: number
+  track_count: number
+  total_size: number
+}
+
+export interface LibraryResponse {
+  albums: LibraryAlbum[]
+  artists: LibraryArtist[]
+  library_path: string
+  /** Set when the library can't be read at all (unset or missing LIBRARY_PATH). Not an error. */
+  problem: string | null
+  scanned_at: number
+  album_count: number
+  artist_count: number
+  scan_seconds: number
+  /** How many folders came from cache rather than being re-read. */
+  cached: number
+}
+
 /* ===== interface_logs ===== */
 
 export type LogSource = 'musicbrainz' | 'slskd' | 'jimbrainz' | (string & {})

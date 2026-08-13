@@ -43,15 +43,18 @@ Python 3.12+ / FastAPI backend, static frontend, SQLite for job state.
 src/
   config.py        env + validation. describe_slskd_url() explains WHY a URL is unusable.
   matching.py      PURE candidate scoring. No I/O. The heart of the project.
+  editions.py      PURE. Which edition a release is, in words. See below — it's why the
+                   library can hold the deluxe and the standard press at the same time.
+  library.py       scans LIBRARY_PATH with mutagen, cached per folder on mtime.
   store.py         SQLite job store + transfer reconciliation helpers.
   poller.py        background task: slskd transfers -> job status transitions.
   organizer.py     the ONLY code that writes to the user's filesystem.
   api/             musicbrainz_endpoint.py, slskd_endpoint.py, app.py
-  routes/          search_musicbrainz, download, monitor_slskd, interface_logs
+  routes/          search_musicbrainz, download, monitor_slskd, interface_logs, library
 interface/         vanilla JS/CSS. Still the served page; shrinking as panels are ported.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             96 tests, all Python, all fixture-driven
+tests/             126 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -74,6 +77,17 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
 - **`ORGANIZE_MODE` defaults to `dry_run`.** Organizing is the only thing that writes to the
   user's filesystem. A fresh install reports what it *would* do.
 - **Edition matching is a weighted signal, never a filter.** See above.
+- **An album's folder carries its edition, and identity lives in the tags.**
+  `{artist}/{album} ({year}) [{edition}]`, with the suffix omitted for ordinary
+  single-edition albums so the common case stays clean. The label is resolved by
+  `editions.py` from MusicBrainz's own `disambiguation` first, then detected edition tags,
+  then format/country — and a collision with a *different* release escalates to the
+  catalogue number and finally the release id. `release.edition_label` overrides all of it
+  and is the hook for the planned metadata manager: choosing an edition by hand should mean
+  writing that field, not changing how editions are resolved.
+  **An untagged folder is never treated as a different release** — libraries predating
+  jimbrainz have no MBIDs, and forking every one of those albums would be far worse than
+  sharing a folder.
 - **Errors degrade rather than crash.** Unwritable DB → downloads still work, untracked.
   Unreachable slskd → stored jobs still listed, no live progress.
 
@@ -106,6 +120,17 @@ Each of these cost real time. Don't rediscover them.
   silently overwrites the good value from `.env`. This produced an unusable empty `SLSKD_URL`.
 - **`.env` values must not have trailing `# comments`.** Compose and python-dotenv disagree
   about inline comments. Examples go on their own lines.
+- **Two editions of one album used to silently not arrive.** `{album} ({year})` gave the
+  standard and deluxe press identical paths; `execute_plan` correctly refused to overwrite,
+  so every track was *skipped* — and the poller only reported a problem when
+  `organized == 0 AND skipped == 0`, so an all-skipped job fell through to status
+  `organized`. Green tick, album missing. Fixed in both places, and both are covered by
+  tests. **This was the exact Lidarr complaint that motivated the fork**, reproduced here.
+- **A Preact `useEffect` that writes to a DOM node outside its own tree is unreliable.** The
+  tab bar set `data-tab` on `#main-container` from an effect; when the tab was changed by a
+  click originating in the *library* tree, the effect didn't fire and the button highlighted
+  while the panes never swapped. Cross-tree DOM writes belong in the shell (`main.tsx`),
+  done synchronously. Symptom to recognise: the component looks right, the page doesn't.
 - **`hidden` did nothing to any badge.** `.log-unread-badge` and `.signals-badge` both set
   `display`, which beats the browser's `[hidden] { display: none }` — so all three badges sat
   on screen showing `0` while their JS believed it had hidden them. Found by checking
@@ -216,7 +241,7 @@ the original author's own comment calls it "a whole mess") and the lag above.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 96 tests
+.venv/bin/python -m pytest tests/ -q  # 126 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -236,7 +261,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 96 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 126 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings (matching assumes `"Completed, Succeeded"`, `"Errored"`,
@@ -254,14 +279,18 @@ A green suite here means the logic is sound, not that it works against real infr
    matches the old renderer class-for-class, but it has never rendered a real job — that
    needs Node ≥20.19, `npm run build`, and a live slskd. Watch specifically: the live speed
    figure (byte deltas, not `job.speed`), the queue position line, and cancel.
-1. **A library window showing what's already on disk** — the user's next feature request.
-   Needs a backend endpoint too: scan `LIBRARY_PATH` and read tags (mutagen is already a
-   dependency). No such endpoint exists yet. Build it in `ui/` — the toolchain is ready.
+1. **A metadata manager** — the user's stated next want, Picard-shaped: pick which edition an
+   album actually is and correct its tags. The groundwork is deliberately in place:
+   `release.edition_label` already overrides every derived source, and `library.py` surfaces
+   `mixed_tags` for folders whose files disagree. Needs a write path (retag + re-file an
+   existing album), which nothing has yet — the organizer only ever writes tags on the way in.
 2. Continue the port in the order in [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md):
-   candidates panel, filter column, releases grid, top bar. Downloads is done.
-3. Fix the two performance bugs — do this as part of the port, not after.
-4. A settings pane (naming templates, organization, quality profiles) — explicitly deferred by
-   the user until the library window is done.
+   candidates panel, filter column, releases grid, top bar. Downloads and the library are done.
+3. **A Settings tab.** The shell is built for it — add a `#settings-root` pane, an entry in
+   `TABS` in `ui/src/components/Tabs.tsx`, and a `[data-tab="settings"]` rule. No structural
+   change needed.
+4. Fix the two performance bugs — do this as part of the port, not after. The library view
+   already avoids #1 (`{expanded && <Tracks/>}`); the search view still has both.
 5. A design pass on the CSS. The "cobbled-together" complaint is not addressed by the
    migration and needs its own deliberate effort. A first pass fixed the *systemic* faults —
    no inherited baseline, colour-by-element-matrix, a duplicated button rule that made the

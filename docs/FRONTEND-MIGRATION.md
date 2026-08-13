@@ -10,10 +10,22 @@ the how.
 | Toolchain (`ui/`) | **done** — Vite 8, Preact 10, TS strict. `npm run typecheck` is clean. |
 | Typed API layer | **done** — every endpoint in the table below, in `ui/src/api/`. |
 | localStorage compatibility | **done** — `ui/src/state/persisted.ts`. Column-state reconciliation still owed, see there. |
-| Downloads panel | **ported**, and **not yet run against a live backend**. |
+| Downloads panel | **ported**, verified against a running backend with seeded jobs. |
+| Tab shell | **done** — `Tabs.tsx`. Search/Library, built to take Settings as a third. |
+| Library window | **done** — `LibraryView.tsx` + `src/library.py`. Edition-aware. |
 | Multi-stage Dockerfile | **done** — `ui` stage builds into `interface/dist`. |
 | Cache-header fix | **done** — hashed chunks immutable, entry bundle revalidates. |
 | Everything else | untouched. Vanilla still owns it. |
+
+**Two panes, one attribute.** `Tabs` is presentational; `renderShell()` in `main.tsx` writes
+`data-tab` on `#main-container` and CSS decides which pane shows. Doing that write from a
+`useEffect` inside `Tabs` looked cleaner and was *wrong* — it didn't fire when the tab changed
+from a click originating in the library tree, so the button highlighted and the panes didn't
+move. Cross-tree DOM writes go in the shell, synchronously.
+
+**The bridge has three entries now**, the new one being `runSearch` — the library's clickable
+artist/album names hand off to the vanilla search rather than reimplementing it. It retires
+when the search view is ported.
 
 **Needs Node `^20.19.0 || >=22.12.0`.** On older Node, `npm install` warns but silently drops
 rolldown's native binary and the build dies with "Cannot find module
@@ -144,7 +156,7 @@ drop it.
 
 | # | component | source | notes |
 | --- | --- | --- | --- |
-| 1 | **Library window** | *new* | still pending — needs a backend endpoint first |
+| 1 | ~~**Library window**~~ | *new* | **done.** `LibraryView.tsx` + `src/library.py`. Edition-aware; artist/album names hand off to a search through the bridge. |
 | 2 | ~~Downloads panel~~ | ~~`renderDownloads` + 81 lines of manual reconciliation~~ | **done.** `key={job.id}` deleted all of it. Went first; see ground rule 2. |
 | 3 | Candidates panel | `renderCandidates`, filters, signal sliders | self-contained |
 | 4 | Filter column | `renderFacets`, tri-state facets | |
@@ -181,7 +193,7 @@ Profiled, with numbers, in CLAUDE.md. Both are trivially reintroducible in Preac
 ## Verification while working
 
 - `npm run typecheck` from `ui/` — cheap, and works on Node versions the build won't.
-- `.venv/bin/python -m pytest tests/ -q` — 96 tests, all backend. Unaffected by this work;
+- `.venv/bin/python -m pytest tests/ -q` — 126 tests, all backend. Unaffected by this work;
   if they break, something is wrong beyond the frontend.
 - **There are still no frontend tests, and a clean typecheck proves very little about a
   ported panel.** Downloads typechecks and matches the old markup class-for-class, but has

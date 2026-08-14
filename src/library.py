@@ -256,6 +256,7 @@ def read_track(path: Path) -> dict | None:
         "album": _first(audio, "album"),
         "albumartist": _first(audio, "albumartist"),
         "date": _first(audio, "date"),
+        "originaldate": _first(audio, "originaldate"),
         "release_mbid": _first(audio, "musicbrainz_albumid"),
     }
 
@@ -325,6 +326,7 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
 
     album = _commonest([t["album"] for t in tracks]) or directory.name
     date = _commonest([t["date"] for t in tracks])
+    original_date = _commonest([t["originaldate"] for t in tracks])
     release_mbid = _commonest([t["release_mbid"] for t in tracks])
 
     try:
@@ -339,6 +341,8 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
         "artist": artist,
         "album": album,
         "year": date[:4] if date else "",
+        #? empty for anything not tagged with one, which is most libraries
+        "original_year": original_date[:4] if original_date else "",
         "edition": _edition_from_dirname(directory.name),
         "release_mbid": release_mbid,
         #? '' means no art on disk. The interface falls back to the Cover Art Archive when

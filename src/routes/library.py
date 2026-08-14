@@ -125,6 +125,8 @@ class RetagRelease(BaseModel):
     artist: str = ""
     album: str = ""
     year: str | None = None
+    #? the album's original release year, which is what the folder is named after
+    original_year: str | None = None
     release_mbid: str | None = None
     release_group_mbid: str | None = None
     disambiguation: str | None = None

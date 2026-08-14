@@ -28,7 +28,10 @@ interface Props {
 interface Fields {
   artist: string
   album: string
+  /** This pressing's year. */
   year: string
+  /** The album's original year. Names the folder — see build_album_dirname. */
+  originalYear: string
   editionLabel: string
 }
 
@@ -111,7 +114,10 @@ function ArtComparison({ album, release }: { album: LibraryAlbum; release: Relea
  * what it shows is what will happen rather than a separate guess at it.
  */
 export function MetadataEditor({ album, onClose, onApplied }: Props) {
-  const [query, setQuery] = useState(`${album.artist} ${album.album}`.trim())
+  //? An override, normally empty. The search is built from the artist and album fields
+  //? below, which are already on screen and editable - a second box holding the same two
+  //? values would just be somewhere for them to disagree.
+  const [query, setQuery] = useState('')
   const [releases, setReleases] = useState<Release[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
@@ -125,6 +131,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     artist: album.artist,
     album: album.album,
     year: album.year,
+    originalYear: album.original_year,
     editionLabel: album.edition === 'Standard' ? '' : album.edition,
   })
 
@@ -165,10 +172,12 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       artist: album.artist,
       album: album.album,
       year: album.year,
+      originalYear: album.original_year,
       editionLabel: album.edition === 'Standard' ? '' : album.edition,
     })
     setFetchArt(!album.art)
-  }, [album.path, album.artist, album.album, album.year, album.edition, album.art])
+  }, [album.path, album.artist, album.album, album.year, album.original_year,
+      album.edition, album.art])
 
   const setField = (key: keyof Fields, value: string) => {
     //? the message describes a write that has already happened; the moment you change
@@ -182,8 +191,24 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     setSearchError(null)
 
     try {
-      const result = await musicbrainz.fullySearch(query, 25)
-      const groups = result['release-groups'] ?? []
+      /*
+       * Fielded, like the main search view, not free text. "Pink Floyd Wish You Were Here"
+       * as a plain string matched a one-track 2013 release group - the song, not the album -
+       * and since the folder year comes from the group's first-release-date, matching the
+       * wrong group files a 1975 record under 2013.
+       *
+       * Falls back to free text when the fielded query finds nothing, because MusicBrainz's
+       * fielded search is exact enough to miss a slightly-off album title, and finding
+       * something imperfect beats finding nothing.
+       */
+      const fielded = `releasegroup:"${fields.album}" AND artist:"${fields.artist}"`
+      const first = await musicbrainz.fullySearch(query.trim() || fielded, 25)
+
+      let groups = first['release-groups'] ?? []
+      if (!groups.length && !query.trim()) {
+        const loose = await musicbrainz.fullySearch(`${fields.artist} ${fields.album}`.trim(), 25)
+        groups = loose['release-groups'] ?? []
+      }
 
       // Releases, not release groups: an edition IS a release, so grouping them would hide
       // exactly the distinction this editor exists to make.
@@ -191,7 +216,13 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       for (const group of groups.slice(0, 3)) {
         const detail = await musicbrainz.getReleases(group.id)
         for (const release of detail.releases ?? []) {
-          found.push({ ...release, _groupMbid: group.id } as Release)
+          //? the group's date, not the release's - it's the album's year, and the folder is
+          //? named after it so a remaster doesn't refile the record under its reissue year
+          found.push({
+            ...release,
+            _groupMbid: group.id,
+            _firstReleaseDate: group['first-release-date'] ?? null,
+          } as Release)
         }
       }
 
@@ -216,7 +247,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       setSearching(false)
       setSearched(true)
     }
-  }, [query, album])
+  }, [query, album, fields.artist, fields.album])
 
   /** Picking a release replaces the fields with its values, which you can then still edit. */
   const chooseRelease = (release: Release) => {
@@ -226,11 +257,13 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       artist: album.artist,
       album: album.album,
       releaseGroupMbid: (release as { _groupMbid?: string })._groupMbid ?? null,
+      firstReleaseDate: (release as { _firstReleaseDate?: string | null })._firstReleaseDate ?? null,
     })
     setFields({
       artist: built.artist,
       album: built.album,
       year: built.year ?? '',
+      originalYear: built.original_year ?? '',
       //? the release's own disambiguation is what the folder name would use anyway, so
       //? leaving this blank lets editions.py decide rather than pinning it
       editionLabel: '',
@@ -250,11 +283,14 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
           artist: album.artist,
           album: album.album,
           releaseGroupMbid: (selected as { _groupMbid?: string })._groupMbid ?? null,
+          firstReleaseDate:
+            (selected as { _firstReleaseDate?: string | null })._firstReleaseDate ?? null,
         })
       : {
           artist: album.artist,
           album: album.album,
           year: album.year || null,
+          original_year: album.original_year || null,
           //? keep the id the album already carries so the folder can still be disambiguated
           release_mbid: album.release_mbid || null,
           tracks: [],
@@ -265,6 +301,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       artist: fields.artist,
       album: fields.album,
       year: fields.year || null,
+      original_year: fields.originalYear || null,
       edition_label: fields.editionLabel.trim() || null,
     }
   }, [selected, fields, album])
@@ -337,7 +374,11 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
         <div id="metadata-current" class="text default-muted">
           <span>currently:</span>
           <span class="text white-tertiary">{album.edition || 'no edition'}</span>
-          <span class="text white-tertiary">{album.year || 'no year'}</span>
+          <span class="text white-tertiary">
+            {album.original_year && album.original_year !== album.year
+              ? `${album.original_year} (this press ${album.year})`
+              : album.year || 'no year'}
+          </span>
           <span class="text white-tertiary">{album.track_count} tracks</span>
           <span class={taggedRelease ? 'metadata-mbid' : 'text yellow'}>
             {taggedRelease
@@ -351,7 +392,8 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
             type="text"
             class="releases-filter-input"
             value={query}
-            placeholder="artist and album"
+            placeholder={`releasegroup:"${fields.album}" AND artist:"${fields.artist}"`}
+            title="leave blank to search on the artist and album fields below"
             onInput={(event) => setQuery((event.target as HTMLInputElement).value)}
             onKeyDown={(event) => { if (event.key === 'Enter') void search() }}
           />
@@ -423,7 +465,18 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
               <label class="metadata-field metadata-field-short">
                 <span class="text default-secondary">year</span>
                 <input class="releases-filter-input" value={fields.year}
+                       title="this pressing's year, written to the date tag"
                        onInput={(e) => setField('year', (e.target as HTMLInputElement).value)} />
+              </label>
+
+              {/* the album's year rather than this pressing's - it names the folder, so a
+                  2011 remaster of a 1975 record still files under 1975 */}
+              <label class="metadata-field metadata-field-short">
+                <span class="text default-secondary">original</span>
+                <input class="releases-filter-input" value={fields.originalYear}
+                       placeholder={fields.year || 'year'}
+                       title="the album's first release year — this is what names the folder"
+                       onInput={(e) => setField('originalYear', (e.target as HTMLInputElement).value)} />
               </label>
 
               <label class="metadata-field">
@@ -435,7 +488,8 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
             </div>
 
             <span class="text white-tertiary metadata-hint">
-              Blank fields are left alone rather than cleared. The edition names the folder.
+              Blank fields are left alone rather than cleared. The folder is named after the
+              original year and the edition, so a remaster files under the album's own year.
             </span>
 
             <ArtComparison album={album} release={selected} />

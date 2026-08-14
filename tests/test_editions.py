@@ -161,3 +161,48 @@ def test_resolve_album_dir_falls_back_to_the_release_id_when_both_are_taken(tmp_
 
     assert discriminator == "aaaaaaaa"
     assert path.name == "The Slow Rush (2020) [aaaaaaaa]"
+
+
+# ---------------------------------------------------------------- original release year
+
+WYWH = {"artist": "Pink Floyd", "album": "Wish You Were Here",
+        "release_mbid": "mbid-2011-remaster", "disambiguation": "2011 remaster"}
+
+
+def test_the_folder_uses_the_albums_year_not_the_pressings():
+    """
+    A 2011 remaster of a 1975 record belongs under 1975.
+
+    The year identifies the album and the edition identifies the pressing. Naming the folder
+    after the reissue date files the same record under two different decades depending on
+    which copy you happened to get, which is exactly the kind of split this project exists
+    to avoid.
+    """
+    release = {**WYWH, "year": "2011", "original_year": "1975"}
+    assert build_album_dirname(release) == "Wish You Were Here (1975) [2011 remaster]"
+
+
+def test_a_reissue_and_the_original_still_get_separate_folders():
+    """Sharing a year must not merge them - that's what the edition suffix is for."""
+    original = {**WYWH, "year": "1975", "original_year": "1975",
+                "disambiguation": "", "release_mbid": "mbid-original"}
+    remaster = {**WYWH, "year": "2011", "original_year": "1975"}
+
+    assert build_album_dirname(original) == "Wish You Were Here (1975)"
+    assert build_album_dirname(remaster) == "Wish You Were Here (1975) [2011 remaster]"
+    assert build_album_dirname(original) != build_album_dirname(remaster)
+
+
+def test_without_an_original_year_nothing_changes():
+    """Everything already in a library predates this field and must keep its folder."""
+    assert build_album_dirname({**WYWH, "year": "2011"}) == \
+        "Wish You Were Here (2011) [2011 remaster]"
+
+
+def test_the_pressing_year_is_still_what_the_date_tag_records():
+    """The folder says 1975; the file should still say which copy it actually is."""
+    from src.organizer import tag_values
+
+    values = tag_values({**WYWH, "year": "2011", "original_year": "1975"}, None)
+    assert values["date"] == "2011"
+    assert values["originaldate"] == "1975"

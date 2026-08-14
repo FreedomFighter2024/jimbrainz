@@ -74,7 +74,13 @@ function flattenTracks(release: Release): Track[] {
  */
 export function buildRetagRelease(
   release: Release,
-  context: { artist: string; album: string; releaseGroupMbid?: string | null },
+  context: {
+    artist: string
+    album: string
+    releaseGroupMbid?: string | null
+    /** The release group's first-release-date — the album's own year, not this pressing's. */
+    firstReleaseDate?: string | null
+  },
 ): RetagRelease {
   const rawDate = release['release-events']?.[0]?.date || release.date || ''
   const catalogNumbers = (release['label-info'] ?? [])
@@ -85,6 +91,7 @@ export function buildRetagRelease(
     artist: context.artist,
     album: release.title || context.album,
     year: rawDate ? rawDate.substring(0, 4) : null,
+    original_year: context.firstReleaseDate ? context.firstReleaseDate.substring(0, 4) : null,
     release_mbid: release.id,
     release_group_mbid: context.releaseGroupMbid ?? null,
     disambiguation: release.disambiguation || null,

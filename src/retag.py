@@ -50,7 +50,7 @@ def read_current_tags(path: Path) -> dict:
         return {}
 
     current = {}
-    for key in ("album", "albumartist", "artist", "date", "title", "tracknumber",
+    for key in ("album", "albumartist", "artist", "date", "originaldate", "title", "tracknumber",
                 "musicbrainz_albumid", "musicbrainz_releasegroupid",
                 "releasecountry", "media", "catalognumber"):
         try:

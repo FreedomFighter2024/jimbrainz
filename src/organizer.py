@@ -63,7 +63,13 @@ def build_album_dirname(release: dict, discriminator: str = "") -> str:
     collision on disk.
     """
     album = sanitize_filename(release.get("album"), "Unknown Album")
-    year = (release.get("year") or "").strip()
+
+    #? The ALBUM's year, not this pressing's. A 2011 remaster of a 1975 record belongs in
+    #? "Wish You Were Here (1975) [2011 remaster]" - the year identifies the album and the
+    #? edition identifies the pressing, so putting the reissue year in front files the same
+    #? record under two different decades depending on which copy you happened to get.
+    #? MusicBrainz keeps this on the release GROUP as first-release-date.
+    year = (release.get("original_year") or release.get("year") or "").strip()
     name = f"{album} ({year})" if year else album
 
     parts = [part for part in (resolve_edition_label(release), discriminator) if part]
@@ -348,6 +354,10 @@ def tag_values(release: dict, track: dict | None) -> dict:
         "albumartist": release.get("artist"),
         "artist": release.get("artist"),
         "date": release.get("year"),
+        #? Picard's convention, and the reason the folder can say 1975 while the file still
+        #? records that this particular copy is the 2011 press. Not every container accepts
+        #? it (easy MP4 doesn't) and the loop below skips whatever is rejected.
+        "originaldate": release.get("original_year"),
         #? the edition's identity, and the only one of these every container supports. The
         #? library scanner groups on it: two folders sharing an MBID are the same edition
         #? however they happen to be named, and that is what survives someone renaming a

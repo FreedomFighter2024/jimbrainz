@@ -297,6 +297,8 @@ export interface LibraryAlbum {
   artist: string
   album: string
   year: string
+  /** From the `originaldate` tag. '' for anything not carrying one, which is most libraries. */
+  original_year: string
   /** Human label ("Deluxe edition"). '' for a single-edition album, 'Standard' when it has siblings. */
   edition: string
   release_mbid: string
@@ -354,7 +356,14 @@ export interface LibraryResponse {
 export interface RetagRelease {
   artist: string
   album: string
+  /** This pressing's year. Written to the `date` tag. */
   year?: string | null
+  /**
+   * The ALBUM's year — MusicBrainz's release-group `first-release-date`. This is what names
+   * the folder, so a 2011 remaster of a 1975 record still files under 1975. Written to
+   * `originaldate`.
+   */
+  original_year?: string | null
   release_mbid?: string | null
   release_group_mbid?: string | null
   disambiguation?: string | null

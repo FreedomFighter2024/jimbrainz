@@ -20,6 +20,9 @@ class FindCandidatesRequest(BaseModel):
     artist: str
     album: str
     year: str | None = None
+    #? the release GROUP's first-release-date, i.e. when the album came out rather than when
+    #? this pressing did. Names the folder; see build_album_dirname.
+    original_year: str | None = None
     release_mbid: str | None = None
     edition_tags: list[str] = Field(default_factory=list)
     tracks: list[Track] = Field(default_factory=list)
@@ -38,6 +41,9 @@ class EnqueueRelease(BaseModel):
     artist: str = ""
     album: str = ""
     year: str | None = None
+    #? the release GROUP's first-release-date, i.e. when the album came out rather than when
+    #? this pressing did. Names the folder; see build_album_dirname.
+    original_year: str | None = None
     release_mbid: str | None = None
     edition_tags: list[str] = Field(default_factory=list)
     tracks: list[Track] = Field(default_factory=list)

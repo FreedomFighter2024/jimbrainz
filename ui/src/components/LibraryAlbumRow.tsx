@@ -25,14 +25,14 @@ function trackTime(seconds: number): string {
  *   1. the library's own art endpoint - a cover file beside the tracks, or art embedded in
  *      the audio. Instant, works offline, and shows what's actually on disk.
  *   2. the Cover Art Archive, keyed on the *release* MBID. Note the search view uses the
- *      release-GROUP id; here the release id is deliberate, because it's edition-specific
- *      and a deluxe reissue frequently has different artwork from the original.
+ *      release-GROUP id; the release id is used here because groupAlbums picks whichever
+ *      edition actually has a cover, and that edition's own art is the right one to ask for.
  *
  * The fallback is driven by onError rather than by probing up front: a HEAD request per
  * album to decide would double the requests for no benefit, and the browser already tells
  * us for free when an image fails.
  */
-function AlbumArt({ album, size }: { album: LibraryAlbum; size: 'large' | 'small' }) {
+function AlbumArt({ album }: { album: LibraryAlbum }) {
   const sources: string[] = []
 
   if (album.art) {
@@ -46,11 +46,11 @@ function AlbumArt({ album, size }: { album: LibraryAlbum; size: 'large' | 'small
   const src = sources[attempt]
 
   // an empty square rather than nothing, so rows don't jump around as art loads or fails
-  if (!src) return <div class={`library-art library-art-${size} is-empty`} aria-hidden="true" />
+  if (!src) return <div class="library-art is-empty" aria-hidden="true" />
 
   return (
     <img
-      class={`library-art library-art-${size}`}
+      class="library-art"
       src={src}
       alt=""
       loading="lazy"
@@ -105,7 +105,6 @@ function EditionRow({ album }: { album: LibraryAlbum }) {
           {expanded ? '▽' : '▷'}
         </button>
 
-        <AlbumArt album={album} size="small" />
         <span class="library-edition has-siblings">{album.edition || 'Standard'}</span>
         {album.year && <span class="library-year">{album.year}</span>}
         <span class="text default-muted library-edition-meta">{meta.join(' · ')}</span>
@@ -169,7 +168,7 @@ export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum }: Props)
           {expanded ? '▽' : '▷'}
         </button>
 
-        {only && <AlbumArt album={only} size="large" />}
+        {group.artFrom && <AlbumArt album={group.artFrom} />}
 
         <div class="library-album-titles">
           {/*

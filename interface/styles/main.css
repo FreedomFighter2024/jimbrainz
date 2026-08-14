@@ -2638,7 +2638,10 @@ span.red { color: var(--red-text); }
 
 /* ---- cover art ---- */
 
+/* one size, because art belongs to the album rather than to each edition under it */
 .library-art {
+    width: 44px;
+    height: 44px;
     flex-shrink: 0;
     object-fit: cover;
     background-color: var(--background-color);
@@ -2647,9 +2650,6 @@ span.red { color: var(--red-text); }
        hang off the bottom of the row */
     align-self: center;
 }
-
-.library-art-large { width: 44px; height: 44px; }
-.library-art-small { width: 28px; height: 28px; }
 
 /*
  * Reserved rather than collapsed when there's no art at all, so a list of albums keeps a

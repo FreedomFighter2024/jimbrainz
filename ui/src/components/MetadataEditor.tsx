@@ -249,6 +249,28 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     }
   }, [query, album, fields.artist, fields.album])
 
+  /*
+   * Search as soon as the panel opens. You opened it to match this album against something,
+   * so making that a second click was busywork.
+   *
+   * Once only, guarded by a ref rather than an empty dep array: `search` is a useCallback
+   * that changes identity whenever the artist or album fields do, and this must not re-fire
+   * on every keystroke - nor after an apply, where the album prop changes but the release
+   * list is still valid and the `current` badge moves on its own from the refreshed MBID.
+   *
+   * Skipped when there is nothing to search on, so an album with no artist or title tags
+   * doesn't send `releasegroup:"" AND artist:""`.
+   */
+  const autoSearched = useRef(false)
+
+  useEffect(() => {
+    if (autoSearched.current) return
+    if (!album.artist.trim() && !album.album.trim()) return
+
+    autoSearched.current = true
+    void search()
+  }, [search, album.artist, album.album])
+
   /** Picking a release replaces the fields with its values, which you can then still edit. */
   const chooseRelease = (release: Release) => {
     setApplied(null)

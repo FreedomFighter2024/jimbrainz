@@ -12,7 +12,7 @@ the how.
 | localStorage compatibility | **done** — `ui/src/state/persisted.ts`. Column-state reconciliation still owed, see there. |
 | Downloads panel | **ported**, verified against a running backend with seeded jobs. |
 | Tab shell | **done** — `Tabs.tsx`. Search/Library, built to take Settings as a third. |
-| Library window | **done** — `LibraryView.tsx` + `src/library.py`. Edition-aware. |
+| Library window | **done** — `LibraryView.tsx` + `src/library.py`. One row per album, editions nested under it, same as release-group → releases in search. |
 | Multi-stage Dockerfile | **done** — `ui` stage builds into `interface/dist`. |
 | Cache-header fix | **done** — hashed chunks immutable, entry bundle revalidates. |
 | Everything else | untouched. Vanilla still owns it. |

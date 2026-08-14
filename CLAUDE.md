@@ -131,6 +131,10 @@ Each of these cost real time. Don't rediscover them.
   click originating in the *library* tree, the effect didn't fire and the button highlighted
   while the panes never swapped. Cross-tree DOM writes belong in the shell (`main.tsx`),
   done synchronously. Symptom to recognise: the component looks right, the page doesn't.
+- **Decorated headings wrap if you let them.** `░ ▒ ▓ filters ▓ ▒ ░` measured 138px in a
+  190px header that also holds a "clear" button, so a lone `░` wrapped onto a second line and
+  the whole column read as broken. Tightened to `░▒▓ filters ▓▒░` and pinned `nowrap`. Any
+  new decorated heading in a fixed-width column needs the same treatment.
 - **`hidden` did nothing to any badge.** `.log-unread-badge` and `.signals-badge` both set
   `display`, which beats the browser's `[hidden] { display: none }` — so all three badges sat
   on screen showing `0` while their JS believed it had hidden them. Found by checking

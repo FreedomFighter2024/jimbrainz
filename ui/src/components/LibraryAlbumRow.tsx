@@ -2,12 +2,7 @@ import { useState } from 'preact/hooks'
 
 import type { LibraryAlbum } from '../api/types'
 import { formatSize } from '../lib/format'
-
-interface Props {
-  album: LibraryAlbum
-  onSearchArtist: (artist: string) => void
-  onSearchAlbum: (album: LibraryAlbum) => void
-}
+import type { AlbumGroup } from '../lib/groupAlbums'
 
 function formatDuration(seconds: number): string {
   if (!seconds) return ''
@@ -22,7 +17,29 @@ function trackTime(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
 }
 
-export function LibraryAlbumRow({ album, onSearchArtist, onSearchAlbum }: Props) {
+function TrackList({ album }: { album: LibraryAlbum }) {
+  return (
+    <div class="library-tracks">
+      {album.tracks.map((track) => (
+        <div class="library-track" key={track.filename}>
+          <span class="library-track-number">
+            {track.position === null ? '–' : String(track.position).padStart(2, '0')}
+          </span>
+          <span class="library-track-title">{track.title}</span>
+          <span class="library-track-time">{trackTime(track.length)}</span>
+          <span class="library-track-format">{track.format.toUpperCase()}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * One edition, listed under its album. Expands to its own tracklist.
+ *
+ * Only rendered when an album actually has more than one edition - see the group row below.
+ */
+function EditionRow({ album }: { album: LibraryAlbum }) {
   const [expanded, setExpanded] = useState(false)
 
   const meta = [
@@ -33,13 +50,76 @@ export function LibraryAlbumRow({ album, onSearchArtist, onSearchAlbum }: Props)
   ].filter(Boolean)
 
   return (
-    <div class={`library-album${album.edition_count > 1 ? ' multi-edition' : ''}`}>
-      <div class="library-album-head">
+    <div class="library-edition-row">
+      <div class="library-edition-head">
         <button
           type="button"
           class="library-expand"
           aria-expanded={expanded}
           title={expanded ? 'hide tracks' : 'show tracks'}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {expanded ? '▽' : '▷'}
+        </button>
+
+        <span class="library-edition has-siblings">{album.edition || 'Standard'}</span>
+        {album.year && <span class="library-year">{album.year}</span>}
+        <span class="text default-muted library-edition-meta">{meta.join(' · ')}</span>
+
+        {album.mixed_tags && (
+          <span class="library-warning" title="files in this folder disagree about the album name">
+            mixed tags
+          </span>
+        )}
+
+        <span class="text white-tertiary library-path" title={album.path}>{album.path}</span>
+      </div>
+
+      {expanded && <TrackList album={album} />}
+    </div>
+  )
+}
+
+interface Props {
+  group: AlbumGroup
+  onSearchArtist: (artist: string) => void
+  onSearchAlbum: (group: AlbumGroup) => void
+}
+
+/**
+ * One album, with its editions underneath.
+ *
+ * Structured after the search view, where a release group is the album and the releases
+ * under it are the editions. Listing every edition as a top-level row made three pressings
+ * of one record look like three different albums.
+ *
+ * The nesting is skipped when there's only one edition: expanding goes straight to the
+ * tracks rather than through a single pointless "Standard" row, which is the overwhelmingly
+ * common case in a real library.
+ */
+export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum }: Props) {
+  const [expanded, setExpanded] = useState(false)
+
+  const multiple = group.editions.length > 1
+  const only = group.editions[0]
+
+  const meta = [
+    multiple
+      ? `${group.editions.length} editions`
+      : `${group.trackCount} track${group.trackCount === 1 ? '' : 's'}`,
+    formatDuration(group.duration),
+    formatSize(group.totalSize),
+    group.formats.join('/').toUpperCase(),
+  ].filter(Boolean)
+
+  return (
+    <div class={`library-album${multiple ? ' multi-edition' : ''}`}>
+      <div class="library-album-head">
+        <button
+          type="button"
+          class="library-expand"
+          aria-expanded={expanded}
+          title={expanded ? 'collapse' : multiple ? 'show editions' : 'show tracks'}
           onClick={() => setExpanded((open) => !open)}
         >
           {expanded ? '▽' : '▷'}
@@ -54,40 +134,40 @@ export function LibraryAlbumRow({ album, onSearchArtist, onSearchAlbum }: Props)
           <button
             type="button"
             class="library-link library-album-name"
-            title={`search MusicBrainz for ${album.album}`}
-            onClick={() => onSearchAlbum(album)}
+            title={`search MusicBrainz for ${group.album}`}
+            onClick={() => onSearchAlbum(group)}
           >
-            {album.album}
+            {group.album}
           </button>
 
           <button
             type="button"
             class="library-link library-artist-name"
-            title={`search MusicBrainz for ${album.artist}`}
-            onClick={() => onSearchArtist(album.artist)}
+            title={`search MusicBrainz for ${group.artist}`}
+            onClick={() => onSearchArtist(group.artist)}
           >
-            {album.artist}
+            {group.artist}
           </button>
         </div>
 
-        {album.year && <span class="library-year">{album.year}</span>}
+        {(group.yearRange || group.year) && (
+          <span class="library-year">{group.yearRange || group.year}</span>
+        )}
 
-        {/* the point of the view: which version of this record is this one */}
-        {album.edition && (
+        {/* the point of the view: how many versions of this record you actually hold */}
+        {multiple && (
           <span
-            class={`library-edition${album.edition_count > 1 ? ' has-siblings' : ''}`}
-            title={
-              album.edition_count > 1
-                ? `${album.edition_count} versions of this album are in your library`
-                : undefined
-            }
+            class="library-edition has-siblings"
+            title={`${group.editions.length} versions of this album are in your library`}
           >
-            {album.edition}
+            {group.editions.length} editions
           </span>
         )}
 
-        {album.mixed_tags && (
-          <span class="library-warning" title="files in this folder disagree about the album name">
+        {!multiple && only?.edition && <span class="library-edition">{only.edition}</span>}
+
+        {group.hasMixedTags && (
+          <span class="library-warning" title="files disagree about the album name">
             mixed tags
           </span>
         )}
@@ -95,7 +175,9 @@ export function LibraryAlbumRow({ album, onSearchArtist, onSearchAlbum }: Props)
 
       <div class="library-album-meta">
         <span class="text default-muted">{meta.join(' · ')}</span>
-        <span class="text white-tertiary library-path" title={album.path}>{album.path}</span>
+        {!multiple && only && (
+          <span class="text white-tertiary library-path" title={only.path}>{only.path}</span>
+        )}
       </div>
 
       {/*
@@ -103,20 +185,15 @@ export function LibraryAlbumRow({ album, onSearchArtist, onSearchAlbum }: Props)
         is the measured 711ms freeze in the search view (see CLAUDE.md); this view would hit
         it harder, since a library has far more albums than one search returns.
       */}
-      {expanded && (
-        <div class="library-tracks">
-          {album.tracks.map((track) => (
-            <div class="library-track" key={track.filename}>
-              <span class="library-track-number">
-                {track.position === null ? '–' : String(track.position).padStart(2, '0')}
-              </span>
-              <span class="library-track-title">{track.title}</span>
-              <span class="library-track-time">{trackTime(track.length)}</span>
-              <span class="library-track-format">{track.format.toUpperCase()}</span>
-            </div>
+      {expanded && multiple && (
+        <div class="library-editions">
+          {group.editions.map((album) => (
+            <EditionRow key={album.key} album={album} />
           ))}
         </div>
       )}
+
+      {expanded && !multiple && only && <TrackList album={only} />}
     </div>
   )
 }

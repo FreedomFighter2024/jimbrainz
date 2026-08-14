@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'preact/hooks'
 
-import type { LibraryAlbum } from '../api/types'
 import { bridge } from '../bridge'
 import { useLibrary } from '../hooks/useLibrary'
+import { groupAlbums, type AlbumGroup } from '../lib/groupAlbums'
 import { LibraryAlbumRow } from './LibraryAlbumRow'
 import type { TabId } from './Tabs'
 
@@ -28,25 +28,28 @@ export function LibraryView({ active, onNavigate }: Props) {
   const [artistFilter, setArtistFilter] = useState<string | null>(null)
   const [multiOnly, setMultiOnly] = useState(false)
 
+  //? grouped first, then filtered, so a filter never splits an album from its own editions
+  const groups = useMemo(() => groupAlbums(albums), [albums])
+
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase()
 
-    return albums.filter((album) => {
-      if (artistFilter && album.artist !== artistFilter) return false
-      if (multiOnly && album.edition_count < 2) return false
+    return groups.filter((group) => {
+      if (artistFilter && group.artist !== artistFilter) return false
+      if (multiOnly && group.editions.length < 2) return false
       if (!needle) return true
 
       return (
-        album.album.toLowerCase().includes(needle) ||
-        album.artist.toLowerCase().includes(needle) ||
-        album.edition.toLowerCase().includes(needle)
+        group.album.toLowerCase().includes(needle) ||
+        group.artist.toLowerCase().includes(needle) ||
+        group.editions.some((e) => e.edition.toLowerCase().includes(needle))
       )
     })
-  }, [albums, filter, artistFilter, multiOnly])
+  }, [groups, filter, artistFilter, multiOnly])
 
   const multiEditionCount = useMemo(
-    () => albums.filter((a) => a.edition_count > 1).length,
-    [albums],
+    () => groups.filter((g) => g.editions.length > 1).length,
+    [groups],
   )
 
   const searchArtist = (artist: string) => {
@@ -56,8 +59,8 @@ export function LibraryView({ active, onNavigate }: Props) {
 
   // the album name alone is ambiguous - there are a lot of records called "Greatest Hits" -
   // so the artist goes along with it
-  const searchAlbum = (album: LibraryAlbum) => {
-    bridge().runSearch?.({ artist: album.artist, album: album.album })
+  const searchAlbum = (group: AlbumGroup) => {
+    bridge().runSearch?.({ artist: group.artist, album: group.album })
     onNavigate('search')
   }
 
@@ -65,7 +68,8 @@ export function LibraryView({ active, onNavigate }: Props) {
     <div id="library-content">
       <div id="library-filter-column">
         <div id="library-filter-header">
-          <h3 class="text default">░ ▒ ▓ artists ▓ ▒ ░</h3>
+          {/* tightened spacing so it can't wrap in a 220px column — see main.css */}
+          <h3 class="text default">░▒▓ artists ▓▒░</h3>
           <button
             type="button"
             id="library-clear-filters"
@@ -124,9 +128,9 @@ export function LibraryView({ active, onNavigate }: Props) {
           <span id="library-summary" class="text default-muted">
             {!loaded
               ? 'reading your library...'
-              : visible.length === albums.length
-                ? `${albums.length} album${albums.length === 1 ? '' : 's'}`
-                : `${visible.length} of ${albums.length} albums`}
+              : visible.length === groups.length
+                ? `${groups.length} album${groups.length === 1 ? '' : 's'}`
+                : `${visible.length} of ${groups.length} albums`}
           </span>
 
           <button
@@ -160,10 +164,10 @@ export function LibraryView({ active, onNavigate }: Props) {
             <h4 class="text default-muted library-status">nothing matches that filter</h4>
           )}
 
-          {visible.map((album) => (
+          {visible.map((group) => (
             <LibraryAlbumRow
-              key={album.key}
-              album={album}
+              key={group.key}
+              group={group}
               onSearchArtist={searchArtist}
               onSearchAlbum={searchAlbum}
             />

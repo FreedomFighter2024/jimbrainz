@@ -1447,6 +1447,21 @@ h3.glow.green{
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
+    gap: 8px;
+}
+
+/*
+! The decorated heading has to survive the column width it's given. Spaced out as
+! "░ ▒ ▓ filters ▓ ▒ ░" it measured 138px against a 190px header, and with the clear button
+! taking 52px of that it wrapped - putting a lone ░ on a second line and making the whole
+! column look broken. Tightened to "░▒▓ filters ▓▒░" so it fits with room to spare, and
+! pinned to one line so a narrower column clips the decoration instead of wrapping it.
+*/
+#filter-column-header > h3,
+#library-filter-header > h3 {
+    white-space: nowrap;
+    overflow: hidden;
+    min-width: 0;
 }
 
 #clear-filters-button {
@@ -2397,6 +2412,7 @@ span.red { color: var(--red-text); }
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
+    gap: 8px;
 }
 
 #library-clear-filters {
@@ -2619,3 +2635,41 @@ span.red { color: var(--red-text); }
 .library-status  { padding: 20px 0; text-align: center; }
 .library-empty   { font-size: 0.85em; padding: 6px 0; }
 .library-scan-note { font-size: 0.78em; padding: 8px 0; text-align: center; }
+
+/* ---- editions nested under their album, mirroring release-group -> releases in search ---- */
+
+.library-editions {
+    margin-top: 8px;
+    border-top: 1px solid var(--muted-text);
+    padding-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.library-edition-row {
+    border-left: 2px solid var(--muted-text);
+    padding-left: 8px;
+}
+
+.library-edition-row:hover {
+    border-left-color: var(--main-text);
+}
+
+.library-edition-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.library-edition-meta {
+    font-size: 0.82em;
+    white-space: nowrap;
+}
+
+/* the album row's own tracklist, shown when it has only one edition and nests no deeper */
+.library-album > .library-tracks {
+    margin-top: 8px;
+    border-top: 1px solid var(--muted-text);
+    padding-top: 6px;
+}

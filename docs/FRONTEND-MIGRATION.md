@@ -12,7 +12,7 @@ the how.
 | localStorage compatibility | **done** — `ui/src/state/persisted.ts`. Column-state reconciliation still owed, see there. |
 | Downloads panel | **ported**, verified against a running backend with seeded jobs. |
 | Tab shell | **done** — `Tabs.tsx`. Search/Library, built to take Settings as a third. |
-| Metadata editor | **done** — `MetadataEditor.tsx`, an overlay from the library reusing the candidates-window shape. |
+| Metadata editor | **done** — `MetadataEditor.tsx`, an overlay from the library reusing the candidates-window shape. Pick a release *or* type the fields directly; the release the album is already tagged with sorts first and is badged `current`. |
 | Library window | **done** — `LibraryView.tsx` + `src/library.py`. One row per album, editions nested under it, same as release-group → releases in search. |
 | Multi-stage Dockerfile | **done** — `ui` stage builds into `interface/dist`. |
 | Cache-header fix | **done** — hashed chunks immutable, entry bundle revalidates. |

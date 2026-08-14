@@ -114,3 +114,39 @@ export function describeRelease(release: Release): string {
 export function releaseTrackCount(release: Release): number {
   return (release.media ?? []).reduce((total, m) => total + (m['track-count'] ?? 0), 0)
 }
+
+/**
+ * How well a release matches an album already on disk. Higher is better.
+ *
+ * The MBID is decisive and everything else is a tiebreak, which is the same shape as
+ * matching.py's candidate scoring: identity first, resemblance second. An album tagged with
+ * a release id IS that release — there's nothing to weigh up — so it outranks any amount of
+ * agreement on title and track count.
+ *
+ * The rest only matters for albums with no MBID at all, where the best that can be done is
+ * to float the plausible ones up so you aren't reading a list of twenty pressings in the
+ * order MusicBrainz happened to return them.
+ */
+export function scoreReleaseMatch(
+  release: Release,
+  album: { release_mbid: string; album: string; year: string; track_count: number },
+): number {
+  if (album.release_mbid && release.id === album.release_mbid) return 1000
+
+  let score = 0
+
+  const tracks = releaseTrackCount(release)
+  if (tracks && tracks === album.track_count) score += 100
+
+  const year = (release['release-events']?.[0]?.date || release.date || '').substring(0, 4)
+  if (year && year === album.year) score += 50
+
+  if ((release.title ?? '').toLowerCase() === album.album.toLowerCase()) score += 25
+
+  return score
+}
+
+/** True when this release is the one the album's tags already name. */
+export function isCurrentRelease(release: Release, albumReleaseMbid: string): boolean {
+  return Boolean(albumReleaseMbid) && release.id === albumReleaseMbid
+}

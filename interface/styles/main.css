@@ -3187,3 +3187,85 @@ span.red { color: var(--red-text); }
 
 /* the hint sits under the label, aligned past the checkbox */
 .metadata-checkbox > .metadata-hint { grid-column: 2; }
+
+/* what the album currently claims to be, so you can tell whether it's tagged at all */
+#metadata-current {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: baseline;
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.8em;
+}
+
+.metadata-mbid {
+    color: var(--white-tertiary-text);
+    font-family: var(--font-family-condensed);
+}
+
+/* the release the album is already tagged with */
+.metadata-release.current {
+    border-color: var(--green-secondary-text);
+}
+
+.metadata-current-badge {
+    flex-shrink: 0;
+    background-color: var(--green-secondary-text);
+    color: var(--background-color);
+    font-size: 0.9em;
+    letter-spacing: 0.05em;
+    padding: 0 4px;
+    text-transform: uppercase;
+}
+
+/* hand-editable fields */
+.metadata-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    flex-shrink: 0;
+}
+
+.metadata-fields > .metadata-field { flex: 1 1 45%; min-width: 0; }
+.metadata-fields > .metadata-field-short { flex: 0 0 5.5em; }
+.metadata-fields input { width: 100%; }
+
+/* current cover beside the one a release would bring */
+.metadata-art {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    padding: 4px 0;
+}
+
+.metadata-art-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: center;
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+}
+
+.metadata-art-slot img,
+.metadata-art-empty {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border: 1px solid var(--muted-text);
+    background-color: var(--background-color);
+}
+
+.metadata-art-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--white-tertiary-text);
+    text-align: center;
+    font-size: 0.9em;
+    padding: 4px;
+}
+
+.metadata-art-arrow { flex-shrink: 0; font-size: 1.1em; }

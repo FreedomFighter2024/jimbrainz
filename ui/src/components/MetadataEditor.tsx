@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
 
+import { MusicBrainzUnavailable } from '../api/http'
 import * as libraryApi from '../api/library'
 import * as musicbrainz from '../api/musicbrainz'
-import { MusicBrainzUnavailable } from '../api/http'
 import type { LibraryAlbum, Release, RetagPlan, RetagRelease } from '../api/types'
-import { buildRetagRelease, describeRelease, releaseTrackCount } from '../lib/release'
+import {
+  buildRetagRelease,
+  describeRelease,
+  isCurrentRelease,
+  releaseTrackCount,
+  scoreReleaseMatch,
+} from '../lib/release'
 
 interface Props {
   album: LibraryAlbum
@@ -13,13 +19,88 @@ interface Props {
   onApplied: () => void
 }
 
+/** The fields you can type into. Everything else comes from the release you pick. */
+interface Fields {
+  artist: string
+  album: string
+  year: string
+  editionLabel: string
+}
+
+//? A plan is a server round trip, and every keystroke would be one. Long enough to finish a
+//? word, short enough that the preview still feels attached to what you typed.
+const PREVIEW_DEBOUNCE_MS = 400
+
 /**
- * Pick which MusicBrainz release an album on disk actually is, and write that back.
+ * The cover you'd end up with, beside the one you have.
+ *
+ * Loaded straight from the Cover Art Archive by the browser rather than through the server -
+ * exactly as the library rows already do for albums with no local art. Fetching it server-side
+ * to preview it would mean downloading the image twice, and downloading on preview is the
+ * thing plan_art() deliberately avoids.
+ *
+ * Shown whenever a release is selected, not only when the checkbox is ticked: seeing the art
+ * is how you decide whether you want it.
+ */
+function ArtComparison({ album, release }: { album: LibraryAlbum; release: Release | null }) {
+  const [currentFailed, setCurrentFailed] = useState(false)
+  const [incomingFailed, setIncomingFailed] = useState(false)
+
+  //? reset when the release changes, or a single failure would stick for every later pick
+  useEffect(() => setIncomingFailed(false), [release?.id])
+
+  const current = album.art
+    ? `/jimbrainz/library/art?album=${encodeURIComponent(album.path)}`
+    : null
+  const incoming = release ? `https://coverartarchive.org/release/${release.id}/front-250` : null
+
+  if (!current && !incoming) return null
+
+  return (
+    <div class="metadata-art">
+      <div class="metadata-art-slot">
+        <span class="text white-tertiary">current</span>
+        {current && !currentFailed ? (
+          <img src={current} alt="" onError={() => setCurrentFailed(true)} />
+        ) : (
+          <div class="metadata-art-empty">none</div>
+        )}
+      </div>
+
+      <span class="metadata-art-arrow text default-secondary">→</span>
+
+      <div class="metadata-art-slot">
+        <span class="text white-tertiary">from this release</span>
+        {incoming && !incomingFailed ? (
+          <img
+            src={incoming}
+            alt=""
+            /* keyed so switching releases replaces the element rather than reusing one whose
+               onError already fired */
+            key={release?.id}
+            onError={() => setIncomingFailed(true)}
+          />
+        ) : (
+          <div class="metadata-art-empty">{release ? 'none on file' : 'pick a release'}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Pick which MusicBrainz release an album on disk actually is, correct it by hand, and write
+ * it back.
  *
  * An overlay rather than a tab: it acts on one album, which you were already looking at in
  * the library, and it should disappear when you're done. It reuses the candidates-window
  * pattern the download flow already uses, because this is structurally the same interaction
  * - here is a thing, here are candidate matches, pick one.
+ *
+ * Two ways in, deliberately. Picking a release fills the fields from MusicBrainz, which is
+ * what you want when the album is mistagged. Typing in the fields directly is what you want
+ * when MusicBrainz is wrong, or unreachable, or the record simply isn't in it - so the
+ * fields work with no release selected at all.
  *
  * Nothing is written until Apply. The preview comes from the same planner the write uses, so
  * what it shows is what will happen rather than a separate guess at it.
@@ -32,12 +113,16 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
   const [searched, setSearched] = useState(false)
 
   const [selected, setSelected] = useState<Release | null>(null)
-  const [editionLabel, setEditionLabel] = useState('')
-  /*
-   * Default on only when the album has no cover of its own. Fetching art is a network round
-   * trip and, for an album that already has one, a replacement — so it opts in when there's
-   * nothing to lose and opts out when there is.
-   */
+
+  //? seeded from what's on disk, so the editor opens showing the album as it is rather than
+  //? empty boxes you have to fill before anything makes sense
+  const [fields, setFields] = useState<Fields>({
+    artist: album.artist,
+    album: album.album,
+    year: album.year,
+    editionLabel: album.edition === 'Standard' ? '' : album.edition,
+  })
+
   const [fetchArt, setFetchArt] = useState(!album.art)
   const [plan, setPlan] = useState<RetagPlan | null>(null)
   const [planning, setPlanning] = useState(false)
@@ -53,15 +138,14 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
+  const setField = (key: keyof Fields, value: string) =>
+    setFields((current) => ({ ...current, [key]: value }))
+
   const search = useCallback(async () => {
     setSearching(true)
     setSearchError(null)
-    setSelected(null)
-    setPlan(null)
 
     try {
-      // the album's own name and artist, as a plain query - the album on disk may be tagged
-      // loosely enough that a fielded search finds nothing
       const result = await musicbrainz.fullySearch(query, 25)
       const groups = result['release-groups'] ?? []
 
@@ -75,12 +159,18 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
         }
       }
 
+      // best match first. For a tagged album that's the release it already names, which is
+      // the whole point - you can see what it currently matches instead of hunting for it.
+      found.sort((a, b) => scoreReleaseMatch(b, album) - scoreReleaseMatch(a, album))
       setReleases(found)
+
+      const current = found.find((r) => isCurrentRelease(r, album.release_mbid))
+      if (current) setSelected(current)
     } catch (caught) {
       setSearchError(
         caught instanceof MusicBrainzUnavailable
           ? "MusicBrainz is unreachable right now, so there's nothing to match against. " +
-            "This isn't a problem with the album — try again shortly."
+            'You can still correct the fields by hand.'
           : caught instanceof Error
             ? caught.message
             : 'the search failed',
@@ -90,53 +180,84 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       setSearching(false)
       setSearched(true)
     }
-  }, [query])
+  }, [query, album])
 
-  /** Rebuild the payload whenever the release or the label override changes. */
-  const payloadFor = useCallback(
-    (release: Release): RetagRelease => {
-      const built = buildRetagRelease(release, {
-        artist: album.artist,
-        album: album.album,
-        releaseGroupMbid: (release as { _groupMbid?: string })._groupMbid ?? null,
-      })
-      return editionLabel.trim() ? { ...built, edition_label: editionLabel.trim() } : built
-    },
-    [album.artist, album.album, editionLabel],
-  )
+  /** Picking a release replaces the fields with its values, which you can then still edit. */
+  const chooseRelease = (release: Release) => {
+    setSelected(release)
+    const built = buildRetagRelease(release, {
+      artist: album.artist,
+      album: album.album,
+      releaseGroupMbid: (release as { _groupMbid?: string })._groupMbid ?? null,
+    })
+    setFields({
+      artist: built.artist,
+      album: built.album,
+      year: built.year ?? '',
+      //? the release's own disambiguation is what the folder name would use anyway, so
+      //? leaving this blank lets editions.py decide rather than pinning it
+      editionLabel: '',
+    })
+  }
 
-  const preview = useCallback(
-    async (release: Release) => {
-      setSelected(release)
-      setPlanning(true)
-      setApplyError(null)
+  /**
+   * What would be applied: the selected release, with the typed fields laid over the top.
+   *
+   * With no release selected this still produces a usable payload from the album's own
+   * values and an empty tracklist - so hand-editing works without MusicBrainz, and an empty
+   * tracklist means no file gets a title or track number it didn't ask for.
+   */
+  const payload = useMemo((): RetagRelease => {
+    const base: RetagRelease = selected
+      ? buildRetagRelease(selected, {
+          artist: album.artist,
+          album: album.album,
+          releaseGroupMbid: (selected as { _groupMbid?: string })._groupMbid ?? null,
+        })
+      : {
+          artist: album.artist,
+          album: album.album,
+          year: album.year || null,
+          //? keep the id the album already carries so the folder can still be disambiguated
+          release_mbid: album.release_mbid || null,
+          tracks: [],
+        }
 
+    return {
+      ...base,
+      artist: fields.artist,
+      album: fields.album,
+      year: fields.year || null,
+      edition_label: fields.editionLabel.trim() || null,
+    }
+  }, [selected, fields, album])
+
+  // Debounced: the plan is a server round trip and this runs on every keystroke.
+  useEffect(() => {
+    if (applied) return
+
+    setPlanning(true)
+    const timer = setTimeout(async () => {
       try {
-        setPlan(await libraryApi.previewRetag(album.path, payloadFor(release), fetchArt))
+        setPlan(await libraryApi.previewRetag(album.path, payload, fetchArt))
+        setApplyError(null)
       } catch (caught) {
         setApplyError(caught instanceof Error ? caught.message : 'could not work out the changes')
         setPlan(null)
       } finally {
         setPlanning(false)
       }
-    },
-    [album.path, payloadFor, fetchArt],
-  )
+    }, PREVIEW_DEBOUNCE_MS)
 
-  // both of these change what the plan says, so it has to be recomputed
-  useEffect(() => {
-    if (selected) void preview(selected)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editionLabel, fetchArt])
+    return () => clearTimeout(timer)
+  }, [album.path, payload, fetchArt, applied])
 
   const apply = async () => {
-    if (!selected) return
     setApplying(true)
     setApplyError(null)
 
     try {
-      const response = await libraryApi.applyRetag(album.path, payloadFor(selected), fetchArt)
-      const { results } = response
+      const { results } = await libraryApi.applyRetag(album.path, payload, fetchArt)
 
       if (results.failed) {
         setApplyError(`${results.failed} file(s) could not be written`)
@@ -157,6 +278,9 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     }
   }
 
+  const taggedRelease = album.release_mbid
+  const foundCurrent = releases.some((r) => isCurrentRelease(r, taggedRelease))
+
   return (
     <div id="metadata-window" onClick={(event) => event.stopPropagation()}>
       <div id="metadata-panel">
@@ -166,6 +290,22 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
           </h4>
           <span class="text white-tertiary metadata-path">{album.path}</span>
           <button type="button" id="metadata-close-button" title="close" onClick={onClose}>✕</button>
+        </div>
+
+        {/*
+          What the album currently claims to be. Without this you can't tell whether it's
+          tagged at all, let alone which release it points at.
+        */}
+        <div id="metadata-current" class="text default-muted">
+          <span>currently:</span>
+          <span class="text white-tertiary">{album.edition || 'no edition'}</span>
+          <span class="text white-tertiary">{album.year || 'no year'}</span>
+          <span class="text white-tertiary">{album.track_count} tracks</span>
+          <span class={taggedRelease ? 'metadata-mbid' : 'text yellow'}>
+            {taggedRelease
+              ? `${taggedRelease.slice(0, 8)}…`
+              : 'not tagged with a MusicBrainz release'}
+          </span>
         </div>
 
         <div id="metadata-search">
@@ -192,29 +332,35 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
 
             {!searched && !searching && (
               <h4 class="text default-muted metadata-status">
-                search MusicBrainz to pick which release this album is
+                search to match this against a release, or just edit the fields
               </h4>
+            )}
+
+            {/* the album names a release that isn't in these results - worth saying, since
+                the top result is otherwise indistinguishable from a confirmed match */}
+            {searched && releases.length > 0 && taggedRelease && !foundCurrent && (
+              <h5 class="text yellow metadata-status">
+                the release this album is tagged with isn't in these results
+              </h5>
             )}
 
             {releases.map((release) => {
               const tracks = releaseTrackCount(release)
-              const detail = describeRelease(release)
+              const current = isCurrentRelease(release, taggedRelease)
 
               return (
                 <button
                   key={release.id}
                   type="button"
-                  class={`metadata-release${selected?.id === release.id ? ' active' : ''}`}
-                  onClick={() => void preview(release)}
+                  class={`metadata-release${selected?.id === release.id ? ' active' : ''}${current ? ' current' : ''}`}
+                  onClick={() => chooseRelease(release)}
                 >
+                  {current && <span class="metadata-current-badge" title="this album is tagged with this release">current</span>}
                   <span class="metadata-release-title">{release.title}</span>
                   <span class="metadata-release-detail text default-muted">
-                    {[release.date?.substring(0, 4), detail].filter(Boolean).join(' · ')}
+                    {[release.date?.substring(0, 4), describeRelease(release)].filter(Boolean).join(' · ')}
                   </span>
-                  {/* the strongest signal that a release is the wrong one for these files */}
-                  <span
-                    class={`metadata-release-tracks${tracks && tracks !== album.track_count ? ' mismatch' : ''}`}
-                  >
+                  <span class={`metadata-release-tracks${tracks && tracks !== album.track_count ? ' mismatch' : ''}`}>
                     {tracks || '?'} trk
                   </span>
                 </button>
@@ -223,44 +369,56 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
           </div>
 
           <div class="scrollable metadata-plan">
-            {planning && <h4 class="text default-muted metadata-status">working out the changes...</h4>}
+            <div class="metadata-fields">
+              <label class="metadata-field">
+                <span class="text default-secondary">artist</span>
+                <input class="releases-filter-input" value={fields.artist}
+                       onInput={(e) => setField('artist', (e.target as HTMLInputElement).value)} />
+              </label>
 
-            {!planning && !plan && (
-              <h4 class="text default-muted metadata-status">pick a release to see what would change</h4>
-            )}
+              <label class="metadata-field">
+                <span class="text default-secondary">album</span>
+                <input class="releases-filter-input" value={fields.album}
+                       onInput={(e) => setField('album', (e.target as HTMLInputElement).value)} />
+              </label>
+
+              <label class="metadata-field metadata-field-short">
+                <span class="text default-secondary">year</span>
+                <input class="releases-filter-input" value={fields.year}
+                       onInput={(e) => setField('year', (e.target as HTMLInputElement).value)} />
+              </label>
+
+              <label class="metadata-field">
+                <span class="text default-secondary">edition</span>
+                <input class="releases-filter-input" value={fields.editionLabel}
+                       placeholder={plan?.edition_label || 'worked out from the release'}
+                       onInput={(e) => setField('editionLabel', (e.target as HTMLInputElement).value)} />
+              </label>
+            </div>
+
+            <span class="text white-tertiary metadata-hint">
+              Blank fields are left alone rather than cleared. The edition names the folder.
+            </span>
+
+            <ArtComparison album={album} release={selected} />
+
+            <label class="metadata-checkbox">
+              <input type="checkbox" checked={fetchArt}
+                     onChange={(e) => setFetchArt((e.target as HTMLInputElement).checked)} />
+              <span class="text default-secondary">
+                {plan?.art.existing ? `replace ${plan.art.existing}` : 'download cover art'}
+              </span>
+              <span class="text white-tertiary metadata-hint">
+                {plan?.art.existing
+                  ? 'this album already has a cover; only overwrite it if the new one is better'
+                  : 'from the Cover Art Archive, saved into the album folder'}
+              </span>
+            </label>
+
+            {planning && <h5 class="text default-muted metadata-status">working out the changes...</h5>}
 
             {!planning && plan && (
               <>
-                <label class="metadata-field">
-                  <span class="text default-secondary">edition name</span>
-                  <input
-                    type="text"
-                    class="releases-filter-input"
-                    placeholder={plan.edition_label || 'Standard'}
-                    value={editionLabel}
-                    onInput={(event) => setEditionLabel((event.target as HTMLInputElement).value)}
-                  />
-                  <span class="text white-tertiary metadata-hint">
-                    overrides what's worked out from the release. Names the folder.
-                  </span>
-                </label>
-
-                <label class="metadata-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={fetchArt}
-                    onChange={(event) => setFetchArt((event.target as HTMLInputElement).checked)}
-                  />
-                  <span class="text default-secondary">
-                    {plan.art.existing ? `replace ${plan.art.existing}` : 'download cover art'}
-                  </span>
-                  <span class="text white-tertiary metadata-hint">
-                    {plan.art.existing
-                      ? 'this album already has a cover; only overwrite it if the new one is better'
-                      : 'from the Cover Art Archive, saved into the album folder'}
-                  </span>
-                </label>
-
                 {plan.problems.map((problem) => (
                   <h5 class="text yellow metadata-problem" key={problem}>{problem}</h5>
                 ))}
@@ -274,9 +432,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
                 )}
 
                 {plan.empty && (
-                  <h4 class="text default-muted metadata-status">
-                    this album already matches that release — nothing to change
-                  </h4>
+                  <h5 class="text default-muted metadata-status">nothing to change</h5>
                 )}
 
                 {plan.files.filter((file) => Object.keys(file.changes).length).map((file) => (
@@ -300,10 +456,11 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
           {applied && <span class="text green metadata-result">{applied}</span>}
           {applyError && <span class="text red metadata-result">{applyError}</span>}
 
-          {!applied && plan && !plan.empty && (
+          {!applied && !applyError && plan && !plan.empty && (
             <span class="text default-muted metadata-summary">
               {plan.changed_file_count} of {plan.file_count} file(s) would change
-              {plan.art.action ? `, cover art would be ${plan.art.action}d` : ''}
+              {plan.art.action === 'download' ? ', cover art would be downloaded' : ''}
+              {plan.art.action === 'replace' ? ', the cover art would be replaced' : ''}
               {plan.moves ? ', and the folder would be renamed' : ''}
             </span>
           )}

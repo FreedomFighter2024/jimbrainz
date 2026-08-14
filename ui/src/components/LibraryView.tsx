@@ -27,6 +27,12 @@ export function LibraryView({ active, onNavigate }: Props) {
   const [filter, setFilter] = useState('')
   const [artistFilter, setArtistFilter] = useState<string | null>(null)
   const [multiOnly, setMultiOnly] = useState(false)
+  /*
+   * Only has any effect on mobile, where CSS both reveals the toggle and acts on the class.
+   * Starts collapsed because on a phone a 190px artist list above the albums pushes the
+   * first one most of the way off the screen, and the albums are what you came for.
+   */
+  const [filtersCollapsed, setFiltersCollapsed] = useState(true)
 
   //? grouped first, then filtered, so a filter never splits an album from its own editions
   const groups = useMemo(() => groupAlbums(albums), [albums])
@@ -66,7 +72,7 @@ export function LibraryView({ active, onNavigate }: Props) {
 
   return (
     <div id="library-content">
-      <div id="library-filter-column">
+      <div id="library-filter-column" class={filtersCollapsed ? 'collapsed' : undefined}>
         <div id="library-filter-header">
           {/* tightened spacing so it can't wrap in a 220px column — see main.css */}
           <h3 class="text default">░▒▓ artists ▓▒░</h3>
@@ -80,6 +86,15 @@ export function LibraryView({ active, onNavigate }: Props) {
             }}
           >
             clear
+          </button>
+          <button
+            type="button"
+            class="filter-collapse-toggle"
+            aria-expanded={!filtersCollapsed}
+            title="show or hide artists"
+            onClick={() => setFiltersCollapsed((on) => !on)}
+          >
+            {filtersCollapsed ? '▾' : '▴'}
           </button>
         </div>
         <hr />

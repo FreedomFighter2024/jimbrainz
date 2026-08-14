@@ -63,6 +63,10 @@
             <div id="filter-column-header">
                 <h3 class="text default">░▒▓ filters ▓▒░</h3>
                 <button type="button" id="clear-filters-button">clear</button>
+                <!-- mobile only (hidden by CSS on desktop): the filter column is secondary
+                     on a phone and would otherwise push results off the bottom -->
+                <button type="button" class="filter-collapse-toggle" aria-expanded="false"
+                        aria-controls="filter-column" title="show or hide filters">▾</button>
             </div>
             <hr>
             <input type="text" id="global-filter-input" class="releases-filter-input" placeholder="Filter releases...">

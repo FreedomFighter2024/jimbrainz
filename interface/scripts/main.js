@@ -227,6 +227,28 @@ window.jimbrainz.closeOtherDropdowns = () => {
  * ends up showing the query that produced the results - landing on a populated results list
  * with empty inputs reads like a bug, and it means the user can edit and re-run it.
  */
+/*
+ * Collapse the filter column on narrow screens.
+ *
+ * The toggle only exists on mobile (CSS hides it otherwise), and starts collapsed there:
+ * filters are secondary to results on a phone, and a 190px column above the list pushed the
+ * first album most of the way off the screen. Nothing here runs on desktop beyond wiring the
+ * listener, and the class is inert without the media query.
+ */
+(() => {
+    const column = document.getElementById('filter-column');
+    const toggle = document.querySelector('#filter-column-header .filter-collapse-toggle');
+    if (!column || !toggle) return;
+
+    column.classList.add('collapsed');
+
+    toggle.addEventListener('click', () => {
+        const collapsed = column.classList.toggle('collapsed');
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        toggle.textContent = collapsed ? '▾' : '▴';
+    });
+})();
+
 window.jimbrainz.runSearch = ({ artist = '', album = '' } = {}) => {
     artistSearchInput.value = artist;
     releaseSearchInput.value = album;

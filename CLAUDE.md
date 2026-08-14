@@ -131,6 +131,15 @@ Each of these cost real time. Don't rediscover them.
   click originating in the *library* tree, the effect didn't fire and the button highlighted
   while the panes never swapped. Cross-tree DOM writes belong in the shell (`main.tsx`),
   done synchronously. Symptom to recognise: the component looks right, the page doesn't.
+- **The layout had no media queries at all until v0.3.x.** On a 375px phone it produced
+  1131px of content — 756px unreachable off the right edge, with the entire top-bar actions
+  row off-screen. Three causes: `#top-bar` was a nowrap flex row of `flex-shrink: 0`
+  children, `#main-content` put a fixed 220px filter column beside the content leaving 155px,
+  and the dropdown panels were 440–460px wide. **Anything new with a fixed px width needs a
+  mobile rule**, and the responsive block at the bottom of `main.css` is where it goes.
+- **The filter columns collapse on mobile and the class is inert on desktop.** Both the
+  vanilla and Preact columns always carry `collapsed`; only the `max-width: 768px` block acts
+  on it. Don't "tidy" that by removing the class on desktop — it's what keeps one code path.
 - **Decorated headings wrap if you let them.** `░ ▒ ▓ filters ▓ ▒ ░` measured 138px in a
   190px header that also holds a "clear" button, so a lone `░` wrapped onto a second line and
   the whole column read as broken. Tightened to `░▒▓ filters ▓▒░` and pinned `nowrap`. Any

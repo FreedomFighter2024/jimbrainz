@@ -2673,3 +2673,259 @@ span.red { color: var(--red-text); }
     border-top: 1px solid var(--muted-text);
     padding-top: 6px;
 }
+
+
+/* the collapse control is a mobile affordance only; the media query below reveals it */
+.filter-collapse-toggle {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--muted-text);
+    border-radius: 3px;
+    color: var(--main-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.9em;
+    line-height: 1;
+    padding: 2px 10px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+ * ? RESPONSIVE
+ *
+ * There were no media queries at all before this: the layout assumed a desktop window and
+ * on a 375px phone produced 1131px of content, 756px of it unreachable off the right edge,
+ * with the entire top-bar actions row (downloads, log, profile) off-screen.
+ *
+ * Three things caused nearly all of it, and they're what this section undoes:
+ *   - #top-bar is a nowrap flex row whose children are all flex-shrink: 0
+ *   - #main-content puts a fixed 220px filter column beside the content, leaving 155px
+ *   - the dropdown panels are 440-460px wide, which is simply wider than the screen
+ * ==========================================================================*/
+
+@media (max-width: 768px) {
+
+    /* ---- top bar: let it become as many rows as it needs ---- */
+
+    #top-bar {
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        padding: 6px 12px;
+    }
+
+    /* the ASCII logo is the one thing here with a genuinely fixed size (it's art, not text
+       that can reflow), so it keeps its row and everything else wraps around it */
+    #brand {
+        flex: 0 1 auto;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    #general-connection-status {
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+    }
+
+    /* was margin-left:auto, which only makes sense when it shares a row with the brand */
+    #top-bar-actions {
+        margin-left: 0;
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .filter-collapse-toggle {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+    }
+
+    /*
+     * Collapsed, the column is just its own header row. Everything else in it is hidden
+     * rather than height-animated, so it costs nothing and can't be half-scrolled into.
+     */
+    #filter-column.collapsed > *:not(#filter-column-header),
+    #library-filter-column.collapsed > *:not(#library-filter-header) {
+        display: none;
+    }
+
+    #filter-column.collapsed,
+    #library-filter-column.collapsed {
+        max-height: none;
+        gap: 0;
+        padding-bottom: 4px;
+    }
+
+    /*
+     * The three dropdown triggers need 373px at desktop padding against 351px of usable
+     * width, so they wrapped onto two rows. Trimming the horizontal padding and the row gap
+     * brings them to ~337px - enough slack that a slightly different font rendering won't
+     * push them apart again, which a 2px margin would have.
+     */
+    #top-bar-actions {
+        gap: 6px;
+    }
+
+    #downloads-toggle-button,
+    #log-toggle-button,
+    #profile-toggle-button {
+        padding: 7px 6px;
+        gap: 5px;
+    }
+
+    #view-tabs {
+        padding: 0 12px;
+    }
+
+    .view-tab {
+        flex: 1 1 auto;
+        text-align: center;
+        padding: 8px 12px;
+    }
+
+    /* ---- stack the filter column above the content instead of beside it ---- */
+
+    #main-content,
+    #library-content {
+        flex-direction: column;
+    }
+
+    #filter-column,
+    #library-filter-column {
+        flex: 0 0 auto;
+        width: 100%;
+        /* capped and independently scrollable: filters are secondary on a phone and should
+           never push the actual results off the bottom of the screen */
+        max-height: 30vh;
+        padding: 8px 12px;
+    }
+
+    #middle-content,
+    #library-middle {
+        padding: 8px 12px;
+        flex: 1 1 auto;
+    }
+
+    /* ---- search bar: one control per row ---- */
+
+    .input-box {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .search-input-cursor-holder,
+    #release-search-input,
+    #artist-search-input {
+        width: 100%;
+    }
+
+    /* that 10px was the gap between two side-by-side inputs; stacked it reads as the second
+       one being indented under the first. `.input-box` now has a gap instead. */
+    .search-input-cursor-holder:has(#artist-search-input) {
+        margin-left: 0;
+    }
+
+    #search-limit-container {
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+
+    #search-input-button {
+        width: 100%;
+    }
+
+    #results-toolbar,
+    #library-toolbar {
+        flex-wrap: wrap;
+    }
+
+    #library-filter-input {
+        flex: 1 1 100%;
+    }
+
+    #library-toolbar > .columns-toggle-button {
+        margin-left: 0;
+    }
+
+    /* ---- dropdown panels become bottom sheets ---- */
+
+    /*
+     * They were absolutely positioned against their trigger with right:0 and a fixed
+     * 440-460px width, which cannot fit a phone at any position. Anchoring them to the
+     * bottom of the viewport instead sidesteps the whole problem - it needs no knowledge of
+     * where the trigger ended up after the top bar wrapped, which is the part that would
+     * otherwise keep breaking as the header reflows.
+     */
+    #downloads-window,
+    #log-window,
+    #profile-window {
+        position: fixed;
+        top: auto;
+        right: 12px;
+        left: 12px;
+        bottom: 12px;
+        width: auto;
+        height: auto;
+        max-height: 70vh;
+    }
+
+    #log-window {
+        height: 70vh;
+    }
+
+    /* ---- the releases grid is a real table; let it scroll rather than overflow ---- */
+
+    .releases-grid-wrapper {
+        overflow-x: auto;
+    }
+
+    .releases-table {
+        min-width: 560px;
+    }
+
+    /* ---- candidates overlay ---- */
+
+    #candidates-window {
+        width: calc(100vw - 16px);
+        height: min(80vh, 640px);
+    }
+
+    /* ---- touch targets ---- */
+
+    /*
+     * Facets and edition rows are 20-21px tall on desktop, which is fine for a mouse and
+     * awkward for a fingertip. 32px is still compact but reliably tappable.
+     */
+    .facet-option,
+    .library-facet {
+        min-height: 32px;
+        padding: 4px 0;
+    }
+
+    .library-expand,
+    .download-cancel-button {
+        min-width: 32px;
+        min-height: 32px;
+    }
+}
+
+/* Narrow phones: the ASCII logo stops fitting even at its own size. */
+@media (max-width: 420px) {
+    #brand pre {
+        /* scales the art down rather than hiding it - it is most of the app's identity, and
+           a clipped logo looks broken in a way a small one does not */
+        font-size: 6px;
+    }
+
+    .library-album-meta,
+    .library-edition-head {
+        flex-wrap: wrap;
+    }
+
+    /* the folder path is the least useful thing on a narrow screen and the longest */
+    .library-path {
+        display: none;
+    }
+}

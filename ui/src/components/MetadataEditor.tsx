@@ -33,6 +33,12 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
 
   const [selected, setSelected] = useState<Release | null>(null)
   const [editionLabel, setEditionLabel] = useState('')
+  /*
+   * Default on only when the album has no cover of its own. Fetching art is a network round
+   * trip and, for an album that already has one, a replacement — so it opts in when there's
+   * nothing to lose and opts out when there is.
+   */
+  const [fetchArt, setFetchArt] = useState(!album.art)
   const [plan, setPlan] = useState<RetagPlan | null>(null)
   const [planning, setPlanning] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -106,7 +112,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       setApplyError(null)
 
       try {
-        setPlan(await libraryApi.previewRetag(album.path, payloadFor(release)))
+        setPlan(await libraryApi.previewRetag(album.path, payloadFor(release), fetchArt))
       } catch (caught) {
         setApplyError(caught instanceof Error ? caught.message : 'could not work out the changes')
         setPlan(null)
@@ -114,14 +120,14 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
         setPlanning(false)
       }
     },
-    [album.path, payloadFor],
+    [album.path, payloadFor, fetchArt],
   )
 
-  // a changed override means a different folder name, so the plan has to be recomputed
+  // both of these change what the plan says, so it has to be recomputed
   useEffect(() => {
     if (selected) void preview(selected)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editionLabel])
+  }, [editionLabel, fetchArt])
 
   const apply = async () => {
     if (!selected) return
@@ -129,16 +135,18 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     setApplyError(null)
 
     try {
-      const response = await libraryApi.applyRetag(album.path, payloadFor(selected))
+      const response = await libraryApi.applyRetag(album.path, payloadFor(selected), fetchArt)
       const { results } = response
 
       if (results.failed) {
         setApplyError(`${results.failed} file(s) could not be written`)
       } else {
         setApplied(
-          results.moved_to
-            ? `Retagged ${results.tagged} file(s) and re-filed the folder.`
-            : `Retagged ${results.tagged} file(s).`,
+          [
+            `Retagged ${results.tagged} file(s)`,
+            results.art_written ? `saved ${results.art_written}` : '',
+            results.moved_to ? 're-filed the folder' : '',
+          ].filter(Boolean).join(', ') + '.',
         )
         onApplied()
       }
@@ -237,6 +245,22 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
                   </span>
                 </label>
 
+                <label class="metadata-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={fetchArt}
+                    onChange={(event) => setFetchArt((event.target as HTMLInputElement).checked)}
+                  />
+                  <span class="text default-secondary">
+                    {plan.art.existing ? `replace ${plan.art.existing}` : 'download cover art'}
+                  </span>
+                  <span class="text white-tertiary metadata-hint">
+                    {plan.art.existing
+                      ? 'this album already has a cover; only overwrite it if the new one is better'
+                      : 'from the Cover Art Archive, saved into the album folder'}
+                  </span>
+                </label>
+
                 {plan.problems.map((problem) => (
                   <h5 class="text yellow metadata-problem" key={problem}>{problem}</h5>
                 ))}
@@ -279,6 +303,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
           {!applied && plan && !plan.empty && (
             <span class="text default-muted metadata-summary">
               {plan.changed_file_count} of {plan.file_count} file(s) would change
+              {plan.art.action ? `, cover art would be ${plan.art.action}d` : ''}
               {plan.moves ? ', and the folder would be renamed' : ''}
             </span>
           )}

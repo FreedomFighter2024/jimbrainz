@@ -3173,3 +3173,17 @@ span.red { color: var(--red-text); }
         display: none;
     }
 }
+
+.metadata-checkbox {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 8px;
+    align-items: center;
+    flex-shrink: 0;
+    cursor: pointer;
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+}
+
+/* the hint sits under the label, aligned past the checkbox */
+.metadata-checkbox > .metadata-hint { grid-column: 2; }

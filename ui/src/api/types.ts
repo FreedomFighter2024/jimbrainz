@@ -383,6 +383,16 @@ export interface RetagFileChange {
  * The apply endpoint recomputes this rather than accepting it back, so this is a faithful
  * report rather than an instruction — you cannot edit it into doing something else.
  */
+/** What a retag would do about cover art. Decided without a network call — see plan_art. */
+export interface RetagArtPlan {
+  /** '' = nothing, 'download' = fetch and save, 'replace' = overwrite the existing file. */
+  action: '' | 'download' | 'replace'
+  /** Why nothing will happen, when that needs saying. */
+  reason: string
+  /** The cover file already in the folder, if any. */
+  existing: string | null
+}
+
 export interface RetagPlan {
   album_path: string
   /** null when the album couldn't be read at all; `problems` says why. */
@@ -396,6 +406,7 @@ export interface RetagPlan {
   file_count: number
   matched_tracks: number
   expected_tracks: number
+  art: RetagArtPlan
   /** Non-fatal warnings worth showing before applying — mismatched track counts and so on. */
   problems: string[]
   /** Nothing to change. The album already carries this release. */
@@ -408,6 +419,8 @@ export interface RetagResults {
   tagged: number
   failed: number
   moved_to: string | null
+  /** The cover filename written, or null. */
+  art_written: string | null
   problems: string[]
 }
 

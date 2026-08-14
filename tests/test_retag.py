@@ -214,3 +214,99 @@ def test_the_folder_stays_put_when_a_file_fails(tmp_path, monkeypatch):
     assert results["moved_to"] is None
     assert (tmp_path / "Tame Impala" / "The Slow Rush (2020)").is_dir()
     assert any("left the folder in place" in p for p in results["problems"])
+
+
+# ---------------------------------------------------------------- cover art
+
+def write_image(path, data=b"\xff\xd8\xff\xe0 existing cover"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return path
+
+
+def test_art_is_not_fetched_unless_asked(tmp_path):
+    """Correcting tags should never pull something off the internet by itself."""
+    seed(tmp_path)
+    plan = plan_retag("Tame Impala/The Slow Rush (2020)", RELEASE, str(tmp_path))
+    assert plan["art"]["action"] == ""
+
+
+def test_art_is_downloaded_when_the_album_has_none(tmp_path):
+    seed(tmp_path)
+    plan = plan_retag("Tame Impala/The Slow Rush (2020)", RELEASE, str(tmp_path), want_art=True)
+    assert plan["art"] == {"action": "download", "reason": "", "existing": None}
+
+
+def test_existing_art_is_a_replacement_not_a_download(tmp_path):
+    """Named differently on purpose - the interface says 'replace cover.jpg', not 'download'."""
+    directory = seed(tmp_path)
+    write_image(directory / "cover.jpg")
+
+    plan = plan_retag("Tame Impala/The Slow Rush (2020)", RELEASE, str(tmp_path), want_art=True)
+    assert plan["art"] == {"action": "replace", "reason": "", "existing": "cover.jpg"}
+
+
+def test_art_needs_a_release_id_and_says_so(tmp_path):
+    seed(tmp_path)
+    release = {**RELEASE, "release_mbid": ""}
+
+    plan = plan_retag("Tame Impala/The Slow Rush (2020)", release, str(tmp_path), want_art=True)
+    assert plan["art"]["action"] == ""
+    assert any("no MusicBrainz id" in p for p in plan["problems"])
+
+
+def test_planning_art_makes_no_network_call(tmp_path, monkeypatch):
+    """
+    Previewing must stay cheap and side-effect free - it runs on every click in the release
+    list, and hitting the Archive each time would be slow and rude.
+    """
+    import src.api.coverart_endpoint as coverart
+
+    def explode(*args, **kwargs):
+        raise AssertionError("planning must not fetch anything")
+
+    monkeypatch.setattr(coverart.CoverArtClient, "fetch_front", explode)
+    seed(tmp_path)
+    plan_retag("Tame Impala/The Slow Rush (2020)", RELEASE, str(tmp_path), want_art=True)
+
+
+def test_apply_writes_the_cover_it_is_given(tmp_path):
+    seed(tmp_path)
+    plan = plan_retag("Tame Impala/The Slow Rush (2020)", RELEASE, str(tmp_path), want_art=True)
+    results = execute_retag(plan, RELEASE, "apply", (b"\x89PNG downloaded art", "image/png"))
+
+    moved = tmp_path / "Tame Impala" / "The Slow Rush (2020) [Deluxe edition]"
+    assert results["art_written"] == "cover.png"
+    assert (moved / "cover.png").read_bytes() == b"\x89PNG downloaded art"
+
+
+def test_dry_run_names_the_cover_without_writing_it(tmp_path):
+    directory = seed(tmp_path)
+    plan = plan_retag("Tame Impala/The Slow Rush (2020)", RELEASE, str(tmp_path), want_art=True)
+    results = execute_retag(plan, RELEASE, "dry_run")
+
+    assert results["art_written"] == "cover.jpg"
+    assert not list(directory.glob("cover*"))
+
+
+def test_a_failed_download_does_not_fail_the_retag(tmp_path):
+    """The tags are the point; the art is a bonus. Losing it shouldn't lose the edit."""
+    seed(tmp_path)
+    plan = plan_retag("Tame Impala/The Slow Rush (2020)", RELEASE, str(tmp_path), want_art=True)
+    results = execute_retag(plan, RELEASE, "apply", None)
+
+    assert results["tagged"] == 2
+    assert results["art_written"] is None
+    assert results["moved_to"] is not None
+    assert any("no cover art was available" in p for p in results["problems"])
+
+
+def test_art_alone_is_enough_to_make_a_plan_worth_applying(tmp_path):
+    """An album already correctly tagged still has something to do if it has no cover."""
+    seed(tmp_path, folder="The Slow Rush (2020) [Deluxe edition]")
+    path = "Tame Impala/The Slow Rush (2020) [Deluxe edition]"
+
+    execute_retag(plan_retag(path, RELEASE, str(tmp_path)), RELEASE, "apply")
+
+    assert plan_retag(path, RELEASE, str(tmp_path))["empty"] is True
+    assert plan_retag(path, RELEASE, str(tmp_path), want_art=True)["empty"] is False

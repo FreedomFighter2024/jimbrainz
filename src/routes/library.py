@@ -8,7 +8,13 @@ from src.config import Config
 from src.library import forget_cached_album, load_album_art, scan_library
 from src.logger import logger
 from src.organizer import is_within
+from src.api.coverart_endpoint import CoverArtClient
 from src.retag import execute_retag, plan_retag
+
+#? One client for the process, closed with the app in src/api/app.py. Cover art is fetched
+#? rarely and one at a time, so there is nothing to gain from per-request clients and a
+#? little to lose - each would open a fresh TLS connection to archive.org.
+coverart_client = CoverArtClient()
 
 router = APIRouter()
 
@@ -134,6 +140,9 @@ class RetagRequest(BaseModel):
     #? relative to LIBRARY_PATH, as the scan reports it
     album_path: str
     release: RetagRelease
+    #? off unless asked. Fetching art is a network round trip and can overwrite a cover the
+    #? user chose themselves, so it is never a side effect of correcting tags.
+    fetch_art: bool = False
 
 
 @router.post("/retag/preview")
@@ -150,7 +159,8 @@ async def retag_preview(request: RetagRequest):
 
     try:
         return await asyncio.to_thread(
-            plan_retag, request.album_path, request.release.model_dump(), Config.LIBRARY_PATH
+            plan_retag, request.album_path, request.release.model_dump(),
+            Config.LIBRARY_PATH, request.fetch_art,
         )
 
     except Exception as e:
@@ -175,13 +185,20 @@ async def retag_apply(request: RetagRequest):
 
     try:
         plan = await asyncio.to_thread(
-            plan_retag, request.album_path, release, Config.LIBRARY_PATH
+            plan_retag, request.album_path, release, Config.LIBRARY_PATH, request.fetch_art
         )
 
         if plan["source"] is None:
             raise HTTPException(status_code=400, detail="; ".join(plan["problems"]))
 
-        results = await asyncio.to_thread(execute_retag, plan, release, "apply")
+        #? Fetched here rather than inside execute_retag: that module writes to the user's
+        #? filesystem and nothing else, and giving it a network dependency would make it
+        #? untestable without one. A failure is not fatal - the tags are the point.
+        art = None
+        if plan["art"]["action"]:
+            art = await coverart_client.fetch_front(release.get("release_mbid") or "")
+
+        results = await asyncio.to_thread(execute_retag, plan, release, "apply", art)
 
         #? The cache keys on the folder's mtime, which a retag does not move - so without
         #? this the interface would keep showing the old tags and the edit would look like

@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
 
     await app.state.musicbrainz_client.close_client()
     await app.state.slskd_client.close_client()
+    await library.coverart_client.close_client()
 
     cleanup_logging()
 

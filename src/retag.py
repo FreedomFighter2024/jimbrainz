@@ -27,7 +27,9 @@ from pathlib import Path
 
 from src.editions import resolve_edition_label
 from src.logger import logger
+from src.library import find_cover_file
 from src.matching import AUDIO_EXTENSIONS, file_extension, match_tracks_to_files
+from src.api.coverart_endpoint import extension_for
 from src.organizer import build_album_dirname, is_within, sanitize_filename, tag_values, write_tags
 
 #? Same vocabulary as the organizer's ORGANIZE_MODES, minus the copy/move distinction which
@@ -61,7 +63,34 @@ def read_current_tags(path: Path) -> dict:
     return current
 
 
-def plan_retag(album_path: str, release: dict, library_root: str) -> dict:
+def plan_art(entries: list[Path], release: dict, want_art: bool) -> dict:
+    """
+    Whether this retag would put a cover in the folder, and if not, why not.
+
+    Decided here rather than in the fetcher so the preview can say what will happen without
+    a network call - downloading an image just to describe it would make previewing slow and
+    would hit the Archive every time someone clicked a release.
+
+    Never replaces existing art unless asked. Somebody's hand-picked sleeve is not ours to
+    overwrite because MusicBrainz has one too; the same instinct as execute_plan refusing to
+    clobber a file it didn't put there.
+    """
+    existing = find_cover_file(entries)
+
+    if not want_art:
+        return {"action": "", "reason": "", "existing": existing.name if existing else None}
+
+    if not (release.get("release_mbid") or "").strip():
+        return {"action": "", "reason": "this release has no MusicBrainz id to look art up by",
+                "existing": existing.name if existing else None}
+
+    if existing is not None:
+        return {"action": "replace", "reason": "", "existing": existing.name}
+
+    return {"action": "download", "reason": "", "existing": None}
+
+
+def plan_retag(album_path: str, release: dict, library_root: str, want_art: bool = False) -> dict:
     """
     Everything applying `release` to the album at `album_path` would change. Touches nothing.
 
@@ -140,6 +169,10 @@ def plan_retag(album_path: str, release: dict, library_root: str) -> dict:
     if move_problem:
         problems.append(move_problem)
 
+    art = plan_art(entries, release, want_art)
+    if art["reason"]:
+        problems.append(art["reason"])
+
     return {
         "album_path": album_path,
         "source": str(source),
@@ -152,10 +185,15 @@ def plan_retag(album_path: str, release: dict, library_root: str) -> dict:
         "file_count": len(audio_files),
         "matched_tracks": len(mapping),
         "expected_tracks": expected,
+        "art": art,
         "problems": problems,
         #? a plan with nothing to do is still a valid plan; the interface says so rather
         #? than offering an apply button that would be a no-op
-        "empty": not any(c["changes"] for c in changes) and not (target and target != source),
+        "empty": (
+            not any(c["changes"] for c in changes)
+            and not (target and target != source)
+            and not art["action"]
+        ),
     }
 
 
@@ -164,6 +202,7 @@ def _empty_plan(album_path: str, problem: str) -> dict:
         "album_path": album_path, "source": None, "target": None, "target_path": None,
         "moves": False, "edition_label": "", "files": [], "changed_file_count": 0,
         "file_count": 0, "matched_tracks": 0, "expected_tracks": 0,
+        "art": {"action": "", "reason": "", "existing": None},
         "problems": [problem], "empty": True,
     }
 
@@ -193,12 +232,21 @@ def _resolve_target(root: Path, source: Path, release: dict) -> tuple[Path | Non
     return target, ""
 
 
-def execute_retag(plan: dict, release: dict, mode: str = "dry_run") -> dict:
+def execute_retag(
+    plan: dict,
+    release: dict,
+    mode: str = "dry_run",
+    art: tuple[bytes, str] | None = None,
+) -> dict:
     """
     Carry out a plan. `dry_run` reports what it would do and touches nothing.
 
     Tags are written before the folder moves, so a failure part-way leaves the album where
     the plan said it was rather than half-moved somewhere the interface isn't looking.
+
+    `art` is passed in already downloaded rather than fetched here, deliberately: this module
+    writes to the user's filesystem and nothing else, and giving it a network dependency
+    would make it untestable without one. The caller does the fetching.
     """
     results = {
         "mode": mode,
@@ -206,6 +254,7 @@ def execute_retag(plan: dict, release: dict, mode: str = "dry_run") -> dict:
         "tagged": 0,
         "failed": 0,
         "moved_to": None,
+        "art_written": None,
         "problems": list(plan.get("problems") or []),
     }
 
@@ -235,6 +284,32 @@ def execute_retag(plan: dict, release: dict, mode: str = "dry_run") -> dict:
         except Exception as e:
             logger.error(f"could not retag {entry['filename']}: {e}")
             results["failed"] += 1
+
+    #? Before any move, so the write and the folder rename can't disagree about where the
+    #? album is. The cover goes in as a plain file rather than being embedded in every
+    #? track: it is what find_cover_file() prefers, what the organizer already copies across
+    #? as a companion, and what every other music tool expects to find.
+    art_action = (plan.get("art") or {}).get("action")
+
+    if art_action and (art is not None or results["dry_run"]):
+        name = f"cover.{extension_for(art[1])}" if art else "cover.jpg"
+
+        if results["dry_run"]:
+            results["art_written"] = name
+
+        else:
+            try:
+                #? a replacement leaves the old file behind under its own name only if that
+                #? name differs; same-named art is overwritten, which is what "replace" means
+                (source / name).write_bytes(art[0])
+                results["art_written"] = name
+                logger.info(f"wrote {name} into {source.name}", extra={"frontend": True})
+            except OSError as e:
+                logger.error(f"could not write cover art into {source}: {e}")
+                results["problems"].append(f"tags were written but the cover art could not be saved: {e}")
+
+    elif art_action and art is None and not results["dry_run"]:
+        results["problems"].append("no cover art was available for that release")
 
     if plan.get("moves") and plan.get("target"):
         target = Path(plan["target"])

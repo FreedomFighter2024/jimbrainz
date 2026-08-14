@@ -9,9 +9,9 @@
   <a href="https://github.com/real-lizardwizard/jimbrainz/pkgs/container/jimbrainz"><img src="https://img.shields.io/badge/ghcr.io-real--lizardwizard%2Fjimbrainz-blue" alt="Container image"></a>
 </p>
 
-A one-page interface for finding music on MusicBrainz and pulling it down through slskd. Search is centered on specific Releases and **Release Groups** rather than artists, i.e. albums, singles, mixtapes — because most of the time you want one particular pressing of one album, not an artist's entire discography.
+A one-page interface for finding music on MusicBrainz, pulling it down through slskd, and keeping the result tidy afterwards. Search is centred on specific **Releases** and **Release Groups** rather than artists — because most of the time you want one particular pressing of one album, not somebody's entire discography.
 
-Pick the release you actually want, and jimbrainz searches Soulseek, ranks what comes back against that release's real tracklist, and shows you why each candidate scored what it did. One click queues it; when it finishes it gets tagged from the MusicBrainz data and filed into your library.
+Pick the release you actually want, and jimbrainz searches Soulseek, ranks what comes back against that release's real tracklist, and shows you why each candidate scored what it did. One click queues it; when it finishes it gets tagged from the MusicBrainz data and filed into your library. Then the **library tab** shows you what you've actually got — including when you're holding three different pressings of the same record — and lets you correct anything that landed wrong.
 
 ![Alt text](assets/videos/demo_1.gif)
 
@@ -31,7 +31,7 @@ A caveat worth setting expectations on: this won't magically always find the exa
 
 ## Installation
 
-_Note: if you're an **UnRaid** user like me, ive added a template that can be manually added and used, instructions are [below](https://github.com/real-lizardwizard/jimbrainz/tree/main?tab=readme-ov-file#installation-unraid)_
+_Note: if you're an **UnRaid** user like me, ive added a template that can be manually added and used, instructions are [below](#installation-unraid)_
 
 ### Prerequisites:
 1. a running [slskd](https://slskd.org) instance reachable from this container, with an API key
@@ -44,19 +44,18 @@ _Note: if you're an **UnRaid** user like me, ive added a template that can be ma
 
 **The one that trips everyone up:** `SLSKD_DOWNLOAD_PATH` has to point at the *same files* slskd writes its finished downloads to, as seen from inside this container. If the two containers disagree about that path, organizing quietly finds nothing. It's the most likely first-run problem by a mile.
 
+`LIBRARY_PATH` is where organized music goes, and it's also what the library tab reads. If you don't set it, everything else still works — the library tab just tells you it isn't configured.
+
 ### Which image tag?
 
 | tag | what it is |
 | --- | --- |
-| `:latest` | **the current release** — slskd direct, no Lidarr. 0.3.x, and what the settings above describe. |
-| `:0.3.0` etc | pinned releases of that same line |
+| `:latest` | **the current release** — slskd direct, no Lidarr. 0.4.x, and what the settings above describe. |
+| `:0.4.0` etc | pinned releases of that same line |
 | `:experimental` | the `experimental/*` branch, rebuilt on every push. Ahead of `:latest`, and moves under you. |
 | `:0.2.1` and older | the original Lidarr-based line, still on `main`. Does **not** understand the settings above. |
 
-> **If you were already pulling `:latest`, read this.** Up to 0.2.1 that tag was the
-> Lidarr-based version. As of **0.3.0 it is this slskd-direct rewrite**, which has no Lidarr
-> support at all and takes different settings. Pulling `:latest` will replace one with the
-> other. Pin **`:0.2.1`** if you want the Lidarr version to keep working.
+> **If you were already pulling `:latest` from before 0.3.0, read this.** Up to 0.2.1 that tag was the Lidarr-based version. From **0.3.0 onward it is this slskd-direct rewrite**, which has no Lidarr support at all and takes different settings. Pulling `:latest` will replace one with the other. Pin **`:0.2.1`** if you want the Lidarr version to keep working.
 
 The example compose file on this branch points at `:experimental`. It moves whenever the branch does, so use `:latest` or pin a version if you want it to hold still.
 
@@ -76,7 +75,7 @@ Most tools use Artist objects as the "main" form of adding and storing data, i d
 ### Ranked Soulseek candidates
 <details>
 <summary style="font-style:italic">Scored against the release you actually picked, with the reasoning shown</summary>
-Each peer's files get grouped into (user, folder) candidates and scored on track count, fuzzy title match against the real tracklist, track durations, format/bitrate, peer health, and edition/year. You see a score breakdown per candidate so it's obvious *why* one ranked above another — and can filter by free slot, complete albums only, format, or minimum score.
+Each peer's files get grouped into (user, folder) candidates and scored on track count, fuzzy title match against the real tracklist, track durations, format/bitrate, peer health, and edition/year. You see a score breakdown per candidate so it's obvious <em>why</em> one ranked above another — and can filter by free slot, complete albums only, format, or minimum score.
 </details>
 
 ### Browsing releases like it's MusicBrainz itself
@@ -88,18 +87,56 @@ Releases show as a table with label, catalog number, barcode, quality, language/
 ### Downloads that remember what they're for
 <details>
 <summary style="font-style:italic">slskd only knows "bob is sending you 12 files"</summary>
-jimbrainz keeps the link between a download and the MusicBrainz release that started it, in a small sqlite database. That's what makes tagging possible later, and it's why the downloads panel can tell you what an in-flight transfer actually is.
+jimbrainz keeps the link between a download and the MusicBrainz release that started it, in a small sqlite database. That's what makes tagging possible later, and it's why the downloads panel can tell you what an in-flight transfer actually is — with live progress, queue position, and a real transfer rate worked out from byte deltas rather than slskd's cumulative average, which only ever creeps upward.
 </details>
 
-### Tagging and filing
+### Tagging and filing, with editions kept apart
 <details>
-<summary style="font-style:italic">Finished downloads get tagged and filed automatically</summary>
-Files land as <code>{artist}/{album} ({year})/{NN} - {title}.{ext}</code>, tagged from the MusicBrainz release — including MusicBrainz IDs, so the library stays readable by Picard and beets instead of being a jimbrainz-only artifact. Track numbers and titles come from the matched tracklist, so they're right even when the peer named everything "Track 04.mp3". It never overwrites an existing file.
+<summary style="font-style:italic">Two pressings of one album no longer collide</summary>
+Files land as <code>{artist}/{album} ({year}) [{edition}]/{NN} - {title}.{ext}</code>, tagged from the MusicBrainz release — including MusicBrainz IDs, so the library stays readable by Picard and beets instead of being a jimbrainz-only artifact. Track numbers and titles come from the matched tracklist, so they're right even when the peer named everything "Track 04.mp3". It never overwrites an existing file.
+<br><br>
+The edition suffix is omitted for ordinary albums, and only appears when there's something to say. The name comes from MusicBrainz's own disambiguation where it has one, then detected edition tags, then format or country — and two genuinely different releases that would still collide get separated by catalogue number.
+<br><br>
+The year is the <em>album's</em> year, not the pressing's, so a 2011 remaster of a 1975 record files under <code>Wish You Were Here (1975) [Remastered]</code> rather than landing in a different decade from the original. The file still records which pressing it actually is.
+</details>
+
+### A library tab that knows what you've got
+<details>
+<summary style="font-style:italic">Including when you're holding three versions of the same record</summary>
+Reads your library off disk with mutagen and lists one row per album, with its editions nested underneath — the same shape as release group → releases in the search tab. Albums you hold more than one version of are marked and filterable, which was the entire point.
+<br><br>
+Identity comes from tags rather than folder names, so renaming a folder by hand doesn't split an album in two. Folders with no MusicBrainz id at all — i.e. anything that predates jimbrainz — are left as their own albums rather than being guessed at and merged.
+<br><br>
+Cover art comes from a file beside the tracks, then from art embedded in the audio, then from the Cover Art Archive. Clicking an artist or album name takes you to a search for it.
+</details>
+
+### Fixing things that landed wrong
+<details>
+<summary style="font-style:italic">Pick the release an album really is, and write it back</summary>
+Picard-shaped, but small. Open the editor on any album and it searches MusicBrainz straight away; the release your files are already tagged with sorts first and is marked <code>current</code>, so you can see what it currently matches instead of hunting for it.
+<br><br>
+Pick a release and it fills in the fields, or type them yourself — artist, album, year, original year, and the edition name that names the folder. So if MusicBrainz says "remixed by john" and you'd rather the folder just said <code>[REMIX]</code>, type that.
+<br><br>
+Nothing is written until you press apply, and the preview showing what would change is produced by the same code that does the writing — so it can't drift into lying about it. It can also pull the release's cover into the folder, with the incoming art shown next to the one you already have.
+</details>
+
+### Deleting albums
+<details>
+<summary style="font-style:italic">With a confirmation that actually tells you what's about to go</summary>
+Each album (and each edition of it) has a delete control. The confirmation names the folder, the track count, the size, and any files in there that are neither audio nor artwork — a rip log or a cue sheet might be the only copy, so those get listed individually.
+<br><br>
+It's permanent, there's no undo, and it says so. It refuses anything that isn't an album inside your library, including artist folders, so it can't take a whole discography by accident.
+</details>
+
+### It works on a phone now
+<details>
+<summary style="font-style:italic">It really, really did not before</summary>
+On a 375px screen the old layout laid out 1131px wide, with the entire top bar of buttons simply off the right-hand edge. The top bar wraps, the columns stack, the filter list collapses behind a toggle, and the dropdowns become bottom sheets. The pop-up windows are resizable on desktop too.
 </details>
 
 ## (more importantly) Non-features (and how they dont work)
 
-Being lightweight and fast (and working _just enough_) was and is the only focus, so authentication (as in a login page), mobile styling, recommendations, and batch adding artist discographies are not present.
+Being lightweight and fast (and working _just enough_) was and is the only focus, so authentication (as in a login page), recommendations, and batch adding artist discographies are not present.
 
 ### Adding whole artist discographies at a time
 <details>
@@ -119,10 +156,22 @@ jimbrainz _only uses MusicBrainz_, if you need to add anything thats not on Musi
 Theres no tracking of what you download or listen to, and no extra metadata other than MusicBrainz, so theres no cool recommendations.
 </details>
 
-### Mobile ui
+### Any kind of login
 <details>
-<summary style="font-style:italic">Theres no mobile ui</summary>
-I scraped together this ui with my high school html and css knowledge, and it works for most desktops! but i have not even begun to look at making it mobile friendly lol
+<summary style="font-style:italic">Anyone who can reach it can use it</summary>
+There is no authentication of any kind. It can delete files and rewrite tags, so put it behind whatever you already use for the rest of your homelab, and dont expose it to the internet.
+</details>
+
+### Undo
+<details>
+<summary style="font-style:italic">Nothing here can be taken back</summary>
+Retagging rewrites tags in place and deleting removes files for good. The preview before a retag and the confirmation before a delete are the whole safety net, which is why both try hard to tell you exactly what's about to happen.
+</details>
+
+### Per-track editing
+<details>
+<summary style="font-style:italic">You take a release's tracklist as a whole</summary>
+The metadata editor applies a release, it doesnt let you fix one track's title. Files the tracklist doesnt match keep their own title and number rather than being renumbered — a wrong track number is worse than none.
 </details>
 
 ## Installation (UnRaid)
@@ -140,6 +189,7 @@ _Note: given this container was just made for myself, i havent published it to t
 2. to access slskd through its hostname, select the same docker network as your slskd instance
 3. fill in the required fields, see the .env.example configuration if youre unsure what to put there
 4. point the `/downloads` mapping at the same folder slskd writes finished downloads to
+5. point the `/music` mapping at your library if you want the library tab to do anything
 
 it should now run just like any other UnRaid docker container, and you can automatically pull eventual updates through the docker tab.
 
@@ -154,6 +204,9 @@ basically anyone who wants more functionality than whats mentioned above. if you
 
 ## probable issues
 - **Organizing finds nothing:** almost always `SLSKD_DOWNLOAD_PATH` not pointing at the same files slskd writes. jimbrainz says so explicitly when this happens rather than pretending it worked.
+- **A download says it finished but the album isnt there:** if a folder with that name already existed, every file is skipped rather than overwritten, and the job now says so instead of reporting success. Usually means you already have that edition.
 - **Rate limiting:** if you've improperly formatted your MusicBrainz user agent, youll automatically get rate limited. Info on this is in the MusicBrainz docs. Note that jimbrainz has a built-in rate limiter so if you are getting rate limited more than youd expect its likely because of improper config.
 - **A search returns nothing:** Soulseek search is a substring match over filenames people happened to type. Try the editable query box in the candidates panel — trimming it down often helps more than adding detail.
+- **MusicBrainz is just down sometimes:** it happens a lot. jimbrainz tells you thats what happened rather than showing you an empty result and letting you blame your search terms.
+- **The library tab is empty:** check `LIBRARY_PATH` is set and points at the same music the container can see. It says which of those is wrong.
 - the ui has many problems, i just wanted it to look pretty cause i like pretty things

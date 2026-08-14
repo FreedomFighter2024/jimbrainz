@@ -43,9 +43,10 @@ rolldown's native binary and the build dies with "Cannot find module
    still holds for anything genuinely new — build it in Preact rather than extending vanilla.
 3. **Do not carry the two performance bugs across** (details below). They're the actual cause
    of the "lag" complaint, and they're just as reproducible in Preact.
-4. **The CSS survives as-is initially.** 2,245 lines of accreted styling own the CRT aesthetic.
-   Port markup to components first, restyle later as a separate deliberate pass. Changing both
-   at once means you can't tell which broke it.
+4. **The CSS stays where it is.** `interface/styles/main.css` (now ~3,500 lines) owns the CRT
+   look for BOTH halves — no component imports CSS, and ported markup reuses the existing
+   class names verbatim. Port markup first, restyle later as a separate deliberate pass;
+   changing both at once means you can't tell which broke it.
 
 ## Toolchain setup — as built
 

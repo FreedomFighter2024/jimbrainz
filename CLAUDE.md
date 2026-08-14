@@ -54,7 +54,8 @@ src/
                    already on disk. Same plan/execute split, for the same reasons.
   api/             musicbrainz_endpoint.py, slskd_endpoint.py, coverart_endpoint.py, app.py
   routes/          search_musicbrainz, download, monitor_slskd, interface_logs, library
-interface/         vanilla JS/CSS. Still the served page; shrinking as panels are ported.
+interface/         vanilla JS/CSS. Still the served page; main.js is shrinking as panels
+                   are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
 tests/             201 tests, all Python, all fixture-driven
@@ -124,6 +125,8 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
 
 Each of these cost real time. Don't rediscover them.
 
+### Interface and CSS
+
 - **`theme.css` is `@import`ed from `main.css`, so it caches independently.** Editing the
   palette and reloading shows the OLD colours. Bust it explicitly when verifying, and
   hard-refresh after deploying.
@@ -137,6 +140,41 @@ Each of these cost real time. Don't rediscover them.
 - **Nothing had set a font on `body`**, so any element without its own rule fell back to
   Times at 16px. That is how the releases-grid `▷` arrows and `#results-summary` shipped in
   a serif face. Fixed by the `body` baseline above.
+- **A Preact `useEffect` that writes to a DOM node outside its own tree is unreliable.** The
+  tab bar set `data-tab` on `#main-container` from an effect; when the tab was changed by a
+  click originating in the *library* tree, the effect didn't fire and the button highlighted
+  while the panes never swapped. Cross-tree DOM writes belong in the shell (`main.tsx`),
+  done synchronously. Symptom to recognise: the component looks right, the page doesn't.
+- **The layout had no media queries at all until v0.3.x.** On a 375px phone it produced
+  1131px of content — 756px unreachable off the right edge, with the entire top-bar actions
+  row off-screen. Three causes: `#top-bar` was a nowrap flex row of `flex-shrink: 0`
+  children, `#main-content` put a fixed 220px filter column beside the content leaving 155px,
+  and the dropdown panels were 440–460px wide. **Anything new with a fixed px width needs a
+  mobile rule**, and the responsive block at the bottom of `main.css` is where it goes.
+- **The filter columns collapse on mobile and the class is inert on desktop.** Both the
+  vanilla and Preact columns always carry `collapsed`; only the `max-width: 768px` block acts
+  on it. Don't "tidy" that by removing the class on desktop — it's what keeps one code path.
+- **The loading indicator animates `content`**, swapping ░▒▓█ on `steps(1)` — see
+  `.loading-blocks` in main.css. A rotating arc would have looked borrowed from another
+  application; these are the same glyphs the filter headings use, so they are known to render
+  in the bundled font. Verified by sampling the computed `::before` content over time, since
+  animating `content` is the part that could silently do nothing.
+- **Decorated headings wrap if you let them.** `░ ▒ ▓ filters ▓ ▒ ░` measured 138px in a
+  190px header that also holds a "clear" button, so a lone `░` wrapped onto a second line and
+  the whole column read as broken. Tightened to `░▒▓ filters ▓▒░` and pinned `nowrap`. Any
+  new decorated heading in a fixed-width column needs the same treatment.
+- **`hidden` did nothing to any badge.** `.log-unread-badge` and `.signals-badge` both set
+  `display`, which beats the browser's `[hidden] { display: none }` — so all three badges sat
+  on screen showing `0` while their JS believed it had hidden them. Found by checking
+  `getBoundingClientRect()` after `el.hidden` read back `true`; it is invisible to any check
+  that trusts the property. `main.css` now forces `[hidden]` to win. **`hidden` reading
+  `true` is not evidence an element is hidden — measure it.**
+- **The downloads panel vanishes if `ui/` hasn't been built.** `interface/index.html` loads
+  `dist/jimbrainz-ui.js`, which is gitignored and generated. Running from source without
+  `npm run build` leaves it 404ing and that panel simply absent. Check this first.
+
+### Backend and data
+
 - **slskd's `averageSpeed` is cumulative** (total bytes ÷ total elapsed), so it only ever
   creeps upward and never shows the current rate. Real speed is derived from `bytesTransferred`
   deltas between polls. Don't "simplify" back to `averageSpeed`.
@@ -155,20 +193,6 @@ Each of these cost real time. Don't rediscover them.
   `organized == 0 AND skipped == 0`, so an all-skipped job fell through to status
   `organized`. Green tick, album missing. Fixed in both places, and both are covered by
   tests. **This was the exact Lidarr complaint that motivated the fork**, reproduced here.
-- **A Preact `useEffect` that writes to a DOM node outside its own tree is unreliable.** The
-  tab bar set `data-tab` on `#main-container` from an effect; when the tab was changed by a
-  click originating in the *library* tree, the effect didn't fire and the button highlighted
-  while the panes never swapped. Cross-tree DOM writes belong in the shell (`main.tsx`),
-  done synchronously. Symptom to recognise: the component looks right, the page doesn't.
-- **The layout had no media queries at all until v0.3.x.** On a 375px phone it produced
-  1131px of content — 756px unreachable off the right edge, with the entire top-bar actions
-  row off-screen. Three causes: `#top-bar` was a nowrap flex row of `flex-shrink: 0`
-  children, `#main-content` put a fixed 220px filter column beside the content leaving 155px,
-  and the dropdown panels were 440–460px wide. **Anything new with a fixed px width needs a
-  mobile rule**, and the responsive block at the bottom of `main.css` is where it goes.
-- **The filter columns collapse on mobile and the class is inert on desktop.** Both the
-  vanilla and Preact columns always carry `collapsed`; only the `max-width: 768px` block acts
-  on it. Don't "tidy" that by removing the class on desktop — it's what keeps one code path.
 - **Cover art is fetched on apply, never on preview.** Previewing runs on every click in the
   release list, so downloading an image to describe it would be slow and rude to the Archive.
   `plan_art()` decides what *would* happen with no network call; the route fetches the bytes
@@ -191,35 +215,34 @@ Each of these cost real time. Don't rediscover them.
   answers 404 identically for "outside the library" and "no such album" so a probe learns
   nothing. Covered by tests including a symlink pointing out of the library. **If you add
   another endpoint taking a path, copy this pattern.**
-- **The loading indicator animates `content`**, swapping ░▒▓█ on `steps(1)` — see
-  `.loading-blocks` in main.css. A rotating arc would have looked borrowed from another
-  application; these are the same glyphs the filter headings use, so they are known to render
-  in the bundled font. Verified by sampling the computed `::before` content over time, since
-  animating `content` is the part that could silently do nothing.
-- **Decorated headings wrap if you let them.** `░ ▒ ▓ filters ▓ ▒ ░` measured 138px in a
-  190px header that also holds a "clear" button, so a lone `░` wrapped onto a second line and
-  the whole column read as broken. Tightened to `░▒▓ filters ▓▒░` and pinned `nowrap`. Any
-  new decorated heading in a fixed-width column needs the same treatment.
-- **`hidden` did nothing to any badge.** `.log-unread-badge` and `.signals-badge` both set
-  `display`, which beats the browser's `[hidden] { display: none }` — so all three badges sat
-  on screen showing `0` while their JS believed it had hidden them. Found by checking
-  `getBoundingClientRect()` after `el.hidden` read back `true`; it is invisible to any check
-  that trusts the property. `main.css` now forces `[hidden]` to win. **`hidden` reading
-  `true` is not evidence an element is hidden — measure it.**
-- **The downloads panel vanishes if `ui/` hasn't been built.** `interface/index.html` loads
-  `dist/jimbrainz-ui.js`, which is gitignored and generated. Running from source without
-  `npm run build` leaves it 404ing and that panel simply absent. Check this first.
+
+### Tooling and environment
+
+- **The browser preview pane is not a reliable witness.** Two distinct failure modes, both
+  of which read as product bugs:
+  - **It doesn't paint when it isn't fronted.** `loading="lazy"` images never start loading,
+    so `img.complete` is false and `currentSrc` empty even though the bytes serve fine —
+    cover art looked broken twice this session and wasn't. `useEffect` also flushes late, so
+    a mount effect can land *after* a synthetic input and clobber it. **Take a screenshot to
+    force a paint before measuring either.** (That second one is why the metadata editor's
+    re-seed effect skips its mount run — which made it genuinely robust, not just testable.)
+  - **It serves stale composites.** It has shown a panel as transparent, and shown pre-fix
+    state after a reload, more than once.
+
+  So: **verify against computed styles and DOM state rather than screenshots** — except when
+  the thing you are checking needs a paint, where you need the screenshot first and the
+  measurement second.
+- **MusicBrainz and the Cover Art Archive go unreachable for minutes at a time**, repeatedly,
+  from dev machines. A failing search is far more often that than a bug — retry before
+  concluding anything; the 503 path is deliberate and says which it is. It also produced a
+  memorable false lead once: two consecutive runs gave opposite results and looked like
+  case-sensitivity. It is *not* case-sensitive — all four casings of "The Slow
+  Rush"/"Tame Impala" were verified to return identical results.
 - **npm silently skips native binaries when Node is too old.** Vite 8 needs Node
   `^20.19.0 || >=22.12.0`; on 20.12.2 `npm install` merely *warns*, drops the unsupported
   optional `@rolldown/binding-*` package, and the failure only appears at build time as
   "Cannot find module './rolldown-binding.darwin-arm64.node'". The lockfile still records
   every platform, so Docker's node:22 stage is unaffected — this is a local-only trap.
-- **The browser preview pane serves stale composites.** It has shown a panel as transparent
-  and shown pre-fix state after a reload, more than once. **Verify against computed styles /
-  DOM state, not screenshots.**
-- **MusicBrainz is frequently unreachable from dev machines.** Two consecutive runs gave
-  opposite results and looked like case-sensitivity. It is *not* case-sensitive — verified all
-  four casings of "The Slow Rush"/"Tame Impala" return identical results.
 
 ## Known performance problems (profiled, not guessed)
 
@@ -243,28 +266,29 @@ Measured with 148 releases × 12 tracks:
 **Neither is a framework problem.** Both are reintroducible in Preact/React verbatim. Fix them
 regardless of stack — it's ~30 lines.
 
-## Frontend migration (in progress — toolchain and Downloads panel done)
+## Frontend migration (in progress)
 
 **Preact + Vite + TypeScript, in `ui/`.** Adopted incrementally: the vanilla app still serves
-the page, and ported panels are mounted into it by one extra module script.
+the page, and ported panels mount into it via one extra module script.
 
 **→ Full plan, API surface, port order and traps: [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md).**
 
-**Done:** toolchain, the typed API layer for every endpoint, localStorage compatibility, and
-the **Downloads panel** (port order #2, taken before the library window because it needed no
-new backend and so could be proven against real data immediately).
+| ported | still vanilla |
+| --- | --- |
+| Downloads panel, tab shell, library view, metadata editor, delete dialog | search bar, releases grid, filter column, candidates panel, log, profile |
 
 **How the two halves coexist:**
 
-- `interface/index.html` provides empty mount points (`#downloads-root`, `display: contents`
-  so the flex layout is untouched) and loads `dist/jimbrainz-ui.js` after `main.js`.
+- `interface/index.html` provides empty mount points (`#downloads-root`, `#tabs-root`,
+  `#library-root`) and loads `dist/jimbrainz-ui.js` after `main.js`. The mount points are
+  `display: contents` where they sit inside a flex row, so the layout is untouched.
 - Ported components reuse the **existing class names and IDs verbatim**, so `main.css` applies
   unchanged. A visual difference means a porting mistake, not a restyle.
-- Both files are ES modules and can't call each other, so the handful of cross-boundary calls
-  meet on `window.jimbrainz` (`ui/src/bridge.ts`). Two entries today:
-  `refreshDownloads` and `closeOtherDropdowns`. **An empty bridge means the migration is done.**
+- Both files are ES modules and can't call each other, so cross-boundary calls meet on
+  `window.jimbrainz` (`ui/src/bridge.ts`). Three entries today: `refreshDownloads`,
+  `closeOtherDropdowns`, `runSearch`. **An empty bridge means the migration is done.**
 
-Why, from measurements of the current code (the Downloads row is now realised):
+Why, from measurements of the original code:
 
 | hand-rolled machinery | count |
 | --- | --- |
@@ -275,22 +299,16 @@ Why, from measurements of the current code (the Downloads row is now realised):
 | `buildReleasesGrid` (unreusable table) | 312 lines |
 | hand-written keyed reconciliation | 81 lines → **deleted**, replaced by `key={job.id}` |
 
-Those 29 call sites *are* the "things not updating" complaint. The 81 lines of
-`data-job-id` lookup + `insertBefore` + `seen` set was a worse virtual DOM, and `key={job.id}`
-replaced all of it.
+Those 29 call sites *are* the "things not updating" complaint.
 
 **Don't expect the port to shrink the codebase — it doesn't.** Downloads went from 260 lines
-of `main.js` to 507 across six files in `ui/`. Roughly half of that is comments and type
-declarations, and the reusable parts (`lib/format.ts`, `lib/jobs.ts`) get spent again by the
-candidates panel. The return is the deleted reconciler, compile-time checking, and rows that
-can't silently stop updating — not fewer lines.
+of `main.js` to 507 across six files. Roughly half is comments and types, and the reusable
+parts get spent again by later panels. The return is the deleted reconciler, compile-time
+checking, and rows that can't silently stop updating — not fewer lines.
 
 Preact over React: same API, ~4 KB vs ~45 KB, `preact/compat` keeps the React ecosystem
-(TanStack Table etc.) available. TypeScript would have caught the real
-`releaseGroupContext is not defined` bug at compile time.
-
-**Not fixed by the migration:** the cobbled-together *look* (2,245 lines of accreted CSS —
-the original author's own comment calls it "a whole mess") and the lag above.
+available. TypeScript would have caught the real `releaseGroupContext is not defined` bug at
+compile time.
 
 ## Conventions
 
@@ -344,30 +362,37 @@ A green suite here means the logic is sound, not that it works against real infr
 
 ## Next up
 
-0. **Verify the Downloads port against a running backend.** It typechecks and the markup
-   matches the old renderer class-for-class, but it has never rendered a real job — that
-   needs Node ≥20.19, `npm run build`, and a live slskd. Watch specifically: the live speed
-   figure (byte deltas, not `job.speed`), the queue position line, and cancel.
-1. ~~A metadata manager~~ **Built.** `retag.py` + the editor overlay: pick the release an
-   album really is, see exactly what would change, apply. `edition_label` is finally written
-   by something, and it can pull the release's cover from the Cover Art Archive into the
-   folder. **What it does NOT do yet:** per-track editing (you take the release's tracklist
-   wholesale), embedding art into the audio rather than writing a cover file, and there's no
-   undo — the preview is the safety net, so keep it honest.
-2. Continue the port in the order in [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md):
-   candidates panel, filter column, releases grid, top bar. Downloads and the library are done.
-3. **A Settings tab.** The shell is built for it — add a `#settings-root` pane, an entry in
-   `TABS` in `ui/src/components/Tabs.tsx`, and a `[data-tab="settings"]` rule. No structural
-   change needed.
-4. Fix the two performance bugs — do this as part of the port, not after. The library view
-   already avoids #1 (`{expanded && <Tracks/>}`); the search view still has both.
-5. A design pass on the CSS. The "cobbled-together" complaint is not addressed by the
-   migration and needs its own deliberate effort. A first pass fixed the *systemic* faults —
-   no inherited baseline, colour-by-element-matrix, a duplicated button rule that made the
-   log button 6px taller than its neighbours. **What's left is a type scale.** Measured:
-   ~15 hand-picked `em` values with no relationship to each other, 10 distinct button
-   heights and 10 distinct paddings. Because every value is `em` relative to the 16px
-   browser base, this can't be fixed by setting a base size on `body` — the headings would
-   all shrink. It needs a real scale defined once and applied, which is a visual decision,
-   not a mechanical one. Un-sized `<span>`/`<div>` still land at 16px against neighbours at
-   14.4px; `#results-summary` and the grid expand column are patched individually for now.
+1. **Run it against real infrastructure.** Everything below the interface is fixture-tested
+   and has never met a live slskd. Watch specifically: the derived download speed (byte
+   deltas, not `job.speed`), queue position, cancel, and whether `SLSKD_DOWNLOAD_PATH`
+   resolves to the same files slskd writes.
+2. **Merge to `main`.** It still holds v0.2.1, so the repo's default branch shows the old
+   Lidarr README to anyone who visits, while `:latest` has been the slskd line since v0.3.0.
+3. Continue the port in the order in [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md):
+   candidates panel, filter column, releases grid, top bar.
+4. **A Settings tab.** The shell is built for it — add a `#settings-root` pane, an entry in
+   `TABS` in `ui/src/components/Tabs.tsx`, and a `[data-tab="settings"]` rule. Nothing
+   structural. The natural first contents are the env-only settings (`ORGANIZE_MODE`, paths)
+   and naming templates.
+5. Fix the two performance bugs — as part of the port, not after. The library view already
+   avoids #1 (`{expanded && <Tracks/>}`); the search view still has both.
+6. **A type scale.** The one systemic CSS fault left. Measured: ~15 hand-picked `em` values
+   with no relationship to each other, 10 distinct button heights, 10 distinct paddings.
+   Because every value is `em` relative to the 16px browser base, it can't be fixed by setting
+   a base size on `body` — the headings would all shrink. It needs a scale defined once and
+   applied, which is a visual decision, not a mechanical one. Un-sized `<span>`/`<div>` still
+   land at 16px against neighbours at 14.4px; `#results-summary` and the grid expand column
+   are patched individually for now.
+
+### Deliberately not built
+
+Worth knowing before someone "fixes" one of these:
+
+- **Per-track editing.** The metadata editor takes a release's tracklist wholesale. Files the
+  tracklist doesn't reach keep their own title and number rather than being renumbered.
+- **Embedding art into the audio.** Only a cover file is written; it's what `find_cover_file()`
+  prefers and it's one write instead of one per track.
+- **Undo.** For retag or delete. The preview is the safety net for the first, and the
+  confirmation dialog for the second — so keep both honest.
+- **Persisting the scan cache.** It's in memory, so a restart rescans. Was started and backed
+  out as out of scope; the per-folder mtime cache makes the rescan cheap.

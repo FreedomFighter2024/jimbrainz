@@ -300,7 +300,14 @@ export interface LibraryAlbum {
   /** Human label ("Deluxe edition"). '' for a single-edition album, 'Standard' when it has siblings. */
   edition: string
   release_mbid: string
-  /** Relative to LIBRARY_PATH. */
+  /**
+   * Where cover art lives on disk, if anywhere: 'file' (an image beside the tracks),
+   * 'embedded' (inside the audio), or '' (neither — fall back to the Cover Art Archive when
+   * there's a release_mbid). Detected during the scan so the UI doesn't fire requests that
+   * are certain to 404.
+   */
+  art: 'file' | 'embedded' | ''
+  /** Relative to LIBRARY_PATH. Also the key the art endpoint takes. */
   path: string
   track_count: number
   total_size: number

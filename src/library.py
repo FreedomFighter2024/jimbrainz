@@ -33,6 +33,118 @@ from src.matching import AUDIO_EXTENSIONS, file_extension
 _album_cache: dict[str, tuple[float, dict]] = {}
 
 
+#? Conventional cover filenames, in preference order. These are what the organizer carries
+#? across as companion files and what every other music tool writes.
+COVER_BASENAMES = ("cover", "folder", "front", "album", "albumart", "albumartsmall", "thumb")
+
+IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif", "bmp"}
+
+MIME_BY_EXTENSION = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "webp": "image/webp", "gif": "image/gif", "bmp": "image/bmp",
+}
+
+
+def find_cover_file(entries: list[Path]) -> Path | None:
+    """
+    A cover image sitting beside the tracks.
+
+    Preferred over embedded art because it's free to serve - no audio file to open and no
+    picture block to decode - and because it's what the organizer already copies across when
+    it files a download.
+    """
+    images = [e for e in entries if file_extension(e.name) in IMAGE_EXTENSIONS]
+    if not images:
+        return None
+
+    for wanted in COVER_BASENAMES:
+        for image in images:
+            if image.stem.lower() == wanted:
+                return image
+
+    #? no conventionally-named file, but an album folder holding exactly one image is
+    #? almost certainly holding its cover
+    return images[0] if len(images) == 1 else None
+
+
+def read_embedded_art(path: Path) -> tuple[bytes, str] | None:
+    """
+    Cover art stored inside the audio file itself.
+
+    Every container does this differently, and mutagen's `easy` interface deliberately
+    doesn't expose any of it, so this opens the file again without it. Worth the second open:
+    a lot of libraries have no separate cover file and would otherwise show nothing.
+    """
+    import mutagen
+
+    try:
+        audio = mutagen.File(str(path))
+    except Exception:
+        return None
+
+    if audio is None:
+        return None
+
+    #? FLAC and Ogg: a list of picture blocks
+    pictures = getattr(audio, "pictures", None)
+    if pictures:
+        picture = pictures[0]
+        return bytes(picture.data), (picture.mime or "image/jpeg")
+
+    tags = getattr(audio, "tags", None)
+    if tags is None:
+        return None
+
+    #? MP3: APIC frames, keyed as APIC:description so an exact lookup misses them
+    try:
+        for key in tags.keys():
+            if key.startswith("APIC"):
+                frame = tags[key]
+                return bytes(frame.data), (getattr(frame, "mime", None) or "image/jpeg")
+    except Exception:
+        pass
+
+    #? MP4/M4A: a 'covr' atom, whose format is a flag on the value rather than a mime type
+    try:
+        covers = tags.get("covr")
+        if covers:
+            cover = covers[0]
+            fmt = getattr(cover, "imageformat", None)
+            mime = "image/png" if fmt == 14 else "image/jpeg"
+            return bytes(cover), mime
+    except Exception:
+        pass
+
+    return None
+
+
+def load_album_art(directory: Path) -> tuple[bytes, str] | None:
+    """
+    The album's cover, from wherever it actually lives. Cheapest source first.
+
+    Used by the art endpoint. Kept separate from the scan so a scan never has to hold image
+    bytes for the whole library in memory at once.
+    """
+    try:
+        entries = sorted(p for p in directory.iterdir() if p.is_file())
+    except OSError:
+        return None
+
+    cover = find_cover_file(entries)
+    if cover is not None:
+        try:
+            mime = MIME_BY_EXTENSION.get(file_extension(cover.name), "image/jpeg")
+            return cover.read_bytes(), mime
+        except OSError:
+            pass
+
+    for entry in entries:
+        if file_extension(entry.name) in AUDIO_EXTENSIONS:
+            return read_embedded_art(entry)
+
+    return None
+
+
 def _first(audio, key: str) -> str:
     """mutagen's easy interface returns lists. Take the first value, or ''."""
     try:
@@ -138,6 +250,17 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
 
     tracks.sort(key=lambda t: (t["position"] is None, t["position"] or 0, t["filename"]))
 
+    #? Recorded during the scan so the interface knows whether asking for art is worth a
+    #? request at all. The embedded check costs one extra file open per album, which is
+    #? cheap beside the per-track opens above and is cached with the rest of the album.
+    if find_cover_file(entries) is not None:
+        art = "file"
+    else:
+        first_audio = next(
+            (e for e in entries if file_extension(e.name) in AUDIO_EXTENSIONS), None
+        )
+        art = "embedded" if first_audio and read_embedded_art(first_audio) else ""
+
     #? the album artist is what groups a library; falling back to the track artist keeps
     #? compilations and badly-tagged folders visible instead of dropping them
     artist = (_commonest([t["albumartist"] for t in tracks])
@@ -163,6 +286,9 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
         "year": date[:4] if date else "",
         "edition": _edition_from_dirname(directory.name),
         "release_mbid": release_mbid,
+        #? '' means no art on disk. The interface falls back to the Cover Art Archive when
+        #? there's a release MBID, exactly as the search view already does.
+        "art": art,
         "path": relative,
         "track_count": len(tracks),
         "total_size": sum(t["size"] for t in tracks),

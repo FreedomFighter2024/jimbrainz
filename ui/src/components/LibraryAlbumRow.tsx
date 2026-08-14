@@ -17,6 +17,49 @@ function trackTime(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
 }
 
+/**
+ * Cover art, from the best source available.
+ *
+ * Tries in order and falls through on load failure:
+ *
+ *   1. the library's own art endpoint - a cover file beside the tracks, or art embedded in
+ *      the audio. Instant, works offline, and shows what's actually on disk.
+ *   2. the Cover Art Archive, keyed on the *release* MBID. Note the search view uses the
+ *      release-GROUP id; here the release id is deliberate, because it's edition-specific
+ *      and a deluxe reissue frequently has different artwork from the original.
+ *
+ * The fallback is driven by onError rather than by probing up front: a HEAD request per
+ * album to decide would double the requests for no benefit, and the browser already tells
+ * us for free when an image fails.
+ */
+function AlbumArt({ album, size }: { album: LibraryAlbum; size: 'large' | 'small' }) {
+  const sources: string[] = []
+
+  if (album.art) {
+    sources.push(`/jimbrainz/library/art?album=${encodeURIComponent(album.path)}`)
+  }
+  if (album.release_mbid) {
+    sources.push(`https://coverartarchive.org/release/${album.release_mbid}/front-250`)
+  }
+
+  const [attempt, setAttempt] = useState(0)
+  const src = sources[attempt]
+
+  // an empty square rather than nothing, so rows don't jump around as art loads or fails
+  if (!src) return <div class={`library-art library-art-${size} is-empty`} aria-hidden="true" />
+
+  return (
+    <img
+      class={`library-art library-art-${size}`}
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setAttempt((n) => n + 1)}
+    />
+  )
+}
+
 function TrackList({ album }: { album: LibraryAlbum }) {
   return (
     <div class="library-tracks">
@@ -62,6 +105,7 @@ function EditionRow({ album }: { album: LibraryAlbum }) {
           {expanded ? '▽' : '▷'}
         </button>
 
+        <AlbumArt album={album} size="small" />
         <span class="library-edition has-siblings">{album.edition || 'Standard'}</span>
         {album.year && <span class="library-year">{album.year}</span>}
         <span class="text default-muted library-edition-meta">{meta.join(' · ')}</span>
@@ -124,6 +168,8 @@ export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum }: Props)
         >
           {expanded ? '▽' : '▷'}
         </button>
+
+        {only && <AlbumArt album={only} size="large" />}
 
         <div class="library-album-titles">
           {/*

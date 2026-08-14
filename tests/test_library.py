@@ -180,3 +180,142 @@ def test_deleted_albums_leave_the_cache(tmp_path, clear_cache):
 
     assert result["album_count"] == 0
     assert len(library._album_cache) == 0
+
+
+# ---------------------------------------------------------------- cover art
+
+def write_image(path, data=b"\xff\xd8\xff\xe0 fake jpeg body"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return path
+
+
+def test_cover_file_beside_the_tracks_is_found(tmp_path, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / "cover.jpg")
+
+    assert scan_library(str(tmp_path))["albums"][0]["art"] == "file"
+
+    data, mime = library.load_album_art(directory)
+    assert mime == "image/jpeg"
+    assert data.startswith(b"\xff\xd8")
+
+
+def test_conventional_names_beat_an_arbitrary_image(tmp_path, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / "zzz-band-photo.png", b"\x89PNG not the cover")
+    write_image(directory / "folder.jpg", b"\xff\xd8\xff the cover")
+
+    data, mime = library.load_album_art(directory)
+    assert data == b"\xff\xd8\xff the cover"
+    assert mime == "image/jpeg"
+
+
+def test_a_lone_image_is_assumed_to_be_the_cover(tmp_path, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / "scan001.png", b"\x89PNG lonely")
+
+    assert library.find_cover_file(sorted(directory.iterdir())).name == "scan001.png"
+
+
+def test_several_unconventionally_named_images_are_not_guessed_at(tmp_path, clear_cache):
+    """Two candidates and no convention to pick between them - better nothing than wrong."""
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / "scan001.png")
+    write_image(directory / "scan002.png")
+
+    assert library.find_cover_file(sorted(directory.iterdir())) is None
+
+
+def test_embedded_art_is_found_when_there_is_no_cover_file(tmp_path, clear_cache):
+    from mutagen.flac import FLAC, Picture
+
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    track = sorted(directory.glob("*.flac"))[0]
+
+    picture = Picture()
+    picture.data = b"\xff\xd8\xff embedded cover"
+    picture.mime = "image/jpeg"
+    audio = FLAC(str(track))
+    audio.add_picture(picture)
+    audio.save()
+
+    assert scan_library(str(tmp_path))["albums"][0]["art"] == "embedded"
+
+    data, mime = library.load_album_art(directory)
+    assert data == b"\xff\xd8\xff embedded cover"
+    assert mime == "image/jpeg"
+
+
+def test_album_with_no_art_anywhere_reports_none(tmp_path, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    assert scan_library(str(tmp_path))["albums"][0]["art"] == ""
+    assert library.load_album_art(directory) is None
+
+
+# ---------------------------------------------------------------- the art endpoint
+
+def make_client(tmp_path, monkeypatch):
+    """A test client wired to a throwaway library, with the poller and clients stubbed out."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.config import Config
+    from src.routes import library as library_route
+
+    monkeypatch.setattr(Config, "LIBRARY_PATH", str(tmp_path))
+    app = FastAPI()
+    app.include_router(library_route.router, prefix="/jimbrainz/library")
+    return TestClient(app)
+
+
+def test_art_endpoint_serves_the_cover(tmp_path, monkeypatch, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / "cover.jpg", b"\xff\xd8\xff real bytes")
+
+    client = make_client(tmp_path, monkeypatch)
+    response = client.get("/jimbrainz/library/art",
+                          params={"album": "Tame Impala/The Slow Rush (2020)"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert response.content == b"\xff\xd8\xff real bytes"
+
+
+def test_art_endpoint_404s_when_there_is_no_art(tmp_path, monkeypatch, clear_cache):
+    seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    client = make_client(tmp_path, monkeypatch)
+    assert client.get("/jimbrainz/library/art",
+                      params={"album": "Tame Impala/The Slow Rush (2020)"}).status_code == 404
+
+
+@pytest.mark.parametrize("attempt", [
+    "../../../../etc",
+    "Tame Impala/../../../../etc",
+    "/etc",
+    "",
+])
+def test_art_endpoint_refuses_to_read_outside_the_library(tmp_path, monkeypatch, attempt, clear_cache):
+    """
+    This is the only endpoint that turns user input into a filesystem read. Every one of
+    these resolves outside LIBRARY_PATH and must be refused - and refused with the same 404
+    as a missing album, so a probe learns nothing about what exists out there.
+    """
+    seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.get("/jimbrainz/library/art", params={"album": attempt})
+    assert response.status_code == 404
+
+
+def test_art_endpoint_refuses_a_symlink_pointing_out_of_the_library(tmp_path, monkeypatch, clear_cache):
+    """A path can be inside the library textually and still resolve elsewhere."""
+    import os
+    outside = tmp_path.parent / "outside-the-library"
+    outside.mkdir(exist_ok=True)
+    write_image(outside / "cover.jpg", b"\xff\xd8\xff secret")
+
+    seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    os.symlink(outside, tmp_path / "escape")
+
+    client = make_client(tmp_path, monkeypatch)
+    assert client.get("/jimbrainz/library/art", params={"album": "escape"}).status_code == 404

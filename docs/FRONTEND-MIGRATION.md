@@ -131,6 +131,9 @@ the reference. All prefixed `/jimbrainz/`.
 | `download/jobs` | GET | `{jobs[], tracking_enabled}`. `files_failed` is only present when slskd matched transfers — optional, not always-zero. |
 | `download/jobs/{id}/cancel` | POST | |
 | `download/jobs/clear` | POST | |
+| `library/albums` | GET | `{albums[], artists[], library_path, problem, ...}`. `problem` is a setup message (unset/missing LIBRARY_PATH), NOT an error — render it, don't throw. |
+| `library/rescan` | POST | same shape; drops the server's per-folder mtime cache |
+| `library/art?album=<relative path>` | GET | image bytes or 404. `album` is the path the scan reports. Only endpoint that reads the filesystem from user input — see the containment check. |
 | `interface_logs/interface_logs` | GET | **SSE stream**, not fetch. **Correction:** the frame is `{event_time, event_type, event_content, src?}` — this table was written from the endpoint, but `SSEHandler.emit()` in `src/logger.py` also sends a pre-formatted `event_time` and only attaches `src` when the record carried one. Frames without a `src` are real and must render. |
 
 Canonical shapes are in `src/routes/download.py` (pydantic models) and

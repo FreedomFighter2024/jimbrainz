@@ -21,6 +21,7 @@ expensive part and most of a library doesn't change between two visits to the pa
 """
 
 import os
+import re
 import time
 from pathlib import Path
 
@@ -32,17 +33,38 @@ from src.matching import AUDIO_EXTENSIONS, file_extension
 #? walk itself is cheap; opening files is not.
 _album_cache: dict[str, tuple[float, dict]] = {}
 
-
 #? Conventional cover filenames, in preference order. These are what the organizer carries
 #? across as companion files and what every other music tool writes.
 COVER_BASENAMES = ("cover", "folder", "front", "album", "albumart", "albumartsmall", "thumb")
 
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif", "bmp"}
 
+#? Filenames that say outright "this is not the front cover". Anchored and optionally
+#? numbered ("disc", "disc2", "cd 1"), NOT substring-matched - "Discovery.jpg" is a real
+#? cover and a substring check would throw it away.
+#? Deliberately NOT including "scan": a lone "scan001.jpg" is usually the front, because
+#? that's the sheet people scan first. Everything listed here names a specific part of the
+#? packaging that is definitively not the front.
+NON_COVER_PATTERN = re.compile(
+    r"(disc|disk|cd|dvd|vinyl|back|rear|inlay|booklet|matrix|label|media|tray|obi|insert|"
+    r"inside|sleeve\s*back)[\s._-]*\d*"
+)
+
 MIME_BY_EXTENSION = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
     "webp": "image/webp", "gif": "image/gif", "bmp": "image/bmp",
 }
+
+
+def _looks_like_a_non_cover(stem: str) -> bool:
+    """
+    True for images that are demonstrably NOT the front cover.
+
+    Matched as whole names rather than substrings, optionally numbered, so "disc2.jpg" is
+    caught while "Discovery.jpg" and "Cdiscover.png" are left alone - a substring check here
+    would reject real covers.
+    """
+    return bool(NON_COVER_PATTERN.fullmatch(stem.strip().lower()))
 
 
 def find_cover_file(entries: list[Path]) -> Path | None:
@@ -62,9 +84,40 @@ def find_cover_file(entries: list[Path]) -> Path | None:
             if image.stem.lower() == wanted:
                 return image
 
-    #? no conventionally-named file, but an album folder holding exactly one image is
-    #? almost certainly holding its cover
-    return images[0] if len(images) == 1 else None
+    #? No conventionally-named file. A folder holding exactly one image is almost certainly
+    #? holding its cover - unless that image is plainly a disc or a back scan, which is how
+    #? albums ended up illustrated with a picture of a CD.
+    if len(images) == 1 and not _looks_like_a_non_cover(images[0].stem):
+        return images[0]
+
+    return None
+
+
+#? Embedded pictures carry a type, and a file very often holds several. Rips from EAC and
+#? dBpoweramp routinely embed the front cover AND a scan of the disc, in no guaranteed order,
+#? so taking whichever came first showed people a picture of a CD instead of their album.
+#? Lower is better; anything unlisted sits in the middle.
+PICTURE_TYPE_PREFERENCE = {
+    3: 0,   # COVER_FRONT  - the album art, what we're actually after
+    0: 1,   # OTHER        - untyped. Very common, and usually the front in practice.
+    5: 3,   # LEAFLET_PAGE
+    4: 4,   # COVER_BACK
+    6: 5,   # MEDIA        - the label side of the disc. Legible, but not the cover.
+    1: 9,   # FILE_ICON    - 32x32 PNGs; never what anyone wants to look at
+    2: 9,   # OTHER_FILE_ICON
+}
+UNRANKED_PICTURE_PREFERENCE = 2
+
+
+def _best_picture(pictures: list) -> object | None:
+    """The most cover-like picture in the list, by its declared type."""
+    if not pictures:
+        return None
+
+    return min(
+        pictures,
+        key=lambda p: PICTURE_TYPE_PREFERENCE.get(getattr(p, "type", 0), UNRANKED_PICTURE_PREFERENCE),
+    )
 
 
 def read_embedded_art(path: Path) -> tuple[bytes, str] | None:
@@ -74,6 +127,8 @@ def read_embedded_art(path: Path) -> tuple[bytes, str] | None:
     Every container does this differently, and mutagen's `easy` interface deliberately
     doesn't expose any of it, so this opens the file again without it. Worth the second open:
     a lot of libraries have no separate cover file and would otherwise show nothing.
+
+    Picks by picture TYPE rather than by order - see PICTURE_TYPE_PREFERENCE.
     """
     import mutagen
 
@@ -86,21 +141,21 @@ def read_embedded_art(path: Path) -> tuple[bytes, str] | None:
         return None
 
     #? FLAC and Ogg: a list of picture blocks
-    pictures = getattr(audio, "pictures", None)
-    if pictures:
-        picture = pictures[0]
+    picture = _best_picture(list(getattr(audio, "pictures", None) or []))
+    if picture is not None:
         return bytes(picture.data), (picture.mime or "image/jpeg")
 
     tags = getattr(audio, "tags", None)
     if tags is None:
         return None
 
-    #? MP3: APIC frames, keyed as APIC:description so an exact lookup misses them
+    #? MP3: APIC frames, keyed as APIC:description so an exact lookup misses them - and a
+    #? file with both a cover and a disc scan has two of them
     try:
-        for key in tags.keys():
-            if key.startswith("APIC"):
-                frame = tags[key]
-                return bytes(frame.data), (getattr(frame, "mime", None) or "image/jpeg")
+        frames = [tags[key] for key in tags.keys() if key.startswith("APIC")]
+        frame = _best_picture(frames)
+        if frame is not None:
+            return bytes(frame.data), (getattr(frame, "mime", None) or "image/jpeg")
     except Exception:
         pass
 

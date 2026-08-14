@@ -319,3 +319,87 @@ def test_art_endpoint_refuses_a_symlink_pointing_out_of_the_library(tmp_path, mo
 
     client = make_client(tmp_path, monkeypatch)
     assert client.get("/jimbrainz/library/art", params={"album": "escape"}).status_code == 404
+
+
+# ---------------------------------------------------------------- picking the RIGHT picture
+
+def embed(path, *pictures):
+    """Attach picture blocks in the given order, so order-vs-type can be told apart."""
+    from mutagen.flac import FLAC, Picture
+    audio = FLAC(str(path))
+    for data, kind in pictures:
+        p = Picture()
+        p.data = data
+        p.mime = "image/jpeg"
+        p.type = kind
+        audio.add_picture(p)
+    audio.save()
+
+
+def test_the_front_cover_wins_even_when_the_disc_scan_comes_first(tmp_path, clear_cache):
+    """
+    The bug this exists for: albums showing a picture of a CD instead of their sleeve.
+
+    Rips from EAC and dBpoweramp routinely embed BOTH, in no guaranteed order. Taking
+    pictures[0] meant whichever block happened to be written first won.
+    """
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    track = sorted(directory.glob("*.flac"))[0]
+
+    #? disc first, on purpose
+    embed(track, (b"\xff\xd8 the disc", 6), (b"\xff\xd8 the sleeve", 3))
+
+    data, _ = library.load_album_art(directory)
+    assert data == b"\xff\xd8 the sleeve"
+
+
+def test_the_disc_is_still_used_when_it_is_all_there_is(tmp_path, clear_cache):
+    """A picture of the disc beats no picture at all."""
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    embed(sorted(directory.glob("*.flac"))[0], (b"\xff\xd8 only the disc", 6))
+
+    data, _ = library.load_album_art(directory)
+    assert data == b"\xff\xd8 only the disc"
+
+
+def test_untyped_art_beats_a_back_cover(tmp_path, clear_cache):
+    """Type 0 is 'other' and is usually just an untagged front; a back cover never is."""
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    embed(sorted(directory.glob("*.flac"))[0], (b"\xff\xd8 back", 4), (b"\xff\xd8 untyped", 0))
+
+    data, _ = library.load_album_art(directory)
+    assert data == b"\xff\xd8 untyped"
+
+
+def test_a_tiny_file_icon_is_never_chosen_over_real_art(tmp_path, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    embed(sorted(directory.glob("*.flac"))[0], (b"\xff\xd8 icon", 1), (b"\xff\xd8 disc", 6))
+
+    data, _ = library.load_album_art(directory)
+    assert data == b"\xff\xd8 disc"
+
+
+@pytest.mark.parametrize("stem", ["disc", "disc2", "cd", "cd 1", "back", "inlay", "booklet", "matrix"])
+def test_a_lone_disc_or_back_scan_is_not_treated_as_the_cover(tmp_path, stem, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / f"{stem}.jpg")
+
+    assert library.find_cover_file(sorted(directory.iterdir())) is None
+
+
+@pytest.mark.parametrize("stem", ["Discovery", "Cdiscover", "backstreet", "label maker"])
+def test_names_that_merely_contain_a_disc_word_are_still_covers(tmp_path, stem, clear_cache):
+    """A substring check here would throw away real covers."""
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / f"{stem}.jpg")
+
+    assert library.find_cover_file(sorted(directory.iterdir())).stem == stem
+
+
+def test_a_conventional_cover_still_wins_over_a_disc_scan(tmp_path, clear_cache):
+    directory = seed_album(tmp_path, "Tame Impala", "The Slow Rush (2020)", "The Slow Rush")
+    write_image(directory / "disc.jpg", b"\xff\xd8 disc")
+    write_image(directory / "cover.jpg", b"\xff\xd8 cover")
+
+    data, _ = library.load_album_art(directory)
+    assert data == b"\xff\xd8 cover"

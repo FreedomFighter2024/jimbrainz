@@ -55,7 +55,7 @@ src/
 interface/         vanilla JS/CSS. Still the served page; shrinking as panels are ported.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             139 tests, all Python, all fixture-driven
+tests/             156 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -141,6 +141,12 @@ Each of these cost real time. Don't rediscover them.
 - **The filter columns collapse on mobile and the class is inert on desktop.** Both the
   vanilla and Preact columns always carry `collapsed`; only the `max-width: 768px` block acts
   on it. Don't "tidy" that by removing the class on desktop — it's what keeps one code path.
+- **Embedded pictures have a TYPE, and files usually hold several.** Type 3 is
+  `COVER_FRONT`, type 6 is `MEDIA` — a scan of the disc itself. EAC and dBpoweramp rips
+  routinely embed both, in no guaranteed order, so `pictures[0]` showed albums illustrated
+  with a picture of a CD. Selection goes through `PICTURE_TYPE_PREFERENCE`, never by order.
+  The same trap applies to ID3 `APIC` frames (there can be several, keyed by description)
+  and to loose files — a lone `disc.jpg` is not the cover.
 - **`/library/art` is the only endpoint that turns user input into a filesystem read.** It
   takes a path relative to LIBRARY_PATH, so `is_within()` containment is load-bearing, not
   decoration — without it `?album=../../..` reads anything the container user can. It
@@ -261,7 +267,7 @@ the original author's own comment calls it "a whole mess") and the lag above.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 139 tests
+.venv/bin/python -m pytest tests/ -q  # 156 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -281,7 +287,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 139 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 156 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings (matching assumes `"Completed, Succeeded"`, `"Errored"`,

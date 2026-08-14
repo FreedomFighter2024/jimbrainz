@@ -343,6 +343,79 @@ export interface LibraryResponse {
   cached: number
 }
 
+/* ===== library: retagging ===== */
+
+/**
+ * The release to apply to an album already on disk.
+ *
+ * Same shape the download path stores with a job, deliberately: an album corrected by hand
+ * should end up carrying exactly the tags one downloaded fresh would have.
+ */
+export interface RetagRelease {
+  artist: string
+  album: string
+  year?: string | null
+  release_mbid?: string | null
+  release_group_mbid?: string | null
+  disambiguation?: string | null
+  media_format?: string | null
+  country?: string | null
+  catalog_number?: string | null
+  /** Overrides every derived edition name. This is what "pick which edition this is" writes. */
+  edition_label?: string | null
+  edition_tags?: string[]
+  tracks?: Track[]
+}
+
+export interface RetagFileChange {
+  filename: string
+  /** False when the tracklist didn't reach this file; it keeps its own title and number. */
+  matched: boolean
+  track_title: string
+  track_position: number | null
+  /** Only the tags that would actually change, keyed by tag name. */
+  changes: Record<string, { from: string; to: string }>
+}
+
+/**
+ * What applying a release would do. Produced by /retag/preview, which writes nothing.
+ *
+ * The apply endpoint recomputes this rather than accepting it back, so this is a faithful
+ * report rather than an instruction — you cannot edit it into doing something else.
+ */
+export interface RetagPlan {
+  album_path: string
+  /** null when the album couldn't be read at all; `problems` says why. */
+  source: string | null
+  target: string | null
+  target_path: string | null
+  moves: boolean
+  edition_label: string
+  files: RetagFileChange[]
+  changed_file_count: number
+  file_count: number
+  matched_tracks: number
+  expected_tracks: number
+  /** Non-fatal warnings worth showing before applying — mismatched track counts and so on. */
+  problems: string[]
+  /** Nothing to change. The album already carries this release. */
+  empty: boolean
+}
+
+export interface RetagResults {
+  mode: string
+  dry_run: boolean
+  tagged: number
+  failed: number
+  moved_to: string | null
+  problems: string[]
+}
+
+export interface RetagResponse {
+  plan: RetagPlan
+  results: RetagResults
+}
+
 /* ===== interface_logs ===== */
 
 export type LogSource = 'musicbrainz' | 'slskd' | 'jimbrainz' | (string & {})

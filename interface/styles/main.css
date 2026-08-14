@@ -2718,6 +2718,202 @@ span.red { color: var(--red-text); }
     flex-shrink: 0;
 }
 
+/* ---- metadata editor overlay ---- */
+
+/*
+ * Deliberately shaped like #candidates-window: it is the same interaction - here is a thing,
+ * here are candidate matches, pick one - and reusing the geometry means it reads as part of
+ * the app rather than a second dialog someone bolted on.
+ */
+#metadata-window {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(900px, 94vw);
+    height: min(76vh, 680px);
+    z-index: 700;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--background-color-light);
+    border: 1px solid var(--main-text);
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.65);
+}
+
+#metadata-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: 10px;
+    gap: 8px;
+}
+
+#metadata-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--muted-text);
+    padding-bottom: 8px;
+}
+
+#metadata-header > h4 { flex-shrink: 0; }
+.metadata-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+
+#metadata-close-button {
+    background: transparent;
+    border: 0;
+    color: var(--white-tertiary-text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 0.9em;
+    min-width: 28px;
+}
+#metadata-close-button:hover { color: var(--red-text); }
+
+#metadata-search { display: flex; gap: 8px; flex-shrink: 0; }
+#metadata-search > input { flex: 1; }
+
+/* releases on the left, what would change on the right */
+#metadata-body {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+}
+
+.metadata-releases {
+    flex: 0 0 40%;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+    min-height: 0;
+    border-right: 1px solid var(--muted-text);
+    padding-right: 8px;
+}
+
+.metadata-release {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--white-secondary-text);
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    padding: 4px 6px;
+    text-align: left;
+    flex-shrink: 0;
+}
+
+.metadata-release:hover { color: var(--main-hover-text); border-color: var(--muted-text); }
+.metadata-release.active { border-color: var(--main-text); color: var(--main-text); }
+
+.metadata-release-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metadata-release-detail { flex-shrink: 0; font-size: 0.92em; }
+.metadata-release-tracks { flex-shrink: 0; color: var(--white-tertiary-text); }
+
+/* the strongest signal a release is the wrong one for these files */
+.metadata-release-tracks.mismatch { color: var(--yellow-text); }
+
+.metadata-plan {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.metadata-field { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+.metadata-field > span:first-child { font-family: var(--font-family-condensed); font-size: 0.82em; }
+.metadata-hint { font-size: 0.78em; }
+
+.metadata-problem { padding: 2px 0; }
+
+.metadata-move {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+    border: 1px solid var(--muted-text);
+    padding: 5px 7px;
+    flex-shrink: 0;
+}
+
+.metadata-file {
+    border-top: 1px solid var(--muted-text);
+    padding-top: 5px;
+    flex-shrink: 0;
+}
+
+.metadata-file-name {
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.metadata-change {
+    display: flex;
+    gap: 8px;
+    font-family: var(--font-family-condensed);
+    font-size: 0.8em;
+    padding-left: 10px;
+}
+
+.metadata-tag { flex: 0 0 9em; }
+.metadata-from { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through; }
+.metadata-to { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.metadata-status { padding: 16px 6px; text-align: center; }
+
+#metadata-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--muted-text);
+    padding-top: 8px;
+}
+
+.metadata-summary, .metadata-result { flex: 1; font-family: var(--font-family-condensed); font-size: 0.82em; }
+
+#metadata-apply-button {
+    background-color: var(--background-color-input);
+    border: 1px solid var(--main-text);
+    color: var(--main-text);
+    font-family: var(--font-family-condensed);
+    font-size: 0.9em;
+    padding: 5px 16px;
+    cursor: pointer;
+}
+
+#metadata-apply-button:hover:not(:disabled) { color: var(--main-hover-text); border-color: var(--main-hover-text); }
+#metadata-apply-button:disabled { opacity: 0.4; cursor: default; }
+
+.library-edit-button {
+    background: transparent;
+    border: 1px solid var(--muted-text);
+    color: var(--white-tertiary-text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    letter-spacing: 0.05em;
+    padding: 1px 7px;
+    text-transform: uppercase;
+}
+
+.library-edit-button:hover { color: var(--main-hover-text); border-color: var(--main-text); }
+
+
 /* ============================================================================
  * ? RESPONSIVE
  *
@@ -2913,12 +3109,32 @@ span.red { color: var(--red-text); }
         min-width: 560px;
     }
 
-    /* ---- candidates overlay ---- */
+    /* ---- overlays ---- */
 
     #candidates-window {
         width: calc(100vw - 16px);
         height: min(80vh, 640px);
     }
+
+    #metadata-window {
+        width: calc(100vw - 12px);
+        height: calc(100vh - 12px);
+    }
+
+    /* side by side needs width this doesn't have; releases above the diff instead */
+    #metadata-body { flex-direction: column; }
+
+    .metadata-releases {
+        flex: 0 0 40%;
+        border-right: 0;
+        border-bottom: 1px solid var(--muted-text);
+        padding-right: 0;
+        padding-bottom: 6px;
+    }
+
+    #metadata-footer { flex-wrap: wrap; }
+    .metadata-summary, .metadata-result { flex: 1 1 100%; }
+    .metadata-tag { flex: 0 0 7em; }
 
     /* ---- touch targets ---- */
 

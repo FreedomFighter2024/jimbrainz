@@ -2,11 +2,13 @@ import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response
+from pydantic import BaseModel, Field
 
 from src.config import Config
-from src.library import load_album_art, scan_library
+from src.library import forget_cached_album, load_album_art, scan_library
 from src.logger import logger
 from src.organizer import is_within
+from src.retag import execute_retag, plan_retag
 
 router = APIRouter()
 
@@ -107,3 +109,99 @@ async def art(album: str):
         #? letting an edit appear on its own.
         headers={"Cache-Control": "private, max-age=300"},
     )
+
+
+class RetagRelease(BaseModel):
+    """
+    The release to apply. Same shape the download path stores with a job, so an album
+    corrected by hand ends up carrying exactly the tags one downloaded fresh would have.
+    """
+    artist: str = ""
+    album: str = ""
+    year: str | None = None
+    release_mbid: str | None = None
+    release_group_mbid: str | None = None
+    disambiguation: str | None = None
+    media_format: str | None = None
+    country: str | None = None
+    catalog_number: str | None = None
+    edition_label: str | None = None
+    edition_tags: list[str] = Field(default_factory=list)
+    tracks: list[dict] = Field(default_factory=list)
+
+
+class RetagRequest(BaseModel):
+    #? relative to LIBRARY_PATH, as the scan reports it
+    album_path: str
+    release: RetagRelease
+
+
+@router.post("/retag/preview")
+async def retag_preview(request: RetagRequest):
+    """
+    What applying this release would change. Writes nothing.
+
+    Separate from apply on purpose rather than an `apply=false` flag: this is the endpoint
+    the interface calls while you're still choosing, so it must be impossible for it to
+    modify anything by accident.
+    """
+    if not Config.LIBRARY_PATH:
+        raise HTTPException(status_code=400, detail="LIBRARY_PATH is not set")
+
+    try:
+        return await asyncio.to_thread(
+            plan_retag, request.album_path, request.release.model_dump(), Config.LIBRARY_PATH
+        )
+
+    except Exception as e:
+        logger.error(f"Exception in /retag/preview endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error planning the retag: {e}")
+
+
+@router.post("/retag/apply")
+async def retag_apply(request: RetagRequest):
+    """
+    Write the tags and re-file the folder.
+
+    The plan is recomputed here rather than accepted from the client: a plan is a list of
+    file operations, and taking one over the wire would let anyone hand us arbitrary paths
+    to write to. Recomputing costs a directory read and keeps every guard in plan_retag on
+    the only path that can actually write.
+    """
+    if not Config.LIBRARY_PATH:
+        raise HTTPException(status_code=400, detail="LIBRARY_PATH is not set")
+
+    release = request.release.model_dump()
+
+    try:
+        plan = await asyncio.to_thread(
+            plan_retag, request.album_path, release, Config.LIBRARY_PATH
+        )
+
+        if plan["source"] is None:
+            raise HTTPException(status_code=400, detail="; ".join(plan["problems"]))
+
+        results = await asyncio.to_thread(execute_retag, plan, release, "apply")
+
+        #? The cache keys on the folder's mtime, which a retag does not move - so without
+        #? this the interface would keep showing the old tags and the edit would look like
+        #? it had failed. Both the old and new locations go, since a move leaves the source
+        #? key pointing at a folder that no longer exists.
+        forget_cached_album(plan["source"])
+        if results.get("moved_to"):
+            forget_cached_album(results["moved_to"])
+
+        logger.info(
+            f"retagged {results['tagged']} file(s) in {request.album_path}"
+            + (f", re-filed as {Path(results['moved_to']).name}" if results.get("moved_to") else ""),
+            extra={"frontend": True},
+        )
+
+        return {"plan": plan, "results": results}
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"Exception in /retag/apply endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error applying the retag: {e}")

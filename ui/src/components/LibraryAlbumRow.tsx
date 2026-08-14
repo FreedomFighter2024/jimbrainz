@@ -82,7 +82,7 @@ function TrackList({ album }: { album: LibraryAlbum }) {
  *
  * Only rendered when an album actually has more than one edition - see the group row below.
  */
-function EditionRow({ album }: { album: LibraryAlbum }) {
+function EditionRow({ album, onEdit }: { album: LibraryAlbum; onEdit: (a: LibraryAlbum) => void }) {
   const [expanded, setExpanded] = useState(false)
 
   const meta = [
@@ -116,6 +116,15 @@ function EditionRow({ album }: { album: LibraryAlbum }) {
         )}
 
         <span class="text white-tertiary library-path" title={album.path}>{album.path}</span>
+
+        <button
+          type="button"
+          class="library-edit-button"
+          title="correct this edition's metadata"
+          onClick={() => onEdit(album)}
+        >
+          edit
+        </button>
       </div>
 
       {expanded && <TrackList album={album} />}
@@ -127,6 +136,8 @@ interface Props {
   group: AlbumGroup
   onSearchArtist: (artist: string) => void
   onSearchAlbum: (group: AlbumGroup) => void
+  /** Opens the metadata editor. Takes an edition, since that's what gets corrected. */
+  onEdit: (album: LibraryAlbum) => void
 }
 
 /**
@@ -140,7 +151,7 @@ interface Props {
  * tracks rather than through a single pointless "Standard" row, which is the overwhelmingly
  * common case in a real library.
  */
-export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum }: Props) {
+export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum, onEdit }: Props) {
   const [expanded, setExpanded] = useState(false)
 
   const multiple = group.editions.length > 1
@@ -216,6 +227,19 @@ export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum }: Props)
             mixed tags
           </span>
         )}
+
+        {/* with several editions the control belongs on each of them, since correcting one
+            is not correcting the others */}
+        {!multiple && only && (
+          <button
+            type="button"
+            class="library-edit-button"
+            title="correct this album's metadata"
+            onClick={() => onEdit(only)}
+          >
+            edit
+          </button>
+        )}
       </div>
 
       <div class="library-album-meta">
@@ -233,7 +257,7 @@ export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum }: Props)
       {expanded && multiple && (
         <div class="library-editions">
           {group.editions.map((album) => (
-            <EditionRow key={album.key} album={album} />
+            <EditionRow key={album.key} album={album} onEdit={onEdit} />
           ))}
         </div>
       )}

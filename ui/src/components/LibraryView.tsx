@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'preact/hooks'
 
+import type { LibraryAlbum } from '../api/types'
 import { bridge } from '../bridge'
 import { useLibrary } from '../hooks/useLibrary'
 import { groupAlbums, type AlbumGroup } from '../lib/groupAlbums'
 import { LibraryAlbumRow } from './LibraryAlbumRow'
+import { MetadataEditor } from './MetadataEditor'
 import type { TabId } from './Tabs'
 
 interface Props {
@@ -33,6 +35,10 @@ export function LibraryView({ active, onNavigate }: Props) {
    * first one most of the way off the screen, and the albums are what you came for.
    */
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
+
+  //? which album the metadata editor is open for, or null. One at a time on purpose - it is
+  //? an overlay over the whole view, not a per-row inline form.
+  const [editing, setEditing] = useState<LibraryAlbum | null>(null)
 
   //? grouped first, then filtered, so a filter never splits an album from its own editions
   const groups = useMemo(() => groupAlbums(albums), [albums])
@@ -185,6 +191,7 @@ export function LibraryView({ active, onNavigate }: Props) {
               group={group}
               onSearchArtist={searchArtist}
               onSearchAlbum={searchAlbum}
+              onEdit={setEditing}
             />
           ))}
 
@@ -195,6 +202,16 @@ export function LibraryView({ active, onNavigate }: Props) {
           )}
         </div>
       </div>
+
+      {editing && (
+        <MetadataEditor
+          album={editing}
+          onClose={() => setEditing(null)}
+          /* the retag already dropped this folder from the server's cache, so a plain
+             reload picks up the new tags and path without a full rescan */
+          onApplied={() => reload(false)}
+        />
+      )}
     </div>
   )
 }

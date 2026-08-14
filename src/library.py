@@ -357,6 +357,19 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
     }
 
 
+def forget_cached_album(directory: str) -> None:
+    """
+    Drop a folder from the scan cache so the next scan re-reads it.
+
+    Necessary because the cache keys on the DIRECTORY's mtime, and rewriting a file's tags
+    does not change that - only adding, removing or renaming entries does. Measured, not
+    assumed. Without this, retagging an album in place is invisible to the scanner and the
+    interface keeps showing the old values until someone forces a full rescan, which reads
+    exactly like the edit silently failed.
+    """
+    _album_cache.pop(directory, None)
+
+
 def scan_library(library_root: str, force: bool = False) -> dict:
     """
     Walk the library and return every album found, grouped for display.

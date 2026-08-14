@@ -12,6 +12,7 @@ the how.
 | localStorage compatibility | **done** — `ui/src/state/persisted.ts`. Column-state reconciliation still owed, see there. |
 | Downloads panel | **ported**, verified against a running backend with seeded jobs. |
 | Tab shell | **done** — `Tabs.tsx`. Search/Library, built to take Settings as a third. |
+| Metadata editor | **done** — `MetadataEditor.tsx`, an overlay from the library reusing the candidates-window shape. |
 | Library window | **done** — `LibraryView.tsx` + `src/library.py`. One row per album, editions nested under it, same as release-group → releases in search. |
 | Multi-stage Dockerfile | **done** — `ui` stage builds into `interface/dist`. |
 | Cache-header fix | **done** — hashed chunks immutable, entry bundle revalidates. |
@@ -133,6 +134,8 @@ the reference. All prefixed `/jimbrainz/`.
 | `download/jobs/clear` | POST | |
 | `library/albums` | GET | `{albums[], artists[], library_path, problem, ...}`. `problem` is a setup message (unset/missing LIBRARY_PATH), NOT an error — render it, don't throw. |
 | `library/rescan` | POST | same shape; drops the server's per-folder mtime cache |
+| `library/retag/preview` | POST | `{album_path, release}` → a plan. Writes nothing, deliberately a separate endpoint from apply rather than a flag. |
+| `library/retag/apply` | POST | same body; recomputes the plan server-side and executes it. Returns `{plan, results}`. |
 | `library/art?album=<relative path>` | GET | image bytes or 404. `album` is the path the scan reports. Only endpoint that reads the filesystem from user input — see the containment check. |
 | `interface_logs/interface_logs` | GET | **SSE stream**, not fetch. **Correction:** the frame is `{event_time, event_type, event_content, src?}` — this table was written from the endpoint, but `SSEHandler.emit()` in `src/logger.py` also sends a pre-formatted `event_time` and only attaches `src` when the record carried one. Frames without a `src` are real and must render. |
 

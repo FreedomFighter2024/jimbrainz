@@ -49,13 +49,15 @@ src/
                    finds cover art (file beside the tracks, else embedded in the audio).
   store.py         SQLite job store + transfer reconciliation helpers.
   poller.py        background task: slskd transfers -> job status transitions.
-  organizer.py     the ONLY code that writes to the user's filesystem.
+  organizer.py     writes downloads into the library. Plan/execute split, dry_run default.
+  retag.py         the metadata manager's write half - applies a chosen release to an album
+                   already on disk. Same plan/execute split, for the same reasons.
   api/             musicbrainz_endpoint.py, slskd_endpoint.py, app.py
   routes/          search_musicbrainz, download, monitor_slskd, interface_logs, library
 interface/         vanilla JS/CSS. Still the served page; shrinking as panels are ported.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             156 tests, all Python, all fixture-driven
+tests/             173 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -89,6 +91,13 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   **An untagged folder is never treated as a different release** — libraries predating
   jimbrainz have no MBIDs, and forking every one of those albums would be far worse than
   sharing a folder.
+- **There are now TWO writers to the user's filesystem**, and both use the same plan/execute
+  split: `organizer.py` files downloads in, `retag.py` corrects albums already there. A
+  preview that disagrees with the write it previews is worse than no preview, so both derive
+  the tags from one shared `organizer.tag_values()` rather than computing them twice. The
+  apply endpoint **recomputes the plan** rather than accepting the previewed one back — a
+  plan is a list of file operations, and taking one over the wire would let a caller name
+  arbitrary paths to write to.
 - **Errors degrade rather than crash.** Unwritable DB → downloads still work, untracked.
   Unreachable slskd → stored jobs still listed, no live progress.
 
@@ -141,6 +150,11 @@ Each of these cost real time. Don't rediscover them.
 - **The filter columns collapse on mobile and the class is inert on desktop.** Both the
   vanilla and Preact columns always carry `collapsed`; only the `max-width: 768px` block acts
   on it. Don't "tidy" that by removing the class on desktop — it's what keeps one code path.
+- **Retagging a file does NOT change its directory's mtime** — only adding, removing or
+  renaming entries does. Measured, not assumed. The library cache keys on directory mtime,
+  so an in-place retag is invisible to the scanner and the edit looks like it silently
+  failed. `forget_cached_album()` exists for exactly this, and the retag endpoint calls it
+  for both the old and new locations.
 - **Embedded pictures have a TYPE, and files usually hold several.** Type 3 is
   `COVER_FRONT`, type 6 is `MEDIA` — a scan of the disc itself. EAC and dBpoweramp rips
   routinely embed both, in no guaranteed order, so `pictures[0]` showed albums illustrated
@@ -267,7 +281,7 @@ the original author's own comment calls it "a whole mess") and the lag above.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 156 tests
+.venv/bin/python -m pytest tests/ -q  # 173 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -287,7 +301,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 156 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 173 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings (matching assumes `"Completed, Succeeded"`, `"Errored"`,
@@ -305,11 +319,11 @@ A green suite here means the logic is sound, not that it works against real infr
    matches the old renderer class-for-class, but it has never rendered a real job — that
    needs Node ≥20.19, `npm run build`, and a live slskd. Watch specifically: the live speed
    figure (byte deltas, not `job.speed`), the queue position line, and cancel.
-1. **A metadata manager** — the user's stated next want, Picard-shaped: pick which edition an
-   album actually is and correct its tags. The groundwork is deliberately in place:
-   `release.edition_label` already overrides every derived source, and `library.py` surfaces
-   `mixed_tags` for folders whose files disagree. Needs a write path (retag + re-file an
-   existing album), which nothing has yet — the organizer only ever writes tags on the way in.
+1. ~~A metadata manager~~ **Built.** `retag.py` + the editor overlay: pick the release an
+   album really is, see exactly what would change, apply. `edition_label` is finally written
+   by something. **What it does NOT do yet:** per-track editing (you take the release's
+   tracklist wholesale), nothing writes cover art, and there's no undo — the preview is the
+   safety net, so keep it honest.
 2. Continue the port in the order in [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md):
    candidates panel, filter column, releases grid, top bar. Downloads and the library are done.
 3. **A Settings tab.** The shell is built for it — add a `#settings-root` pane, an entry in

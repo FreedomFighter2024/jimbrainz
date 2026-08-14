@@ -334,26 +334,15 @@ def plan_organization(job: dict, download_root: str, library_root: str) -> dict:
     }
 
 
-def write_tags(path: Path, release: dict, track: dict | None) -> None:
+def tag_values(release: dict, track: dict | None) -> dict:
     """
-    Tag the file from the MusicBrainz release it came from.
+    The tags a file should carry for this release and track.
 
-    Writes the MusicBrainz IDs too, so the resulting library stays legible to Picard/beets
-    later instead of being a jimbrainz-only artifact. Tagging failures are logged and
-    tolerated: a filed-but-untagged file is a far better outcome than a half-organized album.
+    Split out from write_tags() so the retag preview can show what applying a release WOULD
+    change without duplicating the rules. Two copies of this would drift, and a preview that
+    disagrees with the write it is previewing is worse than no preview - the same reason
+    dry-run runs the identical plan rather than a parallel one.
     """
-    import mutagen
-
-    try:
-        audio = mutagen.File(str(path), easy=True)
-    except Exception as e:
-        logger.warning(f"could not read tags on {path.name}: {e}")
-        return
-
-    if audio is None:
-        logger.warning(f"unsupported audio format for tagging: {path.name}")
-        return
-
     values = {
         "album": release.get("album"),
         "albumartist": release.get("artist"),
@@ -378,7 +367,32 @@ def write_tags(path: Path, release: dict, track: dict | None) -> None:
         if track.get("position"):
             values["tracknumber"] = str(track["position"])
 
-    for key, value in values.items():
+    #? empty values are dropped rather than written as blanks - clearing a tag the user
+    #? already has because MusicBrainz didn't supply one would be destructive
+    return {key: str(value) for key, value in values.items() if value}
+
+
+def write_tags(path: Path, release: dict, track: dict | None) -> None:
+    """
+    Tag the file from the MusicBrainz release it came from.
+
+    Writes the MusicBrainz IDs too, so the resulting library stays legible to Picard/beets
+    later instead of being a jimbrainz-only artifact. Tagging failures are logged and
+    tolerated: a filed-but-untagged file is a far better outcome than a half-organized album.
+    """
+    import mutagen
+
+    try:
+        audio = mutagen.File(str(path), easy=True)
+    except Exception as e:
+        logger.warning(f"could not read tags on {path.name}: {e}")
+        return
+
+    if audio is None:
+        logger.warning(f"unsupported audio format for tagging: {path.name}")
+        return
+
+    for key, value in tag_values(release, track).items():
         if not value:
             continue
 

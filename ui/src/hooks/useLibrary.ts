@@ -15,7 +15,11 @@ export interface LibraryState {
   loaded: boolean
   scanSeconds: number
   libraryPath: string
-  reload: (force?: boolean) => void
+  /**
+   * Refetch. Resolves with the fresh album list, so a caller holding on to one album (the
+   * metadata editor does) can find its new state rather than keeping a stale copy.
+   */
+  reload: (force?: boolean) => Promise<LibraryAlbum[]>
 }
 
 /**
@@ -36,7 +40,7 @@ export function useLibrary(enabled: boolean): LibraryState {
   const [scanSeconds, setScanSeconds] = useState(0)
   const [libraryPath, setLibraryPath] = useState('')
 
-  const load = useCallback(async (force: boolean) => {
+  const load = useCallback(async (force: boolean): Promise<LibraryAlbum[]> => {
     setLoading(true)
 
     try {
@@ -47,8 +51,10 @@ export function useLibrary(enabled: boolean): LibraryState {
       setLibraryPath(result.library_path)
       setScanSeconds(result.scan_seconds)
       setError(null)
+      return result.albums
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'failed to read the library')
+      return []
     } finally {
       setLoading(false)
       setLoaded(true)
@@ -61,7 +67,7 @@ export function useLibrary(enabled: boolean): LibraryState {
     if (enabled && !loaded && !loading) void load(false)
   }, [enabled, loaded, loading, load])
 
-  const reload = useCallback((force = false) => void load(force), [load])
+  const reload = useCallback((force = false) => load(force), [load])
 
   return {
     albums, artists, problem, error, loading, loaded, scanSeconds, libraryPath, reload,

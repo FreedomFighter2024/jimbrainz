@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import { MusicBrainzUnavailable } from '../api/http'
 import * as libraryApi from '../api/library'
@@ -15,8 +15,13 @@ import {
 interface Props {
   album: LibraryAlbum
   onClose: () => void
-  /** Called after a successful apply, so the library can pick up the new tags and path. */
-  onApplied: () => void
+  /**
+   * Called after a successful apply with the album's path afterwards, which differs from the
+   * one it opened with whenever the folder was renamed. The library reloads and hands back
+   * the refreshed album, so this editor keeps working on what it just wrote rather than on a
+   * stale copy pointing at a folder that no longer exists.
+   */
+  onApplied: (newPath: string) => void
 }
 
 /** The fields you can type into. Everything else comes from the release you pick. */
@@ -138,8 +143,39 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
-  const setField = (key: keyof Fields, value: string) =>
+  /*
+   * Re-seed when the album changes underneath us, which happens after an apply: the parent
+   * reloads the library and hands back the same album with its new tags, path and art. The
+   * fields have to follow, or the editor keeps showing what you changed FROM and a second
+   * edit would be computed against values that are no longer on disk.
+   *
+   * Skipped on mount, because useState already seeded from the same album. Beyond being
+   * redundant, running it on mount means a late effect flush can overwrite something typed
+   * before it fired - which is exactly what happened the first time this was tested.
+   */
+  const seeded = useRef(false)
+
+  useEffect(() => {
+    if (!seeded.current) {
+      seeded.current = true
+      return
+    }
+
+    setFields({
+      artist: album.artist,
+      album: album.album,
+      year: album.year,
+      editionLabel: album.edition === 'Standard' ? '' : album.edition,
+    })
+    setFetchArt(!album.art)
+  }, [album.path, album.artist, album.album, album.year, album.edition, album.art])
+
+  const setField = (key: keyof Fields, value: string) => {
+    //? the message describes a write that has already happened; the moment you change
+    //? anything it stops describing what the apply button would now do
+    setApplied(null)
     setFields((current) => ({ ...current, [key]: value }))
+  }
 
   const search = useCallback(async () => {
     setSearching(true)
@@ -184,6 +220,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
 
   /** Picking a release replaces the fields with its values, which you can then still edit. */
   const chooseRelease = (release: Release) => {
+    setApplied(null)
     setSelected(release)
     const built = buildRetagRelease(release, {
       artist: album.artist,
@@ -234,8 +271,6 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
 
   // Debounced: the plan is a server round trip and this runs on every keystroke.
   useEffect(() => {
-    if (applied) return
-
     setPlanning(true)
     const timer = setTimeout(async () => {
       try {
@@ -250,7 +285,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
     }, PREVIEW_DEBOUNCE_MS)
 
     return () => clearTimeout(timer)
-  }, [album.path, payload, fetchArt, applied])
+  }, [album.path, payload, fetchArt])
 
   const apply = async () => {
     setApplying(true)
@@ -262,14 +297,17 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
       if (results.failed) {
         setApplyError(`${results.failed} file(s) could not be written`)
       } else {
+        //? "Retagged 0 file(s)" is a silly thing to say when only the folder changed, which
+        //? is exactly what happens if you edit nothing but the edition name
         setApplied(
           [
-            `Retagged ${results.tagged} file(s)`,
+            results.tagged ? `Retagged ${results.tagged} file(s)` : '',
             results.art_written ? `saved ${results.art_written}` : '',
             results.moved_to ? 're-filed the folder' : '',
-          ].filter(Boolean).join(', ') + '.',
+          ].filter(Boolean).join(', ').replace(/^./, (c) => c.toUpperCase()) + '.',
         )
-        onApplied()
+        //? where the album lives now - the same path unless the folder was renamed
+        onApplied(results.moved_to && plan?.target_path ? plan.target_path : album.path)
       }
     } catch (caught) {
       setApplyError(caught instanceof Error ? caught.message : 'could not apply the changes')
@@ -456,7 +494,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
           {applied && <span class="text green metadata-result">{applied}</span>}
           {applyError && <span class="text red metadata-result">{applyError}</span>}
 
-          {!applied && !applyError && plan && !plan.empty && (
+          {!applyError && plan && !plan.empty && (
             <span class="text default-muted metadata-summary">
               {plan.changed_file_count} of {plan.file_count} file(s) would change
               {plan.art.action === 'download' ? ', cover art would be downloaded' : ''}
@@ -472,7 +510,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
           <button
             type="button"
             id="metadata-apply-button"
-            disabled={!plan || plan.empty || planning || applying || Boolean(applied)}
+            disabled={!plan || plan.empty || planning || applying}
             onClick={() => void apply()}
           >
             {applying ? 'applying...' : 'apply'}

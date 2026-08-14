@@ -207,9 +207,17 @@ export function LibraryView({ active, onNavigate }: Props) {
         <MetadataEditor
           album={editing}
           onClose={() => setEditing(null)}
-          /* the retag already dropped this folder from the server's cache, so a plain
-             reload picks up the new tags and path without a full rescan */
-          onApplied={() => reload(false)}
+          /*
+            The retag already dropped this folder from the server's cache, so a plain reload
+            picks up the new tags and path without a full rescan - but the editor is holding
+            the album object it was opened with, which is now stale in every field that just
+            changed. Re-resolve it by its new path so the open editor shows what it did.
+          */
+          onApplied={async (newPath) => {
+            const fresh = await reload(false)
+            const updated = fresh.find((candidate) => candidate.path === newPath)
+            if (updated) setEditing(updated)
+          }}
         />
       )}
     </div>

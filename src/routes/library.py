@@ -5,7 +5,8 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from src.config import Config
-from src.library import forget_cached_album, load_album_art, scan_library
+from src.library import (delete_album, forget_cached_album, load_album_art,
+                         scan_library, summarize_for_deletion)
 from src.logger import logger
 from src.organizer import is_within
 from src.api.coverart_endpoint import CoverArtClient
@@ -224,3 +225,63 @@ async def retag_apply(request: RetagRequest):
     except Exception as e:
         logger.error(f"Exception in /retag/apply endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error applying the retag: {e}")
+
+
+class DeleteRequest(BaseModel):
+    #? relative to LIBRARY_PATH, as the scan reports it
+    album_path: str
+
+
+@router.post("/delete")
+async def delete(request: DeleteRequest):
+    """
+    Remove an album folder and everything in it. Permanent.
+
+    A POST rather than a DELETE verb only because the body carries a path; the guards are in
+    src/library.py::delete_album, which is where they belong - this endpoint deliberately
+    adds no judgement of its own beyond refusing when LIBRARY_PATH isn't set.
+
+    Refusals come back as 400 with a reason rather than as a 404, because unlike the art
+    endpoint there is nothing to hide here: you are deleting your own library, and being told
+    "that folder holds no audio" is more useful than silence.
+    """
+    if not Config.LIBRARY_PATH:
+        raise HTTPException(status_code=400, detail="LIBRARY_PATH is not set")
+
+    try:
+        result = await asyncio.to_thread(delete_album, Config.LIBRARY_PATH, request.album_path)
+
+        if not result["deleted"]:
+            raise HTTPException(status_code=400, detail=result["problem"])
+
+        return result
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"Exception in /delete endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error deleting the album: {e}")
+
+
+@router.get("/deletion_summary")
+async def deletion_summary(album: str):
+    """
+    What deleting this album would remove. Touches nothing.
+
+    Read live rather than from the scan so the confirmation describes the folder as it is
+    now, and so it can count files the scan ignores - a rip log or a cue sheet in there is
+    worth knowing about before it goes.
+    """
+    root_path = Config.LIBRARY_PATH or ""
+
+    if not root_path or not album:
+        raise HTTPException(status_code=400, detail="no album given")
+
+    root = Path(root_path)
+    directory = root / album
+
+    if not is_within(directory, root) or not directory.is_dir():
+        raise HTTPException(status_code=400, detail="that album is not inside the library")
+
+    return await asyncio.to_thread(summarize_for_deletion, directory)

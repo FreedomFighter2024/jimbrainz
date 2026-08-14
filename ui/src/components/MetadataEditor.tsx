@@ -4,6 +4,7 @@ import { MusicBrainzUnavailable } from '../api/http'
 import * as libraryApi from '../api/library'
 import * as musicbrainz from '../api/musicbrainz'
 import type { LibraryAlbum, Release, RetagPlan, RetagRelease } from '../api/types'
+import { Loading, LoadingPanel } from './Loading'
 import {
   buildRetagRelease,
   describeRelease,
@@ -420,13 +421,15 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
             onKeyDown={(event) => { if (event.key === 'Enter') void search() }}
           />
           <button type="button" class="columns-toggle-button" disabled={searching} onClick={() => void search()}>
-            {searching ? 'searching...' : 'find releases'}
+            {searching ? <Loading label="searching" /> : 'find releases'}
           </button>
         </div>
 
         <div id="metadata-body">
           <div class="scrollable metadata-releases">
             {searchError && <h4 class="text yellow metadata-status">{searchError}</h4>}
+
+            {searching && !releases.length && <LoadingPanel label="asking MusicBrainz..." />}
 
             {!searchError && searched && !releases.length && !searching && (
               <h4 class="text default-muted metadata-status">no releases found for that search</h4>
@@ -529,7 +532,9 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
               </span>
             </label>
 
-            {planning && <h5 class="text default-muted metadata-status">working out the changes...</h5>}
+            {planning && (
+              <h5 class="metadata-status"><Loading label="working out the changes" /></h5>
+            )}
 
             {!planning && plan && (
               <>
@@ -589,7 +594,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
             disabled={!plan || plan.empty || planning || applying}
             onClick={() => void apply()}
           >
-            {applying ? 'applying...' : 'apply'}
+            {applying ? <Loading label="applying" /> : 'apply'}
           </button>
         </div>
       </div>

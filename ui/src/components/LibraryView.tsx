@@ -4,7 +4,9 @@ import type { LibraryAlbum } from '../api/types'
 import { bridge } from '../bridge'
 import { useLibrary } from '../hooks/useLibrary'
 import { groupAlbums, type AlbumGroup } from '../lib/groupAlbums'
+import { DeleteAlbumDialog } from './DeleteAlbumDialog'
 import { LibraryAlbumRow } from './LibraryAlbumRow'
+import { Loading, LoadingPanel } from './Loading'
 import { MetadataEditor } from './MetadataEditor'
 import type { TabId } from './Tabs'
 
@@ -39,6 +41,9 @@ export function LibraryView({ active, onNavigate }: Props) {
   //? which album the metadata editor is open for, or null. One at a time on purpose - it is
   //? an overlay over the whole view, not a per-row inline form.
   const [editing, setEditing] = useState<LibraryAlbum | null>(null)
+
+  //? the album awaiting a delete confirmation, or null
+  const [deleting, setDeleting] = useState<LibraryAlbum | null>(null)
 
   //? grouped first, then filtered, so a filter never splits an album from its own editions
   const groups = useMemo(() => groupAlbums(albums), [albums])
@@ -147,11 +152,17 @@ export function LibraryView({ active, onNavigate }: Props) {
           />
 
           <span id="library-summary" class="text default-muted">
-            {!loaded
-              ? 'reading your library...'
-              : visible.length === groups.length
-                ? `${groups.length} album${groups.length === 1 ? '' : 's'}`
-                : `${visible.length} of ${groups.length} albums`}
+            {!loaded ? (
+              <Loading label="reading your library" />
+            ) : loading ? (
+              //? a rescan keeps the previous list on screen, so this says work is happening
+              //? without the count vanishing out from under you
+              <Loading label={`${groups.length} albums · rescanning`} />
+            ) : visible.length === groups.length ? (
+              `${groups.length} album${groups.length === 1 ? '' : 's'}`
+            ) : (
+              `${visible.length} of ${groups.length} albums`
+            )}
           </span>
 
           <button
@@ -161,11 +172,18 @@ export function LibraryView({ active, onNavigate }: Props) {
             title="re-read every file, ignoring the cache"
             onClick={() => reload(true)}
           >
-            {loading ? 'scanning...' : 'rescan'}
+            {/* no label: the button is narrow and the summary beside it already says what
+                is happening */}
+            {loading ? <Loading /> : 'rescan'}
           </button>
         </div>
 
         <div class="scrollable" id="library-scrollable">
+          {/* the first scan reads tags off every file, so it is worth saying so */}
+          {!loaded && !problem && !error && (
+            <LoadingPanel label="reading tags from your library..." />
+          )}
+
           {/*
             An unconfigured LIBRARY_PATH is a setup step, not a failure - say which knob to
             turn rather than rendering an empty list that looks like a broken scan.
@@ -192,6 +210,7 @@ export function LibraryView({ active, onNavigate }: Props) {
               onSearchArtist={searchArtist}
               onSearchAlbum={searchAlbum}
               onEdit={setEditing}
+              onDelete={setDeleting}
             />
           ))}
 
@@ -202,6 +221,18 @@ export function LibraryView({ active, onNavigate }: Props) {
           )}
         </div>
       </div>
+
+      {deleting && (
+        <DeleteAlbumDialog
+          album={deleting}
+          onCancel={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null)
+            //? the server already dropped it from the scan cache, so a plain reload is enough
+            void reload(false)
+          }}
+        />
+      )}
 
       {editing && (
         <MetadataEditor

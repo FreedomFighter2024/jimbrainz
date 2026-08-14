@@ -482,3 +482,116 @@ def _summarize_artists(albums: list[dict]) -> list[dict]:
         entry["total_size"] += album["total_size"]
 
     return sorted(by_artist.values(), key=lambda a: a["artist"].lower())
+
+
+def summarize_for_deletion(directory: Path) -> dict:
+    """
+    Exactly what removing this folder would take with it.
+
+    Read separately from the scan so the confirmation is describing the folder as it is right
+    now, not as it was when the library was last scanned - and so it can count the things the
+    scan ignores. A folder holding files that aren't audio or artwork is worth saying out
+    loud before it goes: it might be a rip log, or it might be the only copy of something.
+    """
+    audio = 0
+    other: list[str] = []
+    total = 0
+
+    for entry in sorted(directory.rglob("*")):
+        if not entry.is_file():
+            continue
+
+        try:
+            total += entry.stat().st_size
+        except OSError:
+            pass
+
+        extension = file_extension(entry.name)
+        if extension in AUDIO_EXTENSIONS:
+            audio += 1
+        elif extension not in IMAGE_EXTENSIONS:
+            other.append(entry.name)
+
+    return {
+        "audio_files": audio,
+        "total_bytes": total,
+        #? capped: the point is "there is other stuff in here", not a full manifest
+        "other_files": other[:12],
+        "other_file_count": len(other),
+    }
+
+
+def delete_album(library_root: str, album_path: str) -> dict:
+    """
+    Remove an album folder and everything in it. There is no undo.
+
+    This is the only code in jimbrainz that deletes anything the user did not just download,
+    so every guard is deliberate:
+
+      - LIBRARY_PATH must be configured, and the path must be non-empty.
+      - It must resolve INSIDE the library. `is_within` resolves both sides, so neither
+        "../.." nor a symlink pointing elsewhere gets through.
+      - It must not BE the library root. `rmtree` on that would take the whole collection.
+      - It must contain audio. That is what makes it an album rather than an artist folder
+        or something the user keeps in there, and it means a mistyped path deletes nothing.
+
+    Returns what was removed so the interface can say so rather than just going quiet.
+    """
+    from src.organizer import is_within
+
+    if not library_root or not album_path:
+        return {"deleted": False, "problem": "no album given"}
+
+    root = Path(library_root)
+    directory = root / album_path
+
+    if not is_within(directory, root) or directory.resolve() == root.resolve():
+        logger.warning(f"refused to delete outside the library: {album_path!r}")
+        return {"deleted": False, "problem": "that album is not inside the library"}
+
+    if not directory.is_dir():
+        return {"deleted": False, "problem": "that folder is not there any more"}
+
+    summary = summarize_for_deletion(directory)
+
+    #? Audio sitting DIRECTLY in this folder, not anywhere beneath it. That distinction is
+    #? the whole guard: an artist folder contains plenty of audio further down, so a
+    #? recursive check happily accepts "Tame Impala" and takes the entire discography with
+    #? it. It is also how the scanner decides what an album is, so the two agree on what can
+    #? be deleted.
+    direct_audio = any(
+        entry.is_file() and file_extension(entry.name) in AUDIO_EXTENSIONS
+        for entry in directory.iterdir()
+    )
+
+    if not direct_audio:
+        return {"deleted": False, "problem": "that folder holds no audio, so it isn't an album"}
+
+    import shutil
+
+    try:
+        shutil.rmtree(directory)
+    except OSError as e:
+        logger.error(f"could not delete {directory}: {e}")
+        return {"deleted": False, "problem": f"could not delete it: {e}"}
+
+    forget_cached_album(str(directory))
+
+    #? tidy the artist folder if that was their last album, but only with rmdir, which
+    #? refuses a non-empty directory by construction - anything left is something we didn't
+    #? put there and isn't ours to remove
+    try:
+        parent = directory.parent
+        if parent != root and is_within(parent, root):
+            parent.rmdir()
+            logger.info(f"removed the now-empty {parent.name}")
+    except OSError:
+        pass
+
+    logger.info(
+        f"deleted {album_path} ({summary['audio_files']} track(s), "
+        f"{summary['total_bytes'] // (1024 * 1024)} MB)",
+        extra={"frontend": True},
+    )
+
+    return {"deleted": True, "problem": None, **summary}

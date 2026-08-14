@@ -1,5 +1,7 @@
 import { get, post } from './http'
-import type { LibraryResponse, RetagPlan, RetagRelease, RetagResponse } from './types'
+import type {
+  DeleteResult, DeletionSummary, LibraryResponse, RetagPlan, RetagRelease, RetagResponse,
+} from './types'
 
 /**
  * Everything currently in LIBRARY_PATH.
@@ -48,4 +50,17 @@ export function applyRetag(
   return post<RetagResponse>('/library/retag/apply', {
     album_path: albumPath, release, fetch_art: fetchArt,
   })
+}
+
+/** What deleting this album would remove. Touches nothing. */
+export function deletionSummary(albumPath: string): Promise<DeletionSummary> {
+  return get<DeletionSummary>(`/library/deletion_summary?album=${encodeURIComponent(albumPath)}`)
+}
+
+/**
+ * Delete an album folder and everything in it. Permanent, and the only call in here with no
+ * undo — the guards that make it safe live in src/library.py::delete_album.
+ */
+export function deleteAlbum(albumPath: string): Promise<DeleteResult> {
+  return post<DeleteResult>('/library/delete', { album_path: albumPath })
 }

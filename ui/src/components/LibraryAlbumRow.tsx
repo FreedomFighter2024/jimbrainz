@@ -82,7 +82,10 @@ function TrackList({ album }: { album: LibraryAlbum }) {
  *
  * Only rendered when an album actually has more than one edition - see the group row below.
  */
-function EditionRow({ album, onEdit }: { album: LibraryAlbum; onEdit: (a: LibraryAlbum) => void }) {
+function EditionRow(
+  { album, onEdit, onDelete }:
+  { album: LibraryAlbum; onEdit: (a: LibraryAlbum) => void; onDelete: (a: LibraryAlbum) => void },
+) {
   const [expanded, setExpanded] = useState(false)
 
   const meta = [
@@ -125,6 +128,15 @@ function EditionRow({ album, onEdit }: { album: LibraryAlbum; onEdit: (a: Librar
         >
           edit
         </button>
+
+        <button
+          type="button"
+          class="library-delete-button"
+          title="delete this edition from disk"
+          onClick={() => onDelete(album)}
+        >
+          ✕
+        </button>
       </div>
 
       {expanded && <TrackList album={album} />}
@@ -138,6 +150,8 @@ interface Props {
   onSearchAlbum: (group: AlbumGroup) => void
   /** Opens the metadata editor. Takes an edition, since that's what gets corrected. */
   onEdit: (album: LibraryAlbum) => void
+  /** Opens the delete confirmation. Also per-edition: one pressing is not the others. */
+  onDelete: (album: LibraryAlbum) => void
 }
 
 /**
@@ -151,7 +165,9 @@ interface Props {
  * tracks rather than through a single pointless "Standard" row, which is the overwhelmingly
  * common case in a real library.
  */
-export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum, onEdit }: Props) {
+export function LibraryAlbumRow(
+  { group, onSearchArtist, onSearchAlbum, onEdit, onDelete }: Props,
+) {
   const [expanded, setExpanded] = useState(false)
 
   const multiple = group.editions.length > 1
@@ -240,6 +256,17 @@ export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum, onEdit }
             edit
           </button>
         )}
+
+        {!multiple && only && (
+          <button
+            type="button"
+            class="library-delete-button"
+            title="delete this album from disk"
+            onClick={() => onDelete(only)}
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <div class="library-album-meta">
@@ -257,7 +284,7 @@ export function LibraryAlbumRow({ group, onSearchArtist, onSearchAlbum, onEdit }
       {expanded && multiple && (
         <div class="library-editions">
           {group.editions.map((album) => (
-            <EditionRow key={album.key} album={album} onEdit={onEdit} />
+            <EditionRow key={album.key} album={album} onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
       )}

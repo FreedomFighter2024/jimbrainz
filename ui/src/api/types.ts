@@ -438,6 +438,20 @@ export interface RetagResponse {
   results: RetagResults
 }
 
+/** What deleting an album would remove. Read live, not from the scan. */
+export interface DeletionSummary {
+  audio_files: number
+  total_bytes: number
+  /** Named individually — these are the files that might not exist anywhere else. Capped. */
+  other_files: string[]
+  other_file_count: number
+}
+
+export interface DeleteResult extends DeletionSummary {
+  deleted: boolean
+  problem: string | null
+}
+
 /* ===== interface_logs ===== */
 
 export type LogSource = 'musicbrainz' | 'slskd' | 'jimbrainz' | (string & {})

@@ -3170,6 +3170,8 @@ span.red { color: var(--red-text); }
         height: calc(100vh - 12px);
     }
 
+    #delete-window { width: calc(100vw - 16px); }
+
     /* dragging a corner is a mouse gesture, and these already fill the screen */
     #metadata-window,
     #candidates-window,
@@ -3327,3 +3329,179 @@ span.red { color: var(--red-text); }
 }
 
 .metadata-art-arrow { flex-shrink: 0; font-size: 1.1em; }
+
+
+/* ---- delete confirmation ---- */
+
+/*
+ * Its own window rather than a browser confirm(), which can't show any of what is about to
+ * go. This is the one action in jimbrainz with no undo, so it is worth the space to name the
+ * album, the folder, the track count and anything in there that isn't audio or artwork.
+ *
+ * Red-bordered and above the metadata editor, since it can be opened from a row behind it.
+ */
+#delete-window {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(520px, 92vw);
+    max-height: 86vh;
+    z-index: 800;
+    display: flex;
+    background-color: var(--background-color-light);
+    border: 1px solid var(--red-text);
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.7);
+    overflow: auto;
+}
+
+#delete-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    width: 100%;
+}
+
+.delete-subject {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.delete-path,
+.delete-counts,
+.delete-others {
+    font-family: var(--font-family-condensed);
+    font-size: 0.82em;
+    word-break: break-all;
+}
+
+.delete-others { display: flex; flex-direction: column; gap: 2px; }
+
+.delete-warning {
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    border: 1px solid var(--red-text);
+    padding: 6px 8px;
+}
+
+.delete-problem { padding: 2px 0; }
+
+#delete-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+/*
+ * Deliberately the only red-filled control in the interface. Every other button here is an
+ * outline, so this one does not get clicked by muscle memory.
+ */
+#delete-confirm-button {
+    background-color: var(--red-text);
+    border: 1px solid var(--red-text);
+    color: var(--background-color);
+    font-family: var(--font-family-condensed);
+    font-size: 0.9em;
+    font-weight: var(--font-bold);
+    padding: 5px 16px;
+    cursor: pointer;
+}
+
+#delete-confirm-button:hover:not(:disabled) { background-color: var(--red-secondary-text); }
+#delete-confirm-button:disabled { opacity: 0.4; cursor: default; }
+
+.library-delete-button {
+    background: transparent;
+    border: 1px solid var(--muted-text);
+    color: var(--white-tertiary-text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    line-height: 1;
+    padding: 2px 6px;
+}
+
+.library-delete-button:hover { color: var(--red-text); border-color: var(--red-text); }
+
+
+/* ============================================================================
+ * ? LOADING INDICATOR
+ *
+ * A block-shade spinner rather than a rotating circle. The whole interface is built out of
+ * ░▒▓ and terminal glyphs, and a smooth spinning arc would look like it came from a
+ * different application - these are the same characters the filter headings already use, so
+ * they're known to render in the bundled font.
+ *
+ * The animation swaps `content` on steps(1), which is what gives it the flick of a terminal
+ * spinner instead of a slide. A bright cell sweeps through three positions and back.
+ * ==========================================================================*/
+
+@keyframes jb-loading-cycle {
+    0%   { content: "█▒░"; }
+    20%  { content: "▒█▒"; }
+    40%  { content: "░▒█"; }
+    60%  { content: "▒█▒"; }
+    80%  { content: "█▒░"; }
+}
+
+.loading-blocks::after {
+    content: "█▒░";
+    animation: jb-loading-cycle 0.75s steps(1, end) infinite;
+    font-family: var(--font-family-condensed);
+    letter-spacing: 0.1em;
+    color: var(--main-text);
+    text-shadow:
+        0 0 3.25px var(--main-glow-text),
+        0 0 8.25px var(--main-glow-text);
+}
+
+/* inline with a label: "searching ▒█▒" */
+.loading-blocks {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+/*
+ * Someone who has asked not to see motion still needs to know something is happening, so
+ * this holds a static frame rather than hiding the indicator altogether.
+ */
+@media (prefers-reduced-motion: reduce) {
+    .loading-blocks::after {
+        animation: none;
+        content: "▒█▒";
+    }
+}
+
+/* a centred block for a panel that has nothing else in it yet */
+.loading-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 24px 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    color: var(--main-muted-text);
+}
+
+.loading-panel::before {
+    content: "█▒░";
+    animation: jb-loading-cycle 0.75s steps(1, end) infinite;
+    font-size: 1.4em;
+    letter-spacing: 0.25em;
+    color: var(--main-text);
+    text-shadow:
+        0 0 3.25px var(--main-glow-text),
+        0 0 8.25px var(--main-glow-text),
+        0 0 12.5px var(--main-glow-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loading-panel::before { animation: none; content: "▒█▒"; }
+}

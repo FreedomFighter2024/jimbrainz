@@ -368,6 +368,32 @@ decreaseLimitButton.addEventListener('click', () => {
 
 
 
+/*
+ * Show that a search is running. The results area is the honest place for it - it is where
+ * the answer will appear, and it is otherwise empty for however long MusicBrainz takes.
+ */
+function setSearchLoading(on) {
+    const results = document.getElementById('search-results-scrollable');
+    const button = document.getElementById('search-input-button');
+
+    if (button) {
+        button.disabled = on;
+        button.textContent = on ? 'Searching' : 'Search';
+    }
+
+    if (!results) return;
+
+    if (on) {
+        results.innerHTML = '<div class="loading-panel">asking MusicBrainz...</div>';
+    }
+
+    else {
+        const placeholder = results.querySelector('.loading-panel');
+        if (placeholder) placeholder.remove();
+    }
+}
+
+
 async function searchReleaseGroups(query) {
     const params = new URLSearchParams({
         query: query,
@@ -436,9 +462,17 @@ async function handleSearch() {
         }
 
         else {
-            const results = await searchReleaseGroups(query);
-            searchCache[query] = { results, limit };
-            processSearchResults(results);
+            // MusicBrainz is regularly slow and was sometimes unreachable, and until now the
+            // page showed nothing at all while waiting - which reads as the button not having
+            // worked. A cache hit skips this because it returns in the same tick.
+            setSearchLoading(true);
+            try {
+                const results = await searchReleaseGroups(query);
+                searchCache[query] = { results, limit };
+                processSearchResults(results);
+            } finally {
+                setSearchLoading(false);
+            }
         }
     }
 
@@ -626,7 +660,8 @@ async function openCandidatesPanel(expected, label) {
 
 
 async function runCandidateSearch(expected) {
-    candidatesScrollable.innerHTML = `<h4 class="text default-muted candidates-status">searching soulseek…</h4>`;
+    candidatesScrollable.innerHTML =
+        `<div class="loading-panel">searching soulseek for this release...</div>`;
 
     try {
         const result = await findCandidates(expected);

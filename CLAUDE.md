@@ -57,7 +57,7 @@ src/
 interface/         vanilla JS/CSS. Still the served page; shrinking as panels are ported.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             186 tests, all Python, all fixture-driven
+tests/             201 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -103,6 +103,13 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   **An untagged folder is never treated as a different release** — libraries predating
   jimbrainz have no MBIDs, and forking every one of those albums would be far worse than
   sharing a folder.
+- **Deleting an album is the only thing here that removes data the user did not just
+  download, and it has no undo**, so `delete_album()` carries every guard: inside
+  LIBRARY_PATH, never the root itself, and **audio must sit DIRECTLY in the folder**. That
+  last one is not cosmetic — a recursive check happily accepts an artist folder and takes
+  the whole discography, which a test caught. The confirmation is a real dialog rather than
+  `confirm()` because it names the track count, the size and any non-audio files, which
+  might be the only copy of a rip log or cue sheet.
 - **There are now TWO writers to the user's filesystem**, and both use the same plan/execute
   split: `organizer.py` files downloads in, `retag.py` corrects albums already there. A
   preview that disagrees with the write it previews is worse than no preview, so both derive
@@ -184,6 +191,11 @@ Each of these cost real time. Don't rediscover them.
   answers 404 identically for "outside the library" and "no such album" so a probe learns
   nothing. Covered by tests including a symlink pointing out of the library. **If you add
   another endpoint taking a path, copy this pattern.**
+- **The loading indicator animates `content`**, swapping ░▒▓█ on `steps(1)` — see
+  `.loading-blocks` in main.css. A rotating arc would have looked borrowed from another
+  application; these are the same glyphs the filter headings use, so they are known to render
+  in the bundled font. Verified by sampling the computed `::before` content over time, since
+  animating `content` is the part that could silently do nothing.
 - **Decorated headings wrap if you let them.** `░ ▒ ▓ filters ▓ ▒ ░` measured 138px in a
   190px header that also holds a "clear" button, so a lone `░` wrapped onto a second line and
   the whole column read as broken. Tightened to `░▒▓ filters ▓▒░` and pinned `nowrap`. Any
@@ -298,7 +310,7 @@ the original author's own comment calls it "a whole mess") and the lag above.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 186 tests
+.venv/bin/python -m pytest tests/ -q  # 201 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -318,7 +330,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 186 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 201 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings (matching assumes `"Completed, Succeeded"`, `"Errored"`,

@@ -136,6 +136,8 @@ the reference. All prefixed `/jimbrainz/`.
 | `library/rescan` | POST | same shape; drops the server's per-folder mtime cache |
 | `library/retag/preview` | POST | `{album_path, release, fetch_art}` → a plan. Writes nothing and fetches nothing, deliberately a separate endpoint from apply rather than a flag. |
 | `library/retag/apply` | POST | same body; recomputes the plan server-side and executes it. Returns `{plan, results}`. |
+| `library/deletion_summary?album=` | GET | what deleting would remove, read live. Touches nothing. |
+| `library/delete` | POST | `{album_path}`. Permanent, no undo — guards in `library.py::delete_album`. |
 | `library/art?album=<relative path>` | GET | image bytes or 404. `album` is the path the scan reports. Only endpoint that reads the filesystem from user input — see the containment check. |
 | `interface_logs/interface_logs` | GET | **SSE stream**, not fetch. **Correction:** the frame is `{event_time, event_type, event_content, src?}` — this table was written from the endpoint, but `SSEHandler.emit()` in `src/logger.py` also sends a pre-formatted `event_time` and only attaches `src` when the record carried one. Frames without a `src` are real and must render. |
 

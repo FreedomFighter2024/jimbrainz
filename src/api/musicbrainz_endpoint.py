@@ -1,7 +1,7 @@
-import asyncio 
+import asyncio
 import time
 import httpx
-from collections import deque
+from collections import deque, OrderedDict
 from src.config import Config
 from src.logger import logger
 class MusicBrainzUnavailable(Exception):
@@ -15,29 +15,107 @@ class MusicBrainzUnavailable(Exception):
 
 class RateLimit:
     max_requests = 4
-    time_window = 5.0 
+    time_window = 5.0
 
     def __init__(self):
         self.request_times = deque(maxlen=self.max_requests)
-    
-    async def wait(self) -> None: 
+
+    async def wait(self) -> None:
         curr_time = time.monotonic()
-        
+
         if len(self.request_times) >= self.max_requests:
             oldest_time = self.request_times[0]
             time_since_oldest = curr_time - oldest_time
-            
+
             if time_since_oldest < self.time_window:
                 wait_time = self.time_window - time_since_oldest
-                logger.warning(f"rate limit hit on musicbrainz requests", extra={"frontend": True, "src":"musicbrainz"})
+                #? Deliberately NOT a frontend warning. This is the throttle doing its job -
+                #? MusicBrainz asks for about a request a second and we hold ourselves to it -
+                #? so it fires constantly during any normal burst, and telling the user their
+                #? own politeness is a problem made a working search look broken. The interface
+                #? already says "asking MusicBrainz..." while this waits.
+                logger.debug(f"holding off {wait_time:.1f}s to stay inside the MusicBrainz rate limit")
                 await asyncio.sleep(wait_time)
                 curr_time = time.monotonic()
 
         self.request_times.append(curr_time)
 
+
+class ResponseCache:
+    """
+    Recently fetched MusicBrainz responses, keyed on the request that produced them.
+
+    Worth having because the questions repeat far more than they change. Opening the metadata
+    editor asks for a release-group search and then the releases of the best few groups; the
+    first group's releases are ALSO fetched by fully_search as `best-match-releases`, so that
+    one was fetched twice every single time. Stepping through the review queue and back asks the
+    same questions again, and MusicBrainz is rate limited to roughly one request a second - so
+    every avoided request is a second of someone waiting.
+
+    The data is nearly static. A release group's pressings do not change while you are looking
+    at them, so a stale answer is not a real risk on this timescale.
+
+    Bounded rather than unbounded: a release list with recordings included is a large payload
+    (the Black Album's group runs to hundreds of releases), and a long-running container asking
+    about a big library would otherwise hold every one it had ever seen.
+
+    **Only successful responses are ever stored** - see request_with_retries. It returns an
+    error dict rather than raising when it gives up, and caching that would pin a transient
+    MusicBrainz outage in place for the whole TTL, turning a bad minute into a bad hour.
+    """
+
+    def __init__(self, ttl_seconds: float = 3600.0, max_entries: int = 64):
+        self.ttl = ttl_seconds
+        self.max_entries = max_entries
+        self.entries: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+    @staticmethod
+    def key(endpoint: str, params: dict) -> tuple:
+        #? sorted so the same request written two ways is the same key
+        return (endpoint, tuple(sorted((str(k), str(v)) for k, v in (params or {}).items())))
+
+    def get(self, endpoint: str, params: dict) -> dict | None:
+        key = self.key(endpoint, params)
+        entry = self.entries.get(key)
+
+        if entry is None:
+            self.misses += 1
+            return None
+
+        stored_at, value = entry
+
+        if time.monotonic() - stored_at > self.ttl:
+            del self.entries[key]
+            self.misses += 1
+            return None
+
+        #? touch, so the entries actually being used are the ones that survive eviction
+        self.entries.move_to_end(key)
+        self.hits += 1
+        return value
+
+    def put(self, endpoint: str, params: dict, value: dict) -> None:
+        key = self.key(endpoint, params)
+        self.entries[key] = (time.monotonic(), value)
+        self.entries.move_to_end(key)
+
+        while len(self.entries) > self.max_entries:
+            self.entries.popitem(last=False)
+
+    def clear(self) -> None:
+        self.entries.clear()
+        self.hits = 0
+        self.misses = 0
+
+
 class MusicBrainzClient:
     RETRIES = 10
     rate_limit = RateLimit()
+    #? shared for the process, like the rate limiter and for the same reason: both are about
+    #? how much this application as a whole asks of MusicBrainz, not any one client object
+    cache = ResponseCache()
 
     def __init__(self):
         self.client: httpx.AsyncClient | None = None
@@ -85,6 +163,14 @@ class MusicBrainzClient:
 
 
     async def request_with_retries(self, endpoint: str, params: dict, retry: bool = True) -> dict: #TODO turning retry on and off to be implemented
+        #? Before the rate limiter, not after: the whole point is to not spend a turn of the
+        #? budget - and therefore up to a second of somebody's time - on a question already
+        #? answered. See ResponseCache for what does and does not get stored.
+        cached = self.cache.get(endpoint, params)
+        if cached is not None:
+            logger.debug(f"MusicBrainz cache hit for {endpoint}")
+            return cached
+
         logger.info(f"requesting MusicBrainz")
         attempt = 0
 
@@ -105,7 +191,14 @@ class MusicBrainzClient:
                     params=params
                 )
                 response.raise_for_status()
-                return response.json()
+
+                #? The only place anything is cached, deliberately. Every other exit from this
+                #? function is a failure that returns ping_error_obj, and storing one of those
+                #? would keep serving "MusicBrainz is unreachable" for the whole TTL after it
+                #? had come back - turning a bad minute into a bad hour.
+                payload = response.json()
+                self.cache.put(endpoint, params, payload)
+                return payload
             
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
                 delay = 2.0 + (attempt * 0.5)

@@ -1,4 +1,4 @@
-import type { Release, RetagRelease, Track } from '../api/types'
+import type { Release, ReleaseGroup, RetagRelease, Track } from '../api/types'
 
 const EDITION_KEYWORDS: ReadonlyArray<[RegExp, string]> = [
   [/super deluxe/, 'SUPER DELUXE'],
@@ -156,4 +156,62 @@ export function scoreReleaseMatch(
 /** True when this release is the one the album's tags already name. */
 export function isCurrentRelease(release: Release, albumReleaseMbid: string): boolean {
   return Boolean(albumReleaseMbid) && release.id === albumReleaseMbid
+}
+
+/**
+ * Secondary types that are usually NOT the copy sitting in someone's library.
+ *
+ * A penalty, never a filter — the same trade edition matching makes. People genuinely do own
+ * live albums and compilations, and the year signal below outweighs this, so tagging the 1996
+ * live album as 1996 still picks it. This only breaks the tie when nothing else can.
+ */
+const UNLIKELY_SECONDARY_TYPES = new Set([
+  'Live', 'Compilation', 'Interview', 'Remix', 'DJ-mix', 'Demo', 'Mixtape/Street', 'Audiobook',
+])
+
+/**
+ * How well a release GROUP matches an album on disk. Higher is better.
+ *
+ * This exists because MusicBrainz's own ordering cannot answer the question. Searching
+ * `releasegroup:"Metallica" AND artist:"Metallica"` returns 25 groups, of which the first FIVE
+ * all score exactly 100 — a live album, another live album, an interview disc, a compilation,
+ * and, in fifth place, the actual 1991 album. Taking the first few in the order they arrived
+ * meant fetching three wrong groups and never asking for the right one, so the edition the user
+ * wanted could not appear no matter how the releases underneath were ranked.
+ *
+ * The signals are all group-level, because that is all there is before committing a request per
+ * group — track counts and pressings only exist once you have paid for them.
+ *
+ * Weighted rather than ordered, so no one signal can be decisive on its own:
+ *
+ *   year          100  the strongest thing we have. An album tagged 1991 belongs to the group
+ *                      first released in 1991, whatever type either of them is.
+ *   exact title    40  "Metallica" beats "Mandatory Metallica" — MusicBrainz scores both 100.
+ *   studio album   30  primary type Album with no secondary type. What a library mostly holds.
+ *   unlikely type −30  see above. Never enough to overturn a matching year.
+ *   MB's score    ÷10  a tiebreak only, and a weak one — it is what fails here.
+ */
+export function scoreReleaseGroupMatch(
+  group: ReleaseGroup,
+  album: { album: string; year: string; original_year: string },
+): number {
+  let score = 0
+
+  //? the album's own year, not a pressing's — that is what a release group's date is
+  const wanted = (album.original_year || album.year || '').trim()
+  const groupYear = (group['first-release-date'] ?? '').substring(0, 4)
+  if (wanted && groupYear && wanted === groupYear) score += 100
+
+  if ((group.title ?? '').trim().toLowerCase() === album.album.trim().toLowerCase()) score += 40
+
+  const secondary = group['secondary-types'] ?? []
+
+  if (group['primary-type'] === 'Album' && !secondary.length) score += 30
+
+  if (secondary.some((type) => UNLIKELY_SECONDARY_TYPES.has(type))) score -= 30
+
+  const reported = Number((group as { score?: number }).score ?? 0)
+  if (Number.isFinite(reported)) score += reported / 10
+
+  return score
 }

@@ -13,8 +13,19 @@ import {
   describeRelease,
   isCurrentRelease,
   releaseTrackCount,
+  scoreReleaseGroupMatch,
   scoreReleaseMatch,
 } from '../lib/release'
+
+/**
+ * How many release groups get their releases fetched.
+ *
+ * Each one is at least one request against a service that allows about one a second, and a
+ * group like the Black Album's runs to several pages - so this is the main cost of opening the
+ * editor. Three is a margin around a ranking that should already have put the right group
+ * first; the server caches the responses, so re-opening the same album is free.
+ */
+const GROUPS_SEARCHED = 3
 
 /**
  * Where this album sits in the review queue, when the editor was opened from it.
@@ -245,10 +256,35 @@ export function MetadataEditor(
         groups = loose['release-groups'] ?? []
       }
 
+      /*
+       * Rank the groups before choosing which to look inside.
+       *
+       * MusicBrainz's own order cannot be trusted for this: searching for Metallica's
+       * self-titled album returns five groups all scoring exactly 100, with the real one fifth
+       * behind two live albums and an interview disc. Taking the first few as they arrived
+       * fetched three wrong groups and never asked for the right one - so no amount of ranking
+       * the releases underneath could have surfaced the edition, because it was never fetched.
+       *
+       * See scoreReleaseGroupMatch for the signals. Sorted rather than filtered, so an unusual
+       * album is still reachable - it just isn't paid for first.
+       */
+      //? Ranked against the FIELDS, not the album on disk. They start out identical, and they
+      //? differ exactly when the user has corrected something - so typing the right year in and
+      //? searching again is how you steer this, which is what you would expect it to do.
+      const target = {
+        album: fields.album,
+        year: fields.year,
+        original_year: fields.originalYear,
+      }
+
+      const ranked = [...groups].sort(
+        (a, b) => scoreReleaseGroupMatch(b, target) - scoreReleaseGroupMatch(a, target),
+      )
+
       // Releases, not release groups: an edition IS a release, so grouping them would hide
       // exactly the distinction this editor exists to make.
       const found: Release[] = []
-      for (const group of groups.slice(0, 3)) {
+      for (const group of ranked.slice(0, GROUPS_SEARCHED)) {
         const detail = await musicbrainz.getReleases(group.id)
         for (const release of detail.releases ?? []) {
           //? the group's date, not the release's - it's the album's year, and the folder is
@@ -282,7 +318,10 @@ export function MetadataEditor(
       setSearching(false)
       setSearched(true)
     }
-  }, [query, album, fields.artist, fields.album])
+    //? the year fields are dependencies because the group ranking reads them - without them
+    //? this callback would close over whatever they held when it was last rebuilt, and
+    //? correcting the year would change the query without changing which group won
+  }, [query, album, fields.artist, fields.album, fields.year, fields.originalYear])
 
   /*
    * Search as soon as the panel opens. You opened it to match this album against something,

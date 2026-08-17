@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             257 tests, all Python, all fixture-driven
+tests/             258 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -248,6 +248,15 @@ Each of these cost real time. Don't rediscover them.
   `["release-groups"]` produced a `KeyError` that surfaced as *"Error searching MusicBrainz:
   'release-groups'"* — which reads like a bad query, so an outage looked like user error.
   `MusicBrainzUnavailable` now distinguishes them.
+- **MusicBrainz's own result order cannot pick the album for you.** Searching
+  `releasegroup:"Metallica" AND artist:"Metallica"` returns 25 groups of which the **first five
+  all score exactly 100** — two live albums, an interview disc, a compilation, and only then the
+  1991 album. The editor took `slice(0, 3)`, so it spent three requests on the wrong groups and
+  **never fetched the right one**; no amount of ranking the releases underneath could have
+  helped, because they were never retrieved. `scoreReleaseGroupMatch` now ranks groups first, on
+  group-level signals only (year is worth 100, exact title 40, studio-album-ness 30, an unlikely
+  secondary type −30, MB's score ÷10 as a weak tiebreak). Weighted, not filtered — tag the 1996
+  live album as 1996 and it still wins, which was verified along with the two Black Album cases.
 - **docker-compose: never declare a var in both `env_file` and `environment:`.** `environment:`
   wins and re-interpolates `${VAR}` from compose's own env; when that comes back empty it
   silently overwrites the good value from `.env`. This produced an unusable empty `SLSKD_URL`.
@@ -403,7 +412,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 257 tests
+.venv/bin/python -m pytest tests/ -q  # 258 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -423,7 +432,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 257 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 258 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

@@ -93,17 +93,21 @@ const PREVIEW_DEBOUNCE_MS = 400
  * Shown whenever a release is selected, not only when the checkbox is ticked: seeing the art
  * is how you decide whether you want it.
  */
-function ArtComparison({ album, release }: { album: LibraryAlbum; release: Release | null }) {
+function ArtComparison(
+  { album, releaseId }: { album: LibraryAlbum; releaseId: string | null },
+) {
   const [currentFailed, setCurrentFailed] = useState(false)
   const [incomingFailed, setIncomingFailed] = useState(false)
 
   //? reset when the release changes, or a single failure would stick for every later pick
-  useEffect(() => setIncomingFailed(false), [release?.id])
+  useEffect(() => setIncomingFailed(false), [releaseId])
 
   const current = album.art
     ? `/jimbrainz/library/art?album=${encodeURIComponent(album.path)}`
     : null
-  const incoming = release ? `https://coverartarchive.org/release/${release.id}/front-250` : null
+  //? Keyed on the id alone, so the cover appears as soon as you click rather than waiting on
+  //? the tracklist fetch behind it - the art is how you decide whether you want the release.
+  const incoming = releaseId ? `https://coverartarchive.org/release/${releaseId}/front-250` : null
 
   if (!current && !incoming) return null
 
@@ -128,11 +132,11 @@ function ArtComparison({ album, release }: { album: LibraryAlbum; release: Relea
             alt=""
             /* keyed so switching releases replaces the element rather than reusing one whose
                onError already fired */
-            key={release?.id}
+            key={releaseId}
             onError={() => setIncomingFailed(true)}
           />
         ) : (
-          <div class="metadata-art-empty">{release ? 'none on file' : 'pick a release'}</div>
+          <div class="metadata-art-empty">{releaseId ? 'none on file' : 'pick a release'}</div>
         )}
       </div>
     </div>
@@ -168,7 +172,22 @@ export function MetadataEditor(
   const [searchError, setSearchError] = useState<string | null>(null)
   const [searched, setSearched] = useState(false)
 
+  /*
+   * The selection is two pieces of state, and the split is load-bearing.
+   *
+   * The list is fetched WITHOUT tracklists, because carrying the contents of all 58 pressings of
+   * an album to let you pick one costs five requests and 1.4 MB against one request and 101 KB.
+   * The tracklist of the one you actually pick is then fetched on its own.
+   *
+   * So `selectedId` is what you clicked - it lands instantly and drives the highlight and the
+   * cover art, both of which only need an id. `selected` is that release WITH its tracklist, and
+   * it is the only thing the retag payload is ever built from. A payload built from a trackless
+   * release would silently apply no titles and no track numbers, which writes nothing and reads
+   * exactly like the edit having failed - so the two must never be conflated.
+   */
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Release | null>(null)
+  const [loadingRelease, setLoadingRelease] = useState(false)
 
   //? seeded from what's on disk, so the editor opens showing the album as it is rather than
   //? empty boxes you have to fill before anything makes sense
@@ -232,6 +251,71 @@ export function MetadataEditor(
     setFields((current) => ({ ...current, [key]: value }))
   }
 
+  /**
+   * Take on a release: fetch its tracklist, and optionally fill the fields from it.
+   *
+   * The fetch is the whole reason this is async. The list these come from is deliberately
+   * fetched WITHOUT tracklists, so the release handed in here knows what it is but not what is
+   * on it - and the retag payload cannot be built from that. Applying a trackless release
+   * writes no titles and no track numbers, which looks exactly like the edit having silently
+   * done nothing.
+   *
+   * `seedFields` is false for the release an album is already tagged with, which is selected
+   * automatically after a search: that album already claims to BE this release, so replacing
+   * what is on disk with MusicBrainz's version of it would quietly undo hand corrections just
+   * because somebody opened the editor.
+   */
+  const loadRelease = async (release: Release, seedFields: boolean) => {
+    setSelectedId(release.id)
+    setLoadingRelease(true)
+    setSearchError(null)
+
+    //? carried across by hand: they were attached to the list entry from its release GROUP, and
+    //? a release fetched on its own has no idea which search produced it
+    const groupMbid = (release as { _groupMbid?: string })._groupMbid ?? null
+    const firstReleaseDate =
+      (release as { _firstReleaseDate?: string | null })._firstReleaseDate ?? null
+
+    try {
+      const detail = await musicbrainz.getRelease(release.id)
+      const full = { ...detail, _groupMbid: groupMbid, _firstReleaseDate: firstReleaseDate } as Release
+
+      setSelected(full)
+
+      if (seedFields) {
+        const built = buildRetagRelease(full, {
+          artist: album.artist,
+          album: album.album,
+          releaseGroupMbid: groupMbid,
+          firstReleaseDate,
+        })
+        setFields({
+          artist: built.artist,
+          album: built.album,
+          year: built.year ?? '',
+          originalYear: built.original_year ?? '',
+          //? the release's own disambiguation is what the folder name would use anyway, so
+          //? leaving this blank lets editions.py decide rather than pinning it
+          editionLabel: '',
+        })
+      }
+    } catch (caught) {
+      //? Cleared rather than left pointing at a release we could not load. Leaving it selected
+      //? would let Apply run against an empty tracklist, which is the one outcome this split
+      //? exists to prevent.
+      setSelectedId(null)
+      setSelected(null)
+      setSearchError(
+        caught instanceof MusicBrainzUnavailable
+          ? "MusicBrainz couldn't be reached for that release's tracklist, so it can't be " +
+            'applied yet. You can still correct the fields by hand.'
+          : caught instanceof Error ? caught.message : 'could not load that release',
+      )
+    } finally {
+      setLoadingRelease(false)
+    }
+  }
+
   const search = useCallback(async () => {
     setSearching(true)
     setSearchError(null)
@@ -248,11 +332,14 @@ export function MetadataEditor(
        * something imperfect beats finding nothing.
        */
       const fielded = `releasegroup:"${fields.album}" AND artist:"${fields.artist}"`
-      const first = await musicbrainz.fullySearch(query.trim() || fielded, 25)
+      //? `false` turns off the eager best-match-releases fetch. This editor ranks the groups
+      //? itself and then asks for the ones it wants, so that eager walk - five requests and
+      //? 1.4 MB for an album like this one - was spent on a payload it dropped on the floor.
+      const first = await musicbrainz.fullySearch(query.trim() || fielded, 25, false)
 
       let groups = first['release-groups'] ?? []
       if (!groups.length && !query.trim()) {
-        const loose = await musicbrainz.fullySearch(`${fields.artist} ${fields.album}`.trim(), 25)
+        const loose = await musicbrainz.fullySearch(`${fields.artist} ${fields.album}`.trim(), 25, false)
         groups = loose['release-groups'] ?? []
       }
 
@@ -285,7 +372,10 @@ export function MetadataEditor(
       // exactly the distinction this editor exists to make.
       const found: Release[] = []
       for (const group of ranked.slice(0, GROUPS_SEARCHED)) {
-        const detail = await musicbrainz.getReleases(group.id)
+        //? Without tracklists. Telling pressings apart needs their format, country, catalogue
+        //? number and track COUNT, all of which survive - not the contents of all 58 of them.
+        //? The tracklist of whichever one gets picked is fetched by loadRelease below.
+        const detail = await musicbrainz.getReleases(group.id, false)
         for (const release of detail.releases ?? []) {
           //? the group's date, not the release's - it's the album's year, and the folder is
           //? named after it so a remaster doesn't refile the record under its reissue year
@@ -303,7 +393,10 @@ export function MetadataEditor(
       setReleases(found)
 
       const current = found.find((r) => isCurrentRelease(r, album.release_mbid))
-      if (current) setSelected(current)
+      //? Deliberately without re-seeding the fields: this album already claims to BE this
+      //? release, so overwriting what is on disk with MusicBrainz's version of it would undo
+      //? corrections the user made by hand simply because they opened the editor.
+      if (current) void loadRelease(current, false)
     } catch (caught) {
       setSearchError(
         caught instanceof MusicBrainzUnavailable
@@ -348,22 +441,7 @@ export function MetadataEditor(
   /** Picking a release replaces the fields with its values, which you can then still edit. */
   const chooseRelease = (release: Release) => {
     setApplied(null)
-    setSelected(release)
-    const built = buildRetagRelease(release, {
-      artist: album.artist,
-      album: album.album,
-      releaseGroupMbid: (release as { _groupMbid?: string })._groupMbid ?? null,
-      firstReleaseDate: (release as { _firstReleaseDate?: string | null })._firstReleaseDate ?? null,
-    })
-    setFields({
-      artist: built.artist,
-      album: built.album,
-      year: built.year ?? '',
-      originalYear: built.original_year ?? '',
-      //? the release's own disambiguation is what the folder name would use anyway, so
-      //? leaving this blank lets editions.py decide rather than pinning it
-      editionLabel: '',
-    })
+    void loadRelease(release, true)
   }
 
   /**
@@ -405,6 +483,18 @@ export function MetadataEditor(
   // Debounced: the plan is a server round trip and this runs on every keystroke.
   useEffect(() => {
     setPlanning(true)
+
+    /*
+     * Nothing is planned while a release's tracklist is still arriving.
+     *
+     * Without this the preview would briefly describe a payload built from no tracklist at all -
+     * "nothing to change", or a list of files that "didn't match" - and then correct itself a
+     * second later. A preview that disagrees with the write it previews is worse than no
+     * preview; one that disagrees with ITSELF is worse again, because it teaches you to
+     * distrust the thing whose entire job is to be trusted.
+     */
+    if (loadingRelease) return
+
     const timer = setTimeout(async () => {
       try {
         setPlan(await libraryApi.previewRetag(album.path, payload, fetchArt))
@@ -418,7 +508,7 @@ export function MetadataEditor(
     }, PREVIEW_DEBOUNCE_MS)
 
     return () => clearTimeout(timer)
-  }, [album.path, payload, fetchArt])
+  }, [album.path, payload, fetchArt, loadingRelease])
 
   const apply = async () => {
     setApplying(true)
@@ -583,7 +673,7 @@ export function MetadataEditor(
                 <button
                   key={release.id}
                   type="button"
-                  class={`metadata-release${selected?.id === release.id ? ' active' : ''}${current ? ' current' : ''}`}
+                  class={`metadata-release${selectedId === release.id ? ' active' : ''}${current ? ' current' : ''}`}
                   onClick={() => chooseRelease(release)}
                 >
                   {current && <span class="metadata-current-badge" title="this album is tagged with this release">current</span>}
@@ -643,7 +733,7 @@ export function MetadataEditor(
               original year and the edition, so a remaster files under the album's own year.
             </span>
 
-            <ArtComparison album={album} release={selected} />
+            <ArtComparison album={album} releaseId={selectedId} />
 
             <label class="metadata-checkbox">
               <input type="checkbox" checked={fetchArt}
@@ -659,7 +749,11 @@ export function MetadataEditor(
             </label>
 
             {planning && (
-              <h5 class="metadata-status"><Loading label="working out the changes" /></h5>
+              <h5 class="metadata-status">
+                {/* naming the actual wait: the tracklist arrives separately from the list of
+                    pressings, so "working out the changes" would be describing the wrong step */}
+                <Loading label={loadingRelease ? 'fetching the tracklist' : 'working out the changes'} />
+              </h5>
             )}
 
             {!planning && plan && (
@@ -768,7 +862,7 @@ export function MetadataEditor(
             <button
               type="button"
               id="metadata-apply-button"
-              disabled={!plan || plan.empty || planning || applying}
+              disabled={!plan || plan.empty || planning || applying || loadingRelease}
               onClick={() => void apply()}
             >
               {applying ? <Loading label="applying" /> : 'apply'}

@@ -277,7 +277,40 @@ class MusicBrainzClient:
         return await self.request_with_retries("release-group/", params)
       
      
-    async def get_releases(self, release_group_id: str, log=True) -> dict:
+    #? Everything needed to TELL releases apart: format, labels, country, disambiguation, and
+    #? media[].track-count. Note the track COUNT is here - only the track list itself is not.
+    RELEASE_LIST_INC = "media+labels+artist-credits"
+
+    #? The above plus every track of every disc. Needed to actually apply a release, and to
+    #? match a Soulseek folder against its real tracklist, which is the whole point of the
+    #? download flow - so this is still the default.
+    RELEASE_FULL_INC = "media+recordings+labels+artist-credits"
+
+    async def get_release(self, release_mbid: str) -> dict:
+        """
+        One release, with its tracklist.
+
+        The companion to `get_releases(with_tracks=False)`: list them cheaply, then pay for the
+        tracks of the one that was actually chosen. Measured on Metallica's 1991 album, whose
+        group holds 58 releases: **carrying recordings for all of them costs 5 requests and
+        1.4 MB, against 1 request and 101 KB without.** MusicBrainz allows about one request a
+        second, so those four extra round trips are four seconds of somebody waiting for track
+        listings of 57 pressings they did not pick.
+        """
+        return await self.request_with_retries(
+            f"release/{release_mbid}", {"inc": self.RELEASE_FULL_INC, "fmt": "json"}
+        )
+
+    async def get_releases(self, release_group_id: str, log=True, with_tracks: bool = True) -> dict:
+        """
+        Every release in a group.
+
+        `with_tracks` defaults to True because the download flow needs real tracklists to match
+        Soulseek folders against, and the search view renders them. The metadata editor asks for
+        False: it is choosing BETWEEN pressings, which needs their format, country, catalogue
+        number and track count but not their contents - and then fetches the tracklist of the one
+        you pick. See get_release for what that saves.
+        """
         if log:
             logger.info(
                 "getting specific releases from musicbrainz",
@@ -291,7 +324,7 @@ class MusicBrainzClient:
         while True:
             params = {
                 "release-group": release_group_id,
-                "inc": "media+recordings+labels+artist-credits",
+                "inc": self.RELEASE_FULL_INC if with_tracks else self.RELEASE_LIST_INC,
                 "fmt": "json",
                 "limit": limit,
                 "offset": offset,
@@ -317,7 +350,17 @@ class MusicBrainzClient:
 
     
 
-    async def fully_search(self, query: str, limit: int = 5) -> dict:
+    async def fully_search(self, query: str, limit: int = 5, include_releases: bool = True) -> dict:
+        """
+        Release groups matching the query, and by default the releases of the best one.
+
+        `include_releases=False` exists because that second half is expensive and not everyone
+        wants it. It walks the best group's full release list WITH tracklists - five requests
+        and 1.4 MB for an album like Metallica's 1991 one. The search view needs it, since it
+        renders those releases immediately. The metadata editor does not: it ranks the groups
+        itself and then asks for the ones it actually wants, so the eager fetch was five round
+        trips spent on a payload it dropped on the floor.
+        """
         logger.info(f"searching musicbrainz...", extra={"frontend": True, "src":"musicbrainz"})
         params = {
             "query": query,
@@ -345,10 +388,14 @@ class MusicBrainzClient:
 
 
         logger.info(f"release groups parsed", extra={"frontend": True, "src":"musicbrainz"})
-        first_release_group = release_groups["release-groups"][0] 
+
+        if not include_releases:
+            #? the key is still present, so callers reading it don't have to special-case this
+            return {"release-groups": release_groups["release-groups"], "best-match-releases": []}
+
+        first_release_group = release_groups["release-groups"][0]
         first_release_group_releases = await self.get_releases(first_release_group["id"], log=False)
-        
-        
+
         return {
             "release-groups": release_groups["release-groups"],
             "best-match-releases": first_release_group_releases["releases"]

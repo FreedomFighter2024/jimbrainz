@@ -205,3 +205,69 @@ def test_the_rate_limiter_lets_a_short_burst_straight_through():
         assert time.monotonic() - begin < 0.5
     finally:
         started.close()
+
+
+# ---------------------------------------------------------------- what gets asked for
+
+def test_the_release_list_can_be_fetched_without_tracklists(client):
+    """
+    Measured against the live API on Metallica's 1991 album, whose group holds 58 releases:
+    carrying recordings for all of them costs 5 requests and 1446 KB, against 1 request and
+    101 KB without. MusicBrainz allows about one request a second, so that is four seconds
+    spent on the track listings of 57 pressings nobody picked.
+    """
+    fake = use(client, FakeClient(FakeResponse({"releases": [{"id": "r"}], "release-count": 1})))
+
+    asyncio.run(client.get_releases("g1", log=False, with_tracks=False))
+
+    inc = fake.calls[0][1]["inc"]
+    assert "recordings" not in inc
+    assert "media" in inc, "the track COUNT and format must survive - that is what picks an edition"
+
+
+def test_the_release_list_carries_tracklists_by_default(client):
+    """
+    The download flow matches Soulseek folders against a release's real tracklist, and the
+    search view renders it. Losing that by default would gut the matching rather than break it
+    loudly, so the saving is opt-in.
+    """
+    fake = use(client, FakeClient(FakeResponse({"releases": [{"id": "r"}], "release-count": 1})))
+
+    asyncio.run(client.get_releases("g1", log=False))
+
+    assert "recordings" in fake.calls[0][1]["inc"]
+
+
+def test_one_release_can_be_fetched_with_its_tracklist(client):
+    """The other half of the trade: pay for the tracks of the pressing actually chosen."""
+    fake = use(client, FakeClient(FakeResponse({"id": "r1", "media": []})))
+
+    asyncio.run(client.get_release("r1"))
+
+    endpoint, params = fake.calls[0]
+    assert endpoint == "release/r1"
+    assert "recordings" in params["inc"]
+
+
+def test_a_search_can_skip_the_eager_release_fetch(client):
+    """
+    fully_search walks the best group's whole release list WITH tracklists. The search view
+    wants that; the metadata editor ranks the groups itself and fetches what it wants, so for
+    it those requests were spent on a payload it dropped on the floor.
+    """
+    fake = use(client, FakeClient(FakeResponse({"release-groups": [{"id": "g1"}]})))
+
+    result = asyncio.run(client.fully_search("metallica", 25, include_releases=False))
+
+    assert len(fake.calls) == 1, "only the group search went out"
+    assert result["release-groups"] == [{"id": "g1"}]
+    assert result["best-match-releases"] == [], "key still present, so callers need no special case"
+
+
+def test_a_search_still_fetches_releases_by_default(client):
+    fake = use(client, FakeClient(FakeResponse(
+        {"release-groups": [{"id": "g1"}], "releases": [{"id": "r"}], "release-count": 1})))
+
+    asyncio.run(client.fully_search("metallica", 25))
+
+    assert len(fake.calls) == 2, "the group search, then that group's releases"

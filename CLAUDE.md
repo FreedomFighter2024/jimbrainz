@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             268 tests, all Python, all fixture-driven
+tests/             273 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -127,6 +127,15 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   guaranteed duplicate into a hit, since `fully_search` fetches the first group's releases as
   `best-match-releases` and the editor then asks for that same group again. Bounded because a
   release list with recordings is a large payload. **Never cache the failure path** — see below.
+- **Ask MusicBrainz for the least that answers the question.** Two flags, both defaulting to
+  the expensive-but-correct behaviour so that a caller who does nothing cannot lose data:
+  `fully_search(include_releases=False)` skips the eager best-match-releases walk, and
+  `get_releases(with_tracks=False)` drops `inc=recordings` from a listing. Together they took
+  opening the editor from ten requests to four, and one group's releases from five requests and
+  1.4 MB to one and 101 KB — see the measurements below. `get_release()` is the other half:
+  the tracklist of the pressing actually chosen. **Never make trackless the default** — the
+  download flow matches Soulseek folders against a real tracklist, and losing it would weaken
+  the matching silently instead of failing loudly.
 - **The metadata queue stores only what you IGNORED.** What is *wrong* with an album is
   derived from the scan on every request by the pure `metadata_health.py`, never written down.
   A "needs attention" flag that is stored is a flag that goes stale the moment something fixes
@@ -352,17 +361,39 @@ Measured with 148 releases × 12 tracks:
 | `scrollHeight` read after a DOM change | 23 ms → **962 ms** worst case |
 | Filter keystroke | 9–62 ms (fine) |
 
-**A third, measured against the live API rather than a fixture:** fetching one release group's
-releases took **five** requests. Observed offsets walking the Black Album's group were
-0 → 36 → 40 → 45 → 56 for 60 releases, i.e. MusicBrainz returned far fewer than the `limit=100`
-asked for. At roughly a request a second that pagination *is* the wait when you open the editor.
-The likely cause is `inc=…+recordings`, which carries every track of every pressing purely so the
-list can show a track count that `media[].track-count` already provides. Dropping `recordings`
-from the list fetch and asking for the chosen release's tracklist on selection is the obvious
-next lever — **untested**, because MusicBrainz went unreachable before the comparison could be
-run. Measure it before assuming.
+**Opening the metadata editor, measured against the live API and now FIXED.** It cost ten
+MusicBrainz requests for one album; it costs four. Three things were wrong, and the middle one
+was the expensive one:
 
-**Two causes in the interface, both still unfixed:**
+| | before | after |
+| --- | --- | --- |
+| requests to open the editor on Metallica's *Metallica* | 10 | **4** |
+| requests for one release group's releases | 5 | **1** |
+| payload for that group | 1446 KB | **101 KB** |
+
+1. `fully_search` eagerly walked the best group's whole release list as `best-match-releases`.
+   The editor never reads that field — it ranks the groups itself — so those requests bought a
+   payload that was dropped on the floor. `?releases=false` turns it off; the search view, which
+   does render them, still gets them by default.
+2. `inc=…+recordings` carried every track of every pressing purely so a list could show a count
+   that `media[].track-count` already gives. That is what made MusicBrainz return 36, then 4,
+   then 5, then 11 releases for a `limit=100` — it was capping on size, not count. Without it
+   the same 58 releases arrive in **one** request. `?tracks=false` opts in, and the tracklist of
+   the release you actually pick is fetched on its own.
+3. Both defaults are unchanged, because the download flow matches Soulseek folders against a
+   release's real tracklist. Losing that would gut the matching quietly rather than break it
+   loudly — so the saving is opt-in and the caller that needs correctness gets it by doing
+   nothing.
+
+**The trap this creates, which is worth stating plainly:** a release fetched for the *list* has
+no tracklist, and building a retag payload from one applies no titles and no track numbers —
+writing nothing, and reading exactly like the edit silently failed. The editor therefore keeps
+`selectedId` (what you clicked, drives the highlight and the cover art) apart from `selected`
+(that release *with* its tracks, the only thing a payload is ever built from), refuses to plan
+while the tracklist is in flight, and clears the selection outright if the fetch fails. Do not
+collapse those two pieces of state back together.
+
+**Two causes in the interface, both still unfixed:****Two causes in the interface, both still unfixed:**
 
 1. `renderBody` (~`main.js:1803`) eagerly builds the full track list for every release even
    though it's hidden until clicked — roughly half the entire DOM is invisible.
@@ -435,7 +466,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 268 tests
+.venv/bin/python -m pytest tests/ -q  # 273 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -455,7 +486,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 268 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 273 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

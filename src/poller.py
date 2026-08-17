@@ -64,12 +64,27 @@ async def poll_downloads_once(slskd_client, store, missing_counts: dict[int, int
             await _organize_if_enabled(job, store)
             continue
 
-        if summary.get("files_failed") and summary["files_done"] + summary["files_failed"] >= summary["files_total"]:
+        #? Nothing is still moving and not everything arrived. Reaching a terminal status here
+        #? is the whole point: a rejected transfer is reported by slskd forever without ever
+        #? changing, so a job that doesn't act on it waits for a file that is never coming and
+        #? shows "queued" indefinitely - which reads as "hasn't started yet" rather than as the
+        #? refusal it is.
+        if summary["files_failed"] and summary["files_done"] + summary["files_failed"] >= summary["files_total"]:
+            reason = summary.get("failure_reason") or "the transfer failed"
+
+            #? a partial arrival is a different situation from an outright refusal, and the
+            #? files that DID land are still sitting in slskd's folder
+            detail = (
+                f"{reason} ({summary['files_done']} of {summary['files_total']} file(s) arrived)"
+                if summary["files_done"]
+                else reason
+            )
+
             logger.error(
-                f"download of {label} ended with {summary['files_failed']} failed file(s)",
+                f"download of {label} failed: {detail}",
                 extra={"frontend": True, "src": "slskd"},
             )
-            await store.update_status(job_id, "failed", "one or more transfers errored")
+            await store.update_status(job_id, "failed", detail)
             continue
 
         if job["status"] == "queued" and summary["progress"] > 0:

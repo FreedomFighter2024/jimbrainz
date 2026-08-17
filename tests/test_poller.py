@@ -349,3 +349,69 @@ def test_a_dry_run_enrols_nothing(tmp_path, monkeypatch):
 
     assert asyncio.run(store.new_import_summary())["count"] == 0
 
+
+def test_a_rejected_download_fails_instead_of_sitting_in_the_queue(tmp_path):
+    """
+    The reported bug. slskd answers "Completed, Rejected" for a peer that won't send the file,
+    and that state never changes again - so a job which treats it as neither done nor failed
+    waits forever. It stayed `queued`, which the interface renders as "hasn't started yet",
+    with nothing anywhere saying it had been refused.
+
+    The unmatched grace period is no help here either: slskd IS reporting these transfers, so
+    the job never looks abandoned. Nothing else could have rescued it.
+    """
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+
+    rejected = transfers(
+        ("share/album/01.flac", "Completed, Rejected", 0),
+        ("share/album/02.flac", "Completed, Rejected", 0),
+    )
+    asyncio.run(poll_downloads_once(FakeSlskd(rejected), store, {}))
+
+    job = next(j for j in asyncio.run(store.list_jobs()) if j["id"] == job_id)
+    assert job["status"] == "failed"
+    assert "refused" in job["error"]
+
+
+def test_a_timed_out_download_also_reaches_a_terminal_status(tmp_path):
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+
+    asyncio.run(poll_downloads_once(FakeSlskd(transfers(
+        ("share/album/01.flac", "Completed, TimedOut", 0),
+        ("share/album/02.flac", "Completed, TimedOut", 0),
+    )), store, {}))
+
+    assert status_of(store, job_id) == "failed"
+
+
+def test_a_partly_rejected_download_says_what_did_arrive(tmp_path):
+    """
+    The files that landed are still in slskd's folder, so "nothing happened" would be wrong -
+    and knowing one of two arrived is what tells you to go looking for the other.
+    """
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+
+    asyncio.run(poll_downloads_once(FakeSlskd(transfers(
+        ("share/album/01.flac", "Completed, Succeeded", 100),
+        ("share/album/02.flac", "Completed, Rejected", 0),
+    )), store, {}))
+
+    job = next(j for j in asyncio.run(store.list_jobs()) if j["id"] == job_id)
+    assert job["status"] == "failed"
+    assert "1 of 2" in job["error"]
+
+
+def test_a_download_still_in_progress_is_not_failed_by_one_rejection(tmp_path):
+    """One refused file while another is still moving is not a finished job."""
+    store = make_store(tmp_path)
+    job_id = seed_job(store)
+
+    asyncio.run(poll_downloads_once(FakeSlskd(transfers(
+        ("share/album/01.flac", "InProgress", 40),
+        ("share/album/02.flac", "Completed, Rejected", 0),
+    )), store, {}))
+
+    assert status_of(store, job_id) == "downloading"

@@ -75,8 +75,17 @@ export interface DownloadJob {
   bytes_transferred: number
   files_done: number
   files_total: number
-  /** Absent unless slskd matched transfers for this job. */
+  /**
+   * Files that have stopped for good without arriving — refused, timed out, errored or
+   * cancelled. Absent on terminal jobs, where the stored status is the answer instead.
+   *
+   * Every one of slskd's "Completed, <substate>" strings other than Succeeded counts here.
+   * That matters: a substate nothing recognises is a file that will never move and a job that
+   * will never leave `queued` — see TRANSFER_FAILURE_REASONS in src/store.py.
+   */
   files_failed?: number
+  /** Why they stopped, in words, or null. Files in a folder fail together, so it's one reason. */
+  failure_reason?: string | null
   /** Whether slskd currently knows about any of this job's files. */
   matched: boolean
 }

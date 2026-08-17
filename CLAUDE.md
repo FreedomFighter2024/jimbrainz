@@ -221,6 +221,14 @@ Each of these cost real time. Don't rediscover them.
 - **slskd's `averageSpeed` is cumulative** (total bytes ÷ total elapsed), so it only ever
   creeps upward and never shows the current rate. Real speed is derived from `bytesTransferred`
   deltas between polls. Don't "simplify" back to `averageSpeed`.
+- **An unrecognised slskd transfer substate is a permanently stuck job.** This was predicted in
+  "What the tests cannot tell you" below and then happened: `summarize_transfers` knew about
+  `"Completed, Succeeded"`, `"Errored"` and `"Cancelled"`, so **`"Completed, Rejected"` counted
+  as neither done nor failed**. A refused download sat at `queued` forever — the interface
+  renders that as "hasn't started yet" — and because slskd *was* reporting the transfers, the
+  unmatched-transfer grace period never applied either. Nothing could clear it but hand-editing
+  the DB. Every terminal substate now lives in `TRANSFER_FAILURE_REASONS` in `store.py` with the
+  sentence shown to the user. **If slskd grows another substate, add it there.**
 ### Tooling and environment
 
 - **The browser preview pane is not a reliable witness.** Two distinct failure modes, both
@@ -365,8 +373,10 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 All 257 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
-- slskd transfer `state` strings (matching assumes `"Completed, Succeeded"`, `"Errored"`,
-  `"Cancelled"`). If downloads finish but jobs never leave `downloading`, this is why.
+- slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was
+  not in the recognised set, so a refused download sat at `queued` indefinitely — see the
+  gotcha above. `TRANSFER_FAILURE_REASONS` in `store.py` now holds every terminal substate, and
+  is the first place to look if a job never leaves `queued` or `downloading`.
 - slskd's on-disk download layout — `find_local_file()` searches by basename rather than
   reconstructing paths, precisely because the layout isn't guaranteed.
 - Whether `SLSKD_DOWNLOAD_PATH` actually resolves to the same files slskd writes. This is the
@@ -418,3 +428,6 @@ Worth knowing before someone "fixes" one of these:
   The bulk operation that would be genuinely safe is folder renames to match the convention,
   since those are fully determined by the tags and need no MusicBrainz guess: `misfiled` is
   already its own facet, so that is where it would hang.
+- **Retrying a rejected download.** The job now reaches `failed` and says the peer refused it,
+  but picking a different peer is still a manual re-search. The candidates are not kept after
+  enqueueing, so "try the next one" would mean storing them with the job.

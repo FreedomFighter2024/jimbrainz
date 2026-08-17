@@ -16,6 +16,7 @@ from src.store import (  # noqa: E402
     JobStore,
     index_transfers_by_user,
     summarize_transfers,
+    transfer_failure,
 )
 
 
@@ -345,3 +346,54 @@ def test_a_corrupt_ignore_list_reads_as_nothing_ignored(tmp_path):
 
     assert asyncio.run(store.album_reviews())["a/one"]["ignored_issues"] == []
 
+
+# ---------------------------------------------------------------- terminal transfer states
+
+def test_rejected_transfers_are_counted_as_failures():
+    """
+    The bug this exists to prevent: "Completed, Rejected" was neither "Succeeded" nor one of
+    the two failure strings the matching knew about, so a rejected download counted as still
+    in flight. The job sat at `queued` forever - slskd was reporting the transfer, so the
+    unmatched grace period never applied either - and the interface said it hadn't started yet.
+    """
+    downloads = make_downloads("bob", [
+        make_transfer("share/album/01.flac", state="Completed, Rejected", percent=0),
+        make_transfer("share/album/02.flac", state="Completed, Rejected", percent=0),
+    ])
+    summary = summarize_transfers(JOB, index_transfers_by_user(downloads))
+
+    assert summary["files_failed"] == 2
+    assert summary["files_done"] == 0
+    assert summary["failure_reason"] == "the peer refused to send it"
+
+
+def test_every_terminal_substate_is_recognised():
+    """
+    An unrecognised substate is a permanently stuck job, so this is the list that matters. If
+    slskd grows another one it has to be added to TRANSFER_FAILURE_REASONS.
+    """
+    for substate in ("Rejected", "TimedOut", "Errored", "Cancelled"):
+        assert transfer_failure(f"Completed, {substate}"), f"{substate} not recognised"
+
+    assert transfer_failure("Completed, Succeeded") == ""
+    assert transfer_failure("InProgress") == ""
+    assert transfer_failure("Queued, Remotely") == ""
+    assert transfer_failure(None) == ""
+
+
+def test_a_partial_rejection_is_still_reported():
+    downloads = make_downloads("bob", [
+        make_transfer("share/album/01.flac", state="Completed, Succeeded", percent=100),
+        make_transfer("share/album/02.flac", state="Completed, Rejected", percent=0),
+    ])
+    summary = summarize_transfers(JOB, index_transfers_by_user(downloads))
+
+    assert summary["files_done"] == 1
+    assert summary["files_failed"] == 1
+
+
+def test_an_unmatched_job_reports_no_failures_rather_than_omitting_them():
+    """Every caller reads these fields; absence would be indistinguishable from zero."""
+    summary = summarize_transfers(JOB, {})
+    assert summary["files_failed"] == 0
+    assert summary["failure_reason"] is None

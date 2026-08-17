@@ -41,6 +41,15 @@ export function jobDetailText(job: DownloadJob, liveSpeed: number | null): strin
 
   const parts = [`${job.files_done}/${job.files_total} files`]
 
+  /*
+   * Files the peer has already refused, while the rest are still moving.
+   *
+   * Worth saying before the job ends rather than only in the error afterwards: a partly
+   * rejected download otherwise looks like an ordinary one running slightly behind, right up
+   * until it fails. The full reason arrives with the terminal status above.
+   */
+  if (job.files_failed) parts.push(`${job.files_failed} failed`)
+
   // where we are in the peer's upload queue - the difference between "stuck" and "waiting
   // my turn behind 40 people", which is otherwise invisible
   if (job.queue_position !== null && job.queue_position !== undefined) {
@@ -56,5 +65,7 @@ export function jobDetailText(job: DownloadJob, liveSpeed: number | null): strin
 export function jobDetailClass(job: DownloadJob): string {
   if (job.status === 'failed') return 'red'
   if (job.error) return 'yellow'
+  //? something has already been refused even though the job is still going
+  if (job.files_failed) return 'yellow'
   return 'default-secondary'
 }

@@ -482,6 +482,34 @@ class JobStore:
             return {"count": 0, "albums": [], "tracking_enabled": False}
 
 
+#? slskd reports a stopped transfer as "Completed, <substate>". "Succeeded" is the only good
+#? one; every other substate is TERMINAL - a transfer sitting in one will never move again.
+#?
+#? Treating an unrecognised substate as "still going" is not a harmless omission. A rejected
+#? download sat in the queue reporting that it hadn't started yet, indefinitely: it was neither
+#? done nor failed, so no transition fired, and because slskd WAS reporting the transfer the
+#? unmatched-transfer grace period never applied either. It could only ever be cleared by hand.
+#?
+#? So: if slskd grows another substate, it belongs in here. An unknown one is a stuck job.
+TRANSFER_FAILURE_REASONS = {
+    "Rejected": "the peer refused to send it",
+    "TimedOut": "the peer stopped responding",
+    "Errored": "the transfer errored",
+    "Cancelled": "the transfer was cancelled",
+}
+
+
+def transfer_failure(state: str | None) -> str:
+    """
+    Why this transfer stopped for good, or '' if it hasn't stopped badly.
+
+    Substring matching, like the rest of the state handling here, because slskd composes the
+    string ("Completed, Rejected") and has changed the composition between versions.
+    """
+    text = state or ""
+    return next((reason for key, reason in TRANSFER_FAILURE_REASONS.items() if key in text), "")
+
+
 def summarize_transfers(job: dict, transfers_by_user: dict[str, list[dict]]) -> dict:
     """
     Work out how a job is doing from slskd's live transfer list.
@@ -501,12 +529,15 @@ def summarize_transfers(job: dict, transfers_by_user: dict[str, list[dict]]) -> 
             "bytes_transferred": 0,
             "files_done": 0,
             "files_total": len(wanted),
+            #? present even here so every caller can read them without a .get() default, and
+            #? so "no transfers" can never be mistaken for "no failures worth reporting"
+            "files_failed": 0,
+            "failure_reason": None,
             "matched": False,
         }
 
     done = sum(1 for t in transfers if "Completed, Succeeded" in (t.get("state") or ""))
-    failed = [t for t in transfers if "Errored" in (t.get("state") or "")
-              or "Cancelled" in (t.get("state") or "")]
+    reasons = [reason for reason in (transfer_failure(t.get("state")) for t in transfers) if reason]
 
     return {
         # average over everything we asked for, not just what slskd currently reports, so a
@@ -520,7 +551,10 @@ def summarize_transfers(job: dict, transfers_by_user: dict[str, list[dict]]) -> 
         "bytes_transferred": sum(t.get("bytesTransferred", 0) or 0 for t in transfers),
         "files_done": done,
         "files_total": len(wanted),
-        "files_failed": len(failed),
+        "files_failed": len(reasons),
+        #? The first one. Files in a folder fail together and for the same cause - a peer that
+        #? refuses one refuses all of them - so listing every reason would just repeat itself.
+        "failure_reason": reasons[0] if reasons else None,
         "matched": True,
     }
 

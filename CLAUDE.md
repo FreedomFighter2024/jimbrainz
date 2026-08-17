@@ -229,6 +229,59 @@ Each of these cost real time. Don't rediscover them.
   unmatched-transfer grace period never applied either. Nothing could clear it but hand-editing
   the DB. Every terminal substate now lives in `TRANSFER_FAILURE_REASONS` in `store.py` with the
   sentence shown to the user. **If slskd grows another substate, add it there.**
+- **Never take a word apart to build a search query.** `build_search_query` used to strip all
+  punctuation to spaces, so Metallica's **`S&M2` was searched for as `S M2`** — and found
+  nothing. If Soulseek tokenizes on non-alphanumerics (which is what the failure looks like),
+  the folder `Metallica - S&M2 (2020)` holds `metallica/s/m/2` and there is **no `m2` token in
+  it**, so we asked for a term that exists on neither side. The album name silently vanished
+  from its own search.
+  The rule now: **punctuation between two alphanumerics is part of the word and stays**
+  (`S&M2`, `R&B`, `AC/DC`, `Jay-Z`, `That's`); punctuation standing on its own is dropped
+  (`Simon & Garfunkel`, `(Deluxe)`, `Guns N'`). Whatever Soulseek does to `S&M2` in the query it
+  does to `S&M2` in the folder name, and that is a far better bet than guessing on its behalf —
+  splitting it ourselves is the one option that is wrong under *both* readings of how it
+  matches.
+  **A first attempt got this wrong in an instructive way**: it kept the splitting and dropped
+  the one-character debris instead, which fixed nothing here (`S M2` → `M2`, still no match) and
+  quietly turned `Vol. 2` into `Vol`. Length is not the signal — position is.
+- **`request_with_retries` returns an error dict rather than raising.** Reaching straight for
+  `["release-groups"]` produced a `KeyError` that surfaced as *"Error searching MusicBrainz:
+  'release-groups'"* — which reads like a bad query, so an outage looked like user error.
+  `MusicBrainzUnavailable` now distinguishes them.
+- **docker-compose: never declare a var in both `env_file` and `environment:`.** `environment:`
+  wins and re-interpolates `${VAR}` from compose's own env; when that comes back empty it
+  silently overwrites the good value from `.env`. This produced an unusable empty `SLSKD_URL`.
+- **`.env` values must not have trailing `# comments`.** Compose and python-dotenv disagree
+  about inline comments. Examples go on their own lines.
+- **Two editions of one album used to silently not arrive.** `{album} ({year})` gave the
+  standard and deluxe press identical paths; `execute_plan` correctly refused to overwrite,
+  so every track was *skipped* — and the poller only reported a problem when
+  `organized == 0 AND skipped == 0`, so an all-skipped job fell through to status
+  `organized`. Green tick, album missing. Fixed in both places, and both are covered by
+  tests. **This was the exact Lidarr complaint that motivated the fork**, reproduced here.
+- **Cover art is fetched on apply, never on preview.** Previewing runs on every click in the
+  release list, so downloading an image to describe it would be slow and rude to the Archive.
+  `plan_art()` decides what *would* happen with no network call; the route fetches the bytes
+  and hands them to `execute_retag`, which keeps `retag.py` free of network dependencies and
+  testable without one.
+- **Retagging a file does NOT change its directory's mtime** — only adding, removing or
+  renaming entries does. Measured, not assumed. The library cache keys on directory mtime,
+  so an in-place retag is invisible to the scanner and the edit looks like it silently
+  failed. `forget_cached_album()` exists for exactly this, and the retag endpoint calls it
+  for both the old and new locations.
+- **Embedded pictures have a TYPE, and files usually hold several.** Type 3 is
+  `COVER_FRONT`, type 6 is `MEDIA` — a scan of the disc itself. EAC and dBpoweramp rips
+  routinely embed both, in no guaranteed order, so `pictures[0]` showed albums illustrated
+  with a picture of a CD. Selection goes through `PICTURE_TYPE_PREFERENCE`, never by order.
+  The same trap applies to ID3 `APIC` frames (there can be several, keyed by description)
+  and to loose files — a lone `disc.jpg` is not the cover.
+- **`/library/art` is the only endpoint that turns user input into a filesystem read.** It
+  takes a path relative to LIBRARY_PATH, so `is_within()` containment is load-bearing, not
+  decoration — without it `?album=../../..` reads anything the container user can. It
+  answers 404 identically for "outside the library" and "no such album" so a probe learns
+  nothing. Covered by tests including a symlink pointing out of the library. **If you add
+  another endpoint taking a path, copy this pattern.**
+
 ### Tooling and environment
 
 - **The browser preview pane is not a reliable witness.** Two distinct failure modes, both

@@ -7,20 +7,48 @@ from src.config import Config, describe_slskd_url
 from src.logger import logger
 
 
+_PUNCTUATION = r"[\[\](){}_\-.,'\"!?/\\:;&+]"
+
+#? Punctuation only counts as punctuation when it is standing on its own - wrapping a word, or
+#? already acting as a separator. BETWEEN two alphanumerics it is part of the name, and pulling
+#? it out is what lost Metallica's "S&M2".
+#?
+#? Both readings of how Soulseek matches say to leave it where it is:
+#?
+#?   If a term has to appear in the path as a substring, "S&M2" is what the folder literally
+#?   says, and "S" "M2" only match by luck.
+#?
+#?   If the server instead tokenizes on non-alphanumerics - which is what the reported failure
+#?   looks like - then it tokenizes the QUERY the same way. Sending "S&M2" asks for s/m/2 and
+#?   matches, while "S M2" asks for a token "m2" that exists on NEITHER side, so it matches
+#?   nothing at all. The album name silently disappears from the search.
+#?
+#? Splitting it ourselves is the one option that can be wrong under both readings, which is why
+#? this leaves the decision to whichever end actually does the matching.
+LOOSE_PUNCTUATION = re.compile(
+    rf"(?<![0-9A-Za-z]){_PUNCTUATION}|{_PUNCTUATION}(?![0-9A-Za-z])"
+)
+
+
 def build_search_query(artist: str, album: str) -> str:
     """
-    Soulseek search is a plain substring match over shared filenames, not a metadata index.
-    Punctuation and edition text are actively harmful here - the Tubifarry maintainer's own
-    guidance is that over-specific queries return nothing, because "deluxe edition" almost
-    never appears in the folder names people actually share.
+    Soulseek search is a match over shared filenames, not a metadata index. Edition text is
+    actively harmful here - the Tubifarry maintainer's own guidance is that over-specific
+    queries return nothing, because "deluxe edition" almost never appears in the folder names
+    people actually share.
 
-    So the query stays deliberately dumb: artist + album. Edition preference is applied later
-    when ranking what comes back (src/matching.py), which is where it can help instead of hurt.
+    So the query stays deliberately dumb: artist + album, with loose punctuation dropped and
+    punctuation inside a word left alone. Edition preference is applied later when ranking what
+    comes back (src/matching.py), which is where it can help instead of hurt.
+
+    What this deliberately does NOT do is take a word apart. "S&M2" is one word that a sharer
+    typed as one word; whatever Soulseek does to it, it will do the same thing to the folder
+    name, and that is a far better bet than guessing on its behalf.
     """
-    combined = f"{artist or ''} {album or ''}"
-    combined = re.sub(r"[\[\](){}_\-.,'\"!?/\\:;&+]", " ", combined)
-    combined = re.sub(r"\s+", " ", combined)
-    return combined.strip()
+    combined = LOOSE_PUNCTUATION.sub(" ", f"{artist or ''} {album or ''}")
+
+    #? split()/join() rather than a whitespace regex - it collapses runs and strips the ends
+    return " ".join(combined.split())
 
 
 class SlskdClient:

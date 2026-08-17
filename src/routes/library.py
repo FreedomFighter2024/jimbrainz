@@ -1,13 +1,14 @@
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from src.config import Config
 from src.library import (delete_album, forget_cached_album, load_album_art,
                          scan_library, summarize_for_deletion)
 from src.logger import logger
+from src.metadata_health import ISSUE_TYPES, attach_issues
 from src.organizer import is_within
 from src.api.coverart_endpoint import CoverArtClient
 from src.retag import execute_retag, plan_retag
@@ -20,10 +21,52 @@ coverart_client = CoverArtClient()
 router = APIRouter()
 
 
-@router.get("/albums")
-async def albums():
+def _store(request: Request):
     """
-    Everything currently in LIBRARY_PATH.
+    The SQLite store, or None.
+
+    Looked up defensively rather than assumed: the store is attached by the app's lifespan, so
+    a route imported into a test or the dev harness without one must still answer. Every
+    caller below treats None as "nothing is remembered", which is the same shape as the store
+    having failed to open - so there is one degraded path, not two.
+    """
+    return getattr(request.app.state, "store", None)
+
+
+async def _scan_with_queue(request: Request, force: bool) -> dict:
+    """
+    Scan the library, then say what still needs attention and why.
+
+    The issues are derived here, on every response, rather than stored: metadata_health.py is
+    pure, so recomputing costs nothing measurable next to the scan it decorates, and an album
+    that has just been fixed drops out of the queue without anything having to remember to
+    clear a flag. The only persisted state is what the user chose to ignore.
+
+    Albums are also enrolled for review as a side effect, which is what gives `first_seen` a
+    meaning. It is `INSERT OR IGNORE`, so a scan can never overwrite the fact that an album
+    arrived as a download rather than being found sitting there.
+    """
+    result = await asyncio.to_thread(scan_library, Config.LIBRARY_PATH or "", force)
+
+    store = _store(request)
+    reviews = await store.album_reviews() if store else {}
+
+    result["queue"] = attach_issues(result["albums"], reviews)
+    result["issue_types"] = ISSUE_TYPES
+    #? so the interface can say "your ignores aren't being saved" rather than silently
+    #? forgetting them, exactly as the downloads panel does for job tracking
+    result["review_tracking_enabled"] = bool(store and store.available)
+
+    if store:
+        await store.record_albums_seen(result["albums"])
+
+    return result
+
+
+@router.get("/albums")
+async def albums(request: Request):
+    """
+    Everything currently in LIBRARY_PATH, and what's wrong with it.
 
     Scanning touches the filesystem and reads tags, so it runs in a thread rather than
     blocking the event loop - a first scan of a large library takes seconds, and the download
@@ -34,15 +77,17 @@ async def albums():
     would look like a broken app instead of an unfinished setup.
     """
     try:
-        result = await asyncio.to_thread(scan_library, Config.LIBRARY_PATH or "")
+        result = await _scan_with_queue(request, False)
 
         if result["problem"]:
             logger.warning(f"library scan: {result['problem']}", extra={"frontend": True})
         else:
+            queue = result["queue"]
+            waiting = f", {queue['total']} needing metadata" if queue["total"] else ""
             logger.info(
                 f"library: {result['album_count']} album(s) by {result['artist_count']} "
                 f"artist(s) in {result['scan_seconds']}s "
-                f"({result['cached']} unchanged)",
+                f"({result['cached']} unchanged){waiting}",
                 extra={"frontend": True},
             )
 
@@ -54,7 +99,7 @@ async def albums():
 
 
 @router.post("/rescan")
-async def rescan():
+async def rescan(request: Request):
     """
     Drop the per-folder cache and read everything again.
 
@@ -63,7 +108,7 @@ async def rescan():
     that, and for when you simply don't trust what you're looking at.
     """
     try:
-        return await asyncio.to_thread(scan_library, Config.LIBRARY_PATH or "", True)
+        return await _scan_with_queue(request, True)
 
     except Exception as e:
         logger.error(f"Exception in /rescan endpoint: {e}")
@@ -149,7 +194,7 @@ class RetagRequest(BaseModel):
 
 
 @router.post("/retag/preview")
-async def retag_preview(request: RetagRequest):
+async def retag_preview(body: RetagRequest):
     """
     What applying this release would change. Writes nothing.
 
@@ -162,8 +207,8 @@ async def retag_preview(request: RetagRequest):
 
     try:
         return await asyncio.to_thread(
-            plan_retag, request.album_path, request.release.model_dump(),
-            Config.LIBRARY_PATH, request.fetch_art,
+            plan_retag, body.album_path, body.release.model_dump(),
+            Config.LIBRARY_PATH, body.fetch_art,
         )
 
     except Exception as e:
@@ -172,7 +217,7 @@ async def retag_preview(request: RetagRequest):
 
 
 @router.post("/retag/apply")
-async def retag_apply(request: RetagRequest):
+async def retag_apply(request: Request, body: RetagRequest):
     """
     Write the tags and re-file the folder.
 
@@ -184,11 +229,11 @@ async def retag_apply(request: RetagRequest):
     if not Config.LIBRARY_PATH:
         raise HTTPException(status_code=400, detail="LIBRARY_PATH is not set")
 
-    release = request.release.model_dump()
+    release = body.release.model_dump()
 
     try:
         plan = await asyncio.to_thread(
-            plan_retag, request.album_path, release, Config.LIBRARY_PATH, request.fetch_art
+            plan_retag, body.album_path, release, Config.LIBRARY_PATH, body.fetch_art
         )
 
         if plan["source"] is None:
@@ -211,8 +256,19 @@ async def retag_apply(request: RetagRequest):
         if results.get("moved_to"):
             forget_cached_album(results["moved_to"])
 
+        #? Applying a release IS reviewing the album, so this clears it from the new-import
+        #? prompt without a second click. It follows the rename because album_review is keyed
+        #? on the path: leaving the row behind would orphan the history of an album that is
+        #? still very much there, and re-enrol it as brand new on the next scan.
+        store = _store(request)
+        if store is not None:
+            await store.mark_album_reviewed(
+                body.album_path,
+                plan["target_path"] if results.get("moved_to") else None,
+            )
+
         logger.info(
-            f"retagged {results['tagged']} file(s) in {request.album_path}"
+            f"retagged {results['tagged']} file(s) in {body.album_path}"
             + (f", re-filed as {Path(results['moved_to']).name}" if results.get("moved_to") else ""),
             extra={"frontend": True},
         )
@@ -225,6 +281,90 @@ async def retag_apply(request: RetagRequest):
     except Exception as e:
         logger.error(f"Exception in /retag/apply endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error applying the retag: {e}")
+
+
+class QueueRequest(BaseModel):
+    #? relative to LIBRARY_PATH, as the scan reports it - and what album_review is keyed on
+    album_path: str
+    #? which issues you're accepting. Sent by the client so it can only ever ignore the
+    #? problems it actually showed you: an empty list would silently mute nothing, and
+    #? ignoring "everything wrong with this album" computed server-side could mute a problem
+    #? that appeared between the page loading and the button being pressed.
+    issues: list[str] = Field(default_factory=list)
+
+
+@router.get("/queue/new_imports")
+async def new_imports(request: Request):
+    """
+    Albums jimbrainz has filed that you haven't looked at yet.
+
+    Answerable without touching the filesystem, which is the entire point of it: the library is
+    deliberately not scanned until you open its tab, so a "you have new albums" prompt that
+    needed a scan would either be missing when it mattered or would tax every page load. This
+    reads one indexed table.
+    """
+    store = _store(request)
+
+    if store is None:
+        return {"count": 0, "albums": [], "tracking_enabled": False}
+
+    return await store.new_import_summary()
+
+
+@router.post("/queue/ignore")
+async def ignore_issues(request: Request, body: QueueRequest):
+    """
+    Accept an album as it is, so it stops appearing in the queue.
+
+    Stored per issue rather than as one "ignored" flag, so agreeing that a bootleg will never
+    be in MusicBrainz doesn't also silence the day its cover art goes missing - the album comes
+    back on its own if something new is wrong with it.
+    """
+    store = _store(request)
+
+    if store is None or not store.available:
+        raise HTTPException(status_code=503, detail="ignores can't be saved, the job store isn't available")
+
+    if not await store.ignore_album_issues(body.album_path, body.issues):
+        raise HTTPException(status_code=500, detail="could not save that")
+
+    logger.info(
+        f"ignoring {len(body.issues)} metadata issue(s) on {body.album_path}",
+        extra={"frontend": True},
+    )
+
+    return {"ignored": True, "album_path": body.album_path, "issues": sorted(set(body.issues))}
+
+
+@router.post("/queue/unignore")
+async def unignore(request: Request, body: QueueRequest):
+    """Put an album back in the queue after it was ignored."""
+    store = _store(request)
+
+    if store is None or not store.available:
+        raise HTTPException(status_code=503, detail="the job store isn't available")
+
+    await store.unignore_album(body.album_path)
+    return {"ignored": False, "album_path": body.album_path}
+
+
+@router.post("/queue/reviewed")
+async def reviewed(request: Request, body: QueueRequest):
+    """
+    Note that you've looked at an album, which is what clears it from the new-import prompt.
+
+    Deliberately NOT the same thing as ignoring it. Reviewing says "I've seen this"; the album
+    keeps whatever issues it has and stays in the queue, because a queue that empties when you
+    glance at things is a queue that lies. This exists so the prompt for a freshly imported
+    album can stop being a prompt.
+    """
+    store = _store(request)
+
+    if store is None or not store.available:
+        raise HTTPException(status_code=503, detail="the job store isn't available")
+
+    await store.mark_album_reviewed(body.album_path)
+    return {"reviewed": True, "album_path": body.album_path}
 
 
 class DeleteRequest(BaseModel):

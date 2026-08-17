@@ -273,7 +273,14 @@ export interface ReleasesResponse {
 
 export interface LibraryTrack {
   filename: string
+  /** Falls back to the filename stem when untagged — see `has_title_tag` before trusting it. */
   title: string
+  /**
+   * Whether `title` came from a tag or from the filename. Recorded by the scan because the
+   * fallback is invisible afterwards: a stem like "01 - Shine On" is very close to what a real
+   * title looks like.
+   */
+  has_title_tag: boolean
   /** null when the file carries no readable track number. Sorts last rather than as 0. */
   position: number | null
   /** seconds */
@@ -320,8 +327,55 @@ export interface LibraryAlbum {
   modified_at: number
   /** The folder's files disagree about the album name — usually a real tagging problem. */
   mixed_tags: boolean
+  /** How many files carry no title tag. Non-zero raises the `untitled_tracks` issue. */
+  untitled_tracks: number
   /** How many versions of this (artist, album) are on disk. 1 is the ordinary case. */
   edition_count: number
+
+  /* ----- the metadata queue. Attached by src/metadata_health.py::attach_issues ----- */
+
+  /**
+   * Every issue code found, worst first. Describe them with `LibraryResponse.issue_types`
+   * rather than mapping codes to words here — the server ships the labels precisely so there
+   * isn't a second copy of this vocabulary to drift out of step.
+   *
+   * Note this is everything DETECTED, including issues that have been ignored. Use
+   * `needs_attention` to decide whether the album is in the queue.
+   */
+  issues: string[]
+  /** Issues you've said you're happy with. Still reported above, just no longer counted. */
+  ignored_issues: string[]
+  /** True when `issues` holds something not in `ignored_issues`. This is queue membership. */
+  needs_attention: boolean
+  /** Severity of the worst OUTSTANDING issue: 3 unidentified, 2 wrong, 1 cosmetic, 0 none. */
+  severity: number
+  /** ISO timestamp of when the album was first recorded, or null when nothing remembers it. */
+  first_seen: string | null
+  /** jimbrainz filed this album rather than finding it. What the new-import prompt counts. */
+  imported: boolean
+  /** You've looked at it since. Doesn't clear its issues — see /queue/reviewed. */
+  reviewed: boolean
+}
+
+/** One kind of metadata problem, as src/metadata_health.py::ISSUE_TYPES describes it. */
+export interface MetadataIssueType {
+  /** Short chip text, e.g. "no release id". */
+  label: string
+  /** A sentence saying what it means and what fixes it. */
+  hint: string
+  /** 3 = the album isn't identified at all, 2 = wrong or incomplete, 1 = cosmetic. */
+  severity: number
+}
+
+/** What the queue holds right now, counted server-side over the whole library. */
+export interface MetadataQueueSummary {
+  /** Albums with at least one outstanding issue. */
+  total: number
+  /** Outstanding count per issue code. Ignored issues are excluded. */
+  by_issue: Record<string, number>
+  /** Albums jimbrainz filed that haven't been looked at yet. */
+  new_imports: number
+  ignored_albums: number
 }
 
 export interface LibraryArtist {
@@ -343,6 +397,29 @@ export interface LibraryResponse {
   scan_seconds: number
   /** How many folders came from cache rather than being re-read. */
   cached: number
+  /** The metadata queue, derived from this scan rather than stored. */
+  queue: MetadataQueueSummary
+  /** Every issue code the server can raise, keyed by code. The labels the UI renders. */
+  issue_types: Record<string, MetadataIssueType>
+  /**
+   * False when the SQLite store couldn't be opened. The queue still works — it just stops
+   * remembering what you ignored, the same way downloads still work untracked.
+   */
+  review_tracking_enabled: boolean
+}
+
+/**
+ * GET /library/queue/new_imports — albums jimbrainz filed that you haven't looked at.
+ *
+ * The only part of the queue answerable without a scan, which is why it's a separate endpoint:
+ * the library isn't read until its tab is opened, so a prompt that needed a scan would either
+ * be missing when it mattered or would tax every page load.
+ */
+export interface NewImportsResponse {
+  count: number
+  /** Capped by the server — this names what's waiting, it isn't a second album list. */
+  albums: { album_path: string; artist: string; album: string; first_seen: string }[]
+  tracking_enabled: boolean
 }
 
 /* ===== library: retagging ===== */

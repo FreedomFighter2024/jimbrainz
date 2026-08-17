@@ -1,15 +1,26 @@
 """
-Persistence for download jobs.
+The application's SQLite state. Two tables, for two things worth remembering.
 
-This exists because slskd has no idea what it's downloading *for*. It knows "user bob is
-sending me 12 files"; it does not know those files are MusicBrainz release
-f5093c06-... with a specific tracklist. That link is exactly what's needed later to tag and
-file the result, and nothing else in the stack remembers it - so we do.
+**Download jobs.** slskd has no idea what it's downloading *for*. It knows "user bob is
+sending me 12 files"; it does not know those files are MusicBrainz release f5093c06-... with a
+specific tracklist. That link is exactly what's needed later to tag and file the result, and
+nothing else in the stack remembers it - so we do.
 
 The expected release is stored denormalized rather than as a bare MBID on purpose: by the
 time a slow queue finishes, MusicBrainz may be unreachable (it went down twice while this
 was being built), and re-fetching to organize a finished download would be a silly
 dependency to introduce.
+
+**Album review state.** Deliberately the *smallest* thing that makes the metadata queue work:
+when each album was first seen, whether jimbrainz filed it or merely found it, and which of
+its problems you have said you're happy with. What is wrong with an album is never stored -
+metadata_health.py derives that from the scan every time - because a written-down "needs
+attention" flag is a flag that goes stale the moment something fixes the album without
+clearing it. Storing only the ignores means the queue empties itself.
+
+Both tables live in one file and one connection. A failure to open it degrades rather than
+raises: downloads still work untracked, and the queue still works without remembering what
+you ignored.
 """
 
 import asyncio
@@ -39,6 +50,34 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+CREATE TABLE IF NOT EXISTS album_review (
+    -- Keyed on the album's path RELATIVE to LIBRARY_PATH, which is what every other library
+    -- endpoint already takes. Not the scan's `key`: that is the release MBID when there is
+    -- one, and two folders holding the same release deliberately share it - so ignoring one
+    -- would silently ignore the other. A path is the thing you actually pointed at.
+    --
+    -- The consequence is that renaming a folder loses its row, which is the right outcome:
+    -- the only thing that renames folders here is a retag, and a retagged album deserves to
+    -- be looked at again rather than inheriting an older verdict. mark_album_reviewed()
+    -- carries the row across for exactly that one case.
+    album_path      TEXT PRIMARY KEY,
+    artist          TEXT,
+    album           TEXT,
+    -- 'import' = jimbrainz filed it, so it is new and worth prompting about. 'scan' = it was
+    -- already there when we looked.
+    source          TEXT NOT NULL DEFAULT 'scan',
+    first_seen      TEXT NOT NULL,
+    -- set once you have actually looked at the album, which is what stops the new-import
+    -- badge counting it forever
+    reviewed_at     TEXT,
+    -- JSON list of issue codes you have accepted. Per issue rather than per album: agreeing
+    -- that a bootleg will never be in MusicBrainz should not also silence the day its cover
+    -- art goes missing.
+    ignored_issues  TEXT NOT NULL DEFAULT '[]',
+    ignored_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_review_source ON album_review(source, reviewed_at);
 """
 
 #? queued/downloading/complete are phase 2. organizing/organized land with the organizer.
@@ -220,6 +259,227 @@ class JobStore:
         except Exception:
             logger.error(f"failed to read job {job_id}")
             return None
+
+    # ---------------------------------------------------------------- album review
+    #
+    # Everything below backs the metadata queue. None of it records what is *wrong* with an
+    # album - metadata_health.py works that out from the scan on every request - so a store
+    # that can't be opened costs you the memory of what you ignored and nothing else.
+
+    async def record_albums_seen(self, albums: list[dict], source: str = "scan") -> int:
+        """
+        Note that these albums exist, without disturbing anything already recorded.
+
+        `INSERT OR IGNORE` is doing real work here rather than being defensive: `first_seen`
+        has to mean the first time, and `source` has to keep saying 'import' for an album
+        jimbrainz filed even though every later scan sees it too. An album's row is written
+        once and then only ever updated by an explicit action of the user's.
+
+        `albums` are dicts carrying at least `path`; `artist` and `album` are stored purely so
+        the badge can name what's waiting without a scan.
+        """
+        if not self.available or not albums:
+            return 0
+
+        rows = [
+            (album["path"], album.get("artist") or "", album.get("album") or "", source, _now())
+            for album in albums
+            if album.get("path")
+        ]
+
+        def write():
+            with self._connect() as connection:
+                cursor = connection.executemany(
+                    """
+                    INSERT OR IGNORE INTO album_review
+                        (album_path, artist, album, source, first_seen)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+                return cursor.rowcount
+
+        try:
+            return await asyncio.to_thread(write)
+
+        except Exception as e:
+            logger.error(f"failed to record albums for review: {e}")
+            return 0
+
+    async def album_reviews(self) -> dict[str, dict]:
+        """
+        Everything remembered about every album, keyed on its relative path.
+
+        Returned whole rather than queried per album because the caller is about to decorate
+        an entire library scan with it - a few hundred rows is nothing, and one read beats one
+        per album by a wide margin.
+        """
+        if not self.available:
+            return {}
+
+        def read():
+            with self._connect() as connection:
+                rows = connection.execute("SELECT * FROM album_review").fetchall()
+
+            reviews = {}
+            for row in rows:
+                entry = dict(row)
+                try:
+                    entry["ignored_issues"] = json.loads(entry["ignored_issues"] or "[]")
+                except (TypeError, ValueError):
+                    #? a hand-edited or truncated value must not take the whole library view
+                    #? down; an unreadable ignore list simply means nothing is ignored
+                    entry["ignored_issues"] = []
+                reviews[entry["album_path"]] = entry
+
+            return reviews
+
+        try:
+            return await asyncio.to_thread(read)
+
+        except Exception as e:
+            logger.error(f"failed to read album review state: {e}")
+            return {}
+
+    async def ignore_album_issues(self, album_path: str, issues: list[str]) -> bool:
+        """
+        Accept these issues on this album, so it drops out of the queue.
+
+        The list is stored rather than a bare "ignored" flag, so an album that later develops
+        a *different* problem comes back on its own. Also marks the album reviewed - you have
+        by definition looked at it.
+        """
+        if not self.available or not album_path:
+            return False
+
+        payload = json.dumps(sorted(set(issues or [])))
+
+        def write():
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO album_review
+                        (album_path, source, first_seen, reviewed_at, ignored_issues, ignored_at)
+                    VALUES (?, 'scan', ?, ?, ?, ?)
+                    ON CONFLICT(album_path) DO UPDATE SET
+                        ignored_issues = excluded.ignored_issues,
+                        ignored_at     = excluded.ignored_at,
+                        reviewed_at    = excluded.reviewed_at
+                    """,
+                    (album_path, _now(), _now(), payload, _now()),
+                )
+                return cursor.rowcount > 0
+
+        try:
+            return await asyncio.to_thread(write)
+
+        except Exception as e:
+            logger.error(f"failed to ignore issues on {album_path}: {e}")
+            return False
+
+    async def unignore_album(self, album_path: str) -> bool:
+        """Take an album off the ignore list, putting it back in the queue if it has issues."""
+        if not self.available or not album_path:
+            return False
+
+        def write():
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "UPDATE album_review SET ignored_issues = '[]', ignored_at = NULL "
+                    "WHERE album_path = ?",
+                    (album_path,),
+                )
+                return cursor.rowcount > 0
+
+        try:
+            return await asyncio.to_thread(write)
+
+        except Exception as e:
+            logger.error(f"failed to un-ignore {album_path}: {e}")
+            return False
+
+    async def mark_album_reviewed(self, album_path: str, new_path: str | None = None) -> bool:
+        """
+        Record that this album has been looked at, following it if the folder just moved.
+
+        Called after a retag applies and when you step past an album in the queue. `new_path`
+        is the retag case: the row is keyed on the path, so leaving it behind would orphan the
+        history of an album that is still very much there. The destination row is cleared
+        first because the primary key would otherwise reject the move - and if something *is*
+        already recorded there, it describes a folder that no longer exists.
+        """
+        if not self.available or not album_path:
+            return False
+
+        target = new_path or album_path
+
+        def write():
+            with self._connect() as connection:
+                if target != album_path:
+                    connection.execute("DELETE FROM album_review WHERE album_path = ?", (target,))
+
+                #? Written as move-then-insert rather than as one upsert because the two cases
+                #? want different keys: an existing row must keep its first_seen and follow the
+                #? album to `target`, while an album with no row at all should be recorded at
+                #? where it is NOW, not at the path it has just stopped living at.
+                moved = connection.execute(
+                    "UPDATE album_review SET reviewed_at = ?, album_path = ? WHERE album_path = ?",
+                    (_now(), target, album_path),
+                )
+
+                if moved.rowcount:
+                    return True
+
+                connection.execute(
+                    "INSERT INTO album_review (album_path, source, first_seen, reviewed_at) "
+                    "VALUES (?, 'scan', ?, ?)",
+                    (target, _now(), _now()),
+                )
+                return True
+
+        try:
+            return await asyncio.to_thread(write)
+
+        except Exception as e:
+            logger.error(f"failed to mark {album_path} reviewed: {e}")
+            return False
+
+    async def new_import_summary(self, limit: int = 8) -> dict:
+        """
+        Albums jimbrainz filed that you haven't looked at yet.
+
+        The one thing in the queue that can be answered without scanning the library, which is
+        the whole reason the import source is recorded at all: the library is deliberately not
+        read until you open its tab (a first scan reads tags off every file), so a badge that
+        needed a scan would either be absent when it matters or would tax every page load.
+        This is a single indexed count.
+        """
+        if not self.available:
+            return {"count": 0, "albums": [], "tracking_enabled": False}
+
+        def read():
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT album_path, artist, album, first_seen FROM album_review
+                    WHERE source = 'import' AND reviewed_at IS NULL AND ignored_at IS NULL
+                    ORDER BY first_seen DESC
+                    """
+                ).fetchall()
+
+            return {
+                "count": len(rows),
+                #? capped: this names what is waiting, it isn't a second album list
+                "albums": [dict(r) for r in rows[:limit]],
+                "tracking_enabled": True,
+            }
+
+        try:
+            return await asyncio.to_thread(read)
+
+        except Exception as e:
+            logger.error(f"failed to count new imports: {e}")
+            return {"count": 0, "albums": [], "tracking_enabled": False}
 
 
 def summarize_transfers(job: dict, transfers_by_user: dict[str, list[dict]]) -> dict:

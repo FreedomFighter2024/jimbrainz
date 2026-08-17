@@ -1,8 +1,44 @@
 import { useState } from 'preact/hooks'
 
-import type { LibraryAlbum } from '../api/types'
+import type { LibraryAlbum, MetadataIssueType } from '../api/types'
 import { formatSize } from '../lib/format'
 import type { AlbumGroup } from '../lib/groupAlbums'
+import { describeIssues, issueLabel, outstandingIssues } from '../lib/metadataQueue'
+
+//? Two chips and a count, not the full list. An unidentified album trips five or six rules at
+//? once - all of them downstream of the one fact that it was never matched to a release - and a
+//? row that turns into a wall of amber for a single underlying problem reads as much worse than
+//? it is. The worst two say what to do; the editor spells the rest out.
+const CHIPS_SHOWN = 2
+
+/**
+ * What's wrong with an album, said in the row rather than only in the editor.
+ *
+ * This is the part that removes the original complaint: finding out whether an album needed
+ * attention meant opening it. Now the row says so, and the queue facets in the filter column
+ * gather them up.
+ */
+function IssueChips(
+  { issues, types, ignored }:
+  { issues: readonly string[]; types: Record<string, MetadataIssueType>; ignored?: boolean },
+) {
+  if (!issues.length) return null
+
+  const shown = issues.slice(0, CHIPS_SHOWN)
+  const rest = issues.length - shown.length
+
+  return (
+    <span
+      class={`library-issues${ignored ? ' is-ignored' : ''}`}
+      title={describeIssues(issues, types)}
+    >
+      {shown.map((code) => (
+        <span class="library-issue-chip" key={code}>{issueLabel(code, types)}</span>
+      ))}
+      {rest > 0 && <span class="library-issue-more">+{rest}</span>}
+    </span>
+  )
+}
 
 function formatDuration(seconds: number): string {
   if (!seconds) return ''
@@ -83,10 +119,16 @@ function TrackList({ album }: { album: LibraryAlbum }) {
  * Only rendered when an album actually has more than one edition - see the group row below.
  */
 function EditionRow(
-  { album, onEdit, onDelete }:
-  { album: LibraryAlbum; onEdit: (a: LibraryAlbum) => void; onDelete: (a: LibraryAlbum) => void },
+  { album, issueTypes, onEdit, onDelete }:
+  {
+    album: LibraryAlbum
+    issueTypes: Record<string, MetadataIssueType>
+    onEdit: (a: LibraryAlbum) => void
+    onDelete: (a: LibraryAlbum) => void
+  },
 ) {
   const [expanded, setExpanded] = useState(false)
+  const issues = outstandingIssues(album)
 
   const meta = [
     `${album.track_count} track${album.track_count === 1 ? '' : 's'}`,
@@ -112,11 +154,9 @@ function EditionRow(
         {album.year && <span class="library-year">{album.year}</span>}
         <span class="text default-muted library-edition-meta">{meta.join(' · ')}</span>
 
-        {album.mixed_tags && (
-          <span class="library-warning" title="files in this folder disagree about the album name">
-            mixed tags
-          </span>
-        )}
+        {/* mixed tags is one of the issue codes now, so it arrives as a chip like the rest
+            rather than as its own hand-placed warning */}
+        <IssueChips issues={issues} types={issueTypes} />
 
         <span class="text white-tertiary library-path" title={album.path}>{album.path}</span>
 
@@ -146,6 +186,8 @@ function EditionRow(
 
 interface Props {
   group: AlbumGroup
+  /** Issue code -> label and hint, straight from the scan. See lib/metadataQueue.ts. */
+  issueTypes: Record<string, MetadataIssueType>
   onSearchArtist: (artist: string) => void
   onSearchAlbum: (group: AlbumGroup) => void
   /** Opens the metadata editor. Takes an edition, since that's what gets corrected. */
@@ -166,7 +208,7 @@ interface Props {
  * common case in a real library.
  */
 export function LibraryAlbumRow(
-  { group, onSearchArtist, onSearchAlbum, onEdit, onDelete }: Props,
+  { group, issueTypes, onSearchArtist, onSearchAlbum, onEdit, onDelete }: Props,
 ) {
   const [expanded, setExpanded] = useState(false)
 
@@ -183,7 +225,11 @@ export function LibraryAlbumRow(
   ].filter(Boolean)
 
   return (
-    <div class={`library-album${multiple ? ' multi-edition' : ''}`}>
+    <div
+      class={`library-album${multiple ? ' multi-edition' : ''}${
+        group.needsAttention ? ' needs-attention' : ''
+      }`}
+    >
       <div class="library-album-head">
         <button
           type="button"
@@ -238,11 +284,21 @@ export function LibraryAlbumRow(
 
         {!multiple && only?.edition && <span class="library-edition">{only.edition}</span>}
 
-        {group.hasMixedTags && (
-          <span class="library-warning" title="files disagree about the album name">
-            mixed tags
+        {/*
+          With several editions the chips describe the album as a whole, since the controls to
+          fix any one of them live on the edition rows below - so the count is what says where
+          to look, and the chips say what for.
+        */}
+        {multiple && group.needsAttention > 0 && (
+          <span
+            class="library-issue-count"
+            title={`${group.needsAttention} of ${group.editions.length} editions need metadata`}
+          >
+            {group.needsAttention} of {group.editions.length}
           </span>
         )}
+
+        <IssueChips issues={group.issues} types={issueTypes} />
 
         {/* with several editions the control belongs on each of them, since correcting one
             is not correcting the others */}
@@ -284,7 +340,13 @@ export function LibraryAlbumRow(
       {expanded && multiple && (
         <div class="library-editions">
           {group.editions.map((album) => (
-            <EditionRow key={album.key} album={album} onEdit={onEdit} onDelete={onDelete} />
+            <EditionRow
+              key={album.path}
+              album={album}
+              issueTypes={issueTypes}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           ))}
         </div>
       )}

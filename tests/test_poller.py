@@ -298,3 +298,54 @@ def test_job_whose_files_all_already_existed_is_not_reported_as_organized(tmp_pa
     job = next(j for j in asyncio.run(store.list_jobs()) if j["id"] == second)
     assert job["status"] == "complete"
     assert "already existed" in job["error"]
+
+
+def test_a_filed_album_is_enrolled_in_the_metadata_queue(tmp_path, monkeypatch):
+    """
+    The "something new arrived" prompt, recorded at the one moment it is free.
+
+    The library is deliberately not scanned until its tab is opened, so a badge that had to
+    diff two scans would need a scan to exist. The organizer already knows where it put the
+    album, so the poller writes one row keyed on that - relative to LIBRARY_PATH, because that
+    is the form every library endpoint takes.
+    """
+    from src.config import Config
+    downloads = tmp_path / "downloads" / "album"
+    downloads.mkdir(parents=True)
+    (downloads / "01.flac").write_bytes(b"x")
+    (downloads / "02.flac").write_bytes(b"x")
+
+    monkeypatch.setattr(Config, "SLSKD_DOWNLOAD_PATH", str(tmp_path / "downloads"))
+    monkeypatch.setattr(Config, "LIBRARY_PATH", str(tmp_path / "music"))
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "copy")
+
+    store = make_store(tmp_path)
+    seed_job(store)
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+
+    summary = asyncio.run(store.new_import_summary())
+    assert summary["count"] == 1
+    assert summary["albums"][0]["album"] == "Music Has the Right to Children"
+    #? relative, and matching what the scan will report for the same folder
+    assert summary["albums"][0]["album_path"] == (
+        "Boards of Canada/Music Has the Right to Children (1998)"
+    )
+
+
+def test_a_dry_run_enrols_nothing(tmp_path, monkeypatch):
+    """Nothing was filed, so there is nothing new to prompt about."""
+    from src.config import Config
+    downloads = tmp_path / "downloads" / "album"
+    downloads.mkdir(parents=True)
+    (downloads / "01.flac").write_bytes(b"x")
+
+    monkeypatch.setattr(Config, "SLSKD_DOWNLOAD_PATH", str(tmp_path / "downloads"))
+    monkeypatch.setattr(Config, "LIBRARY_PATH", str(tmp_path / "music"))
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "dry_run")
+
+    store = make_store(tmp_path)
+    seed_job(store)
+    asyncio.run(poll_downloads_once(FakeSlskd(_all_done()), store, {}))
+
+    assert asyncio.run(store.new_import_summary())["count"] == 0
+

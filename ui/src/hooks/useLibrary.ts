@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useState } from 'preact/hooks'
 
 import * as api from '../api/library'
-import type { LibraryAlbum, LibraryArtist } from '../api/types'
+import type {
+  LibraryAlbum, LibraryArtist, MetadataIssueType, MetadataQueueSummary,
+} from '../api/types'
+
+/** Nothing needing attention, for before the first load finishes. */
+const EMPTY_QUEUE: MetadataQueueSummary = {
+  total: 0, by_issue: {}, new_imports: 0, ignored_albums: 0,
+}
 
 export interface LibraryState {
   albums: LibraryAlbum[]
   artists: LibraryArtist[]
+  /** Counts for the queue facets. Derived server-side from the same scan as `albums`. */
+  queue: MetadataQueueSummary
+  /** Issue code -> label and hint. The server owns this vocabulary; see api/types.ts. */
+  issueTypes: Record<string, MetadataIssueType>
+  /** False when ignores can't be saved because the SQLite store couldn't be opened. */
+  reviewTracking: boolean
   /** Set when the library can't be read at all — unset/missing LIBRARY_PATH. Not an error. */
   problem: string | null
   /** Set when the request itself failed. */
@@ -33,6 +46,9 @@ export interface LibraryState {
 export function useLibrary(enabled: boolean): LibraryState {
   const [albums, setAlbums] = useState<LibraryAlbum[]>([])
   const [artists, setArtists] = useState<LibraryArtist[]>([])
+  const [queue, setQueue] = useState<MetadataQueueSummary>(EMPTY_QUEUE)
+  const [issueTypes, setIssueTypes] = useState<Record<string, MetadataIssueType>>({})
+  const [reviewTracking, setReviewTracking] = useState(true)
   const [problem, setProblem] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -47,6 +63,11 @@ export function useLibrary(enabled: boolean): LibraryState {
       const result = force ? await api.rescan() : await api.listAlbums()
       setAlbums(result.albums)
       setArtists(result.artists)
+      //? both derived from this same scan, so they can't disagree with the album list they
+      //? describe - which is the reason they arrive with it rather than from a second endpoint
+      setQueue(result.queue ?? EMPTY_QUEUE)
+      setIssueTypes(result.issue_types ?? {})
+      setReviewTracking(result.review_tracking_enabled !== false)
       setProblem(result.problem)
       setLibraryPath(result.library_path)
       setScanSeconds(result.scan_seconds)
@@ -70,6 +91,7 @@ export function useLibrary(enabled: boolean): LibraryState {
   const reload = useCallback((force = false) => load(force), [load])
 
   return {
-    albums, artists, problem, error, loading, loaded, scanSeconds, libraryPath, reload,
+    albums, artists, queue, issueTypes, reviewTracking,
+    problem, error, loading, loaded, scanSeconds, libraryPath, reload,
   }
 }

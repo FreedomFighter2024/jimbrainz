@@ -28,6 +28,17 @@ export interface JimbrainzBridge {
    * "take me to this artist" has to hand off rather than re-implement it.
    */
   runSearch?: (query: { artist?: string; album?: string }) => void
+
+  /**
+   * Recounts the albums awaiting review. Set by the tab bar's badge, called from the library
+   * view after ignoring or reviewing something.
+   *
+   * Here for the same reason the active tab lives in main.tsx: the tab bar and the library are
+   * two separate render trees mounted into distant parts of the vanilla page, so no context or
+   * shared hook can span them. This goes away with the rest of the bridge once the search view
+   * is ported and there is one root.
+   */
+  refreshNewImports?: () => void
 }
 
 declare global {

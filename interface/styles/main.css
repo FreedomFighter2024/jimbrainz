@@ -2601,12 +2601,142 @@ span.red { color: var(--red-text); }
     border-color: var(--main-text);
 }
 
-.library-warning {
+/*
+ * ---- the metadata queue ----
+ *
+ * These replaced a single hand-placed "mixed tags" warning. Mixed tags is now one of nine
+ * issue codes the server raises, so it arrives as a chip like the rest instead of being the
+ * one problem the interface happened to know how to draw.
+ */
+
+.library-issues {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.library-issue-chip {
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--yellow-text);
+    border: 1px solid var(--yellow-text);
+    padding: 0 4px;
+    white-space: nowrap;
+}
+
+/* an album whose issues you've accepted still shows them, quietly - it is not a warning */
+.library-issues.is-ignored .library-issue-chip {
+    color: var(--white-tertiary-text);
+    border-color: var(--muted-text);
+}
+
+.library-issue-more {
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    color: var(--yellow-text);
+}
+
+/* which editions under a multi-edition album are the problem */
+.library-issue-count {
     flex-shrink: 0;
     font-family: var(--font-family-condensed);
     font-size: 0.75em;
     text-transform: uppercase;
     color: var(--yellow-text);
+    white-space: nowrap;
+}
+
+/*
+ * Mirrors .multi-edition's left border rather than tinting the whole row. A library where
+ * most albums need something - which is every library the first time you look - would be a
+ * wall of amber, and a warning everything carries is not a warning.
+ */
+.library-album.needs-attention {
+    border-left: 3px solid var(--yellow-text);
+}
+
+/* an album can be both; the queue is the more actionable of the two, so it wins the border */
+.library-album.multi-edition.needs-attention {
+    border-left-color: var(--yellow-text);
+}
+
+#library-queue-facets {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex-shrink: 0;
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--muted-text);
+}
+
+/* tight and pinned, like the artists heading - a stray ░ wrapping reads as a broken column */
+#library-queue-facets > h3 {
+    font-size: 0.9em;
+    white-space: nowrap;
+    padding: 6px 0 2px;
+}
+
+.library-facet.needs-attention { color: var(--yellow-text); }
+.library-facet.needs-attention.active { color: var(--yellow-text); font-weight: var(--font-bold); }
+
+/* the per-issue facets sit under the roll-up, so they're indented to read as its children */
+.library-issue-facet { padding-left: 10px; font-size: 0.8em; }
+
+.library-queue-note {
+    font-size: 0.78em;
+    padding: 4px 0;
+    line-height: 1.3;
+}
+
+#library-review-button {
+    background-color: var(--background-color-input);
+    border: 1px solid var(--yellow-text);
+    color: var(--yellow-text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    letter-spacing: 0.05em;
+    padding: 4px 12px;
+    text-transform: uppercase;
+    /* pushes itself and the rescan button to the right end of the toolbar */
+    margin-left: auto;
+}
+
+#library-review-button:hover { color: var(--main-hover-text); border-color: var(--main-hover-text); }
+
+/*
+ * #library-toolbar sets margin-left:auto on the rescan button to push it right. With the
+ * review button also claiming it, both would be pushed and the gap would land between them
+ * instead of before them - so once review is present it owns the margin and rescan drops it.
+ */
+#library-toolbar > #library-review-button ~ .columns-toggle-button { margin-left: 0; }
+
+/*
+ * The count of albums waiting on the library tab.
+ *
+ * Only rendered when non-zero, in the markup rather than by CSS: three badges in this
+ * interface were previously hidden with the `hidden` attribute while their own rules set
+ * `display`, which beats [hidden] - so all three sat on screen showing 0. Not rendering is
+ * the only version of hidden that cannot lose that argument.
+ */
+.view-tab-badge {
+    display: inline-block;
+    background-color: var(--yellow-text);
+    color: var(--background-color);
+    font-size: 0.7em;
+    font-weight: var(--font-bold);
+    letter-spacing: 0;
+    line-height: 1.4;
+    margin-left: 6px;
+    min-width: 1.4em;
+    padding: 0 4px;
+    text-align: center;
+    vertical-align: middle;
 }
 
 .library-album-meta {
@@ -3122,6 +3252,55 @@ span.red { color: var(--red-text); }
         margin-left: 0;
     }
 
+    /*
+     * The toolbar wraps on a phone, so the auto margin that right-aligns these on the desktop
+     * would instead strand the review button alone on its own line with the filter above it.
+     * The row is already wrapping; let them sit together.
+     */
+    #library-review-button {
+        margin-left: 0;
+    }
+
+    /*
+     * The album and edition heads are nowrap flex rows whose buttons refuse to shrink, so
+     * anything added to them pushes the controls off the right edge rather than reflowing.
+     * Measured on a 375px screen: a row carrying both an edition label and an issue chip put
+     * its edit button at 399px and its delete at 428px - i.e. unreachable, with no horizontal
+     * scroll to go and find them, which is the same failure the top bar had before v0.3.x.
+     *
+     * Wrapping rather than hiding: everything in these rows is either the album's identity or
+     * a control for it, and there is nothing here it would be safe to drop.
+     */
+    .library-album-head,
+    .library-edition-head {
+        flex-wrap: wrap;
+    }
+
+    /*
+     * The chips are still the least important thing in the row - so a phone gets the worst one
+     * and a count of the rest.
+     */
+    .library-issues { flex-wrap: wrap; }
+    .library-issues > .library-issue-chip:nth-child(n + 2) { display: none; }
+
+    /*
+     * And the album's name outranks all of it. The chips don't shrink, the titles do, so
+     * adding a chip took "Selected Ambient Works 85-92" from 84px to 9px - an ellipsis and one
+     * letter. Claiming most of the first line makes the row wrap under the title instead of
+     * eating it, which is the behaviour the wrap rule above exists to allow.
+     */
+    .library-album-titles {
+        min-width: 60%;
+    }
+
+    /* the queue facets need no collapse rule of their own - they are a direct child of the
+       filter column, so the `.collapsed > *:not(header)` rule above already covers them */
+
+    /* the hints are the point of this panel; give them more room where the panel is taller */
+    #metadata-issues { max-height: 7em; }
+
+    .metadata-queue-nav { flex: 1 1 100%; }
+
     /* ---- dropdown panels become bottom sheets ---- */
 
     /*
@@ -3263,6 +3442,66 @@ span.red { color: var(--red-text); }
     color: var(--white-tertiary-text);
     font-family: var(--font-family-condensed);
 }
+
+/*
+ * Why this album is in the queue.
+ *
+ * The library row has space for two words per issue; here there is room for the sentence that
+ * says what actually fixes it, which is the difference between a warning and an instruction.
+ * Capped in height and scrollable because a completely untagged folder trips every rule at
+ * once, and nine sentences would push the release list off the bottom of the panel.
+ */
+#metadata-issues {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex-shrink: 0;
+    max-height: 5.6em;
+    overflow-y: auto;
+    font-family: var(--font-family-condensed);
+    font-size: 0.78em;
+    line-height: 1.35;
+}
+
+.metadata-issue {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.metadata-issue > .library-issue-chip { flex-shrink: 0; }
+
+.metadata-issue.is-ignored { gap: 8px; }
+
+.metadata-issue-undo {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--muted-text);
+    color: var(--white-tertiary-text);
+    cursor: pointer;
+    font-family: var(--font-family-condensed);
+    font-size: 1em;
+    padding: 0;
+}
+
+.metadata-issue-undo:hover { color: var(--main-hover-text); border-color: var(--main-text); }
+
+/* where you are in the queue, beside the album's path in the header */
+.metadata-queue-position {
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
+/* prev/skip, kept together so they read as one control rather than two loose buttons */
+.metadata-queue-nav {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.metadata-ignore-button { flex-shrink: 0; }
 
 /* the release the album is already tagged with */
 .metadata-release.current {

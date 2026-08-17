@@ -3,6 +3,23 @@ import { render, type VNode } from 'preact'
 import { DownloadsPanel } from './components/DownloadsPanel'
 import { LibraryView } from './components/LibraryView'
 import { Tabs, type TabId } from './components/Tabs'
+import { useNewImports } from './hooks/useNewImports'
+
+/**
+ * The tab bar, plus the count of albums waiting to be looked at.
+ *
+ * A component rather than a call inside renderShell because the count comes from a hook, and
+ * hooks need somewhere to live across renders. Re-rendering the shell diffs into the same host
+ * rather than remounting, so the poll survives switching tabs.
+ *
+ * The count is deliberately not derived from the library scan: the library isn't read until
+ * you open its tab, so a badge that waited for that would be missing at exactly the moment it
+ * has something to say. It comes from the rows the poller writes as it files each download.
+ */
+function TabBar({ active, onChange }: { active: TabId; onChange: (tab: TabId) => void }) {
+  const { count } = useNewImports()
+  return <Tabs active={active} onChange={onChange} badges={{ library: count }} />
+}
 
 /**
  * Entry point for the ported interface.
@@ -45,7 +62,7 @@ function renderShell(active: TabId): void {
   const container = document.getElementById('main-container')
   if (container) container.dataset['tab'] = active
 
-  mount('tabs-root', <Tabs active={active} onChange={renderShell} />)
+  mount('tabs-root', <TabBar active={active} onChange={renderShell} />)
   mount('library-root', <LibraryView active={active === 'library'} onNavigate={renderShell} />)
 }
 

@@ -45,6 +45,8 @@ src/
   matching.py      PURE candidate scoring. No I/O. The heart of the project.
   editions.py      PURE. Which edition a release is, in words. See below — it's why the
                    library can hold the deluxe and the standard press at the same time.
+  metadata_health.py  PURE. What's WRONG with an album on disk, as issue codes. Backs the
+                   metadata queue. Derived on every request, never stored — see below.
   library.py       scans LIBRARY_PATH with mutagen, cached per folder on mtime. Also
                    finds cover art (file beside the tracks, else embedded in the audio).
   store.py         SQLite job store + transfer reconciliation helpers.
@@ -58,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             201 tests, all Python, all fixture-driven
+tests/             257 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -118,8 +120,28 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   apply endpoint **recomputes the plan** rather than accepting the previewed one back — a
   plan is a list of file operations, and taking one over the wire would let a caller name
   arbitrary paths to write to.
+- **The metadata queue stores only what you IGNORED.** What is *wrong* with an album is
+  derived from the scan on every request by the pure `metadata_health.py`, never written down.
+  A "needs attention" flag that is stored is a flag that goes stale the moment something fixes
+  the album without clearing it; deriving it means a fixed album leaves the queue on its own.
+  The `album_review` table therefore holds four things and no verdicts: when an album was first
+  seen, whether jimbrainz filed it or merely found it, whether you've looked at it, and which
+  issue codes you've accepted.
+  **Ignores are per issue, not per album** — accepting that a bootleg will never be in
+  MusicBrainz must not also silence the day its cover art goes missing.
+  **`album_review` is keyed on the album's path**, not the scan's `key`: that key is the
+  release MBID when there is one, and two folders holding the same release deliberately share
+  it, so ignoring one would silently ignore the other. The cost is that a rename orphans the
+  row, which is why `mark_album_reviewed()` takes a destination and the retag endpoint passes
+  it.
+- **The new-import prompt is recorded at import time, not derived from a scan.** The library is
+  deliberately not read until its tab is opened, so a badge that had to diff two scans would
+  need a scan to exist — absent at exactly the moment it has something to say. The poller writes
+  one row as it files each download, and `/queue/new_imports` is a single indexed count that
+  touches no filesystem. This is the only reason the import source is recorded at all.
 - **Errors degrade rather than crash.** Unwritable DB → downloads still work, untracked.
-  Unreachable slskd → stored jobs still listed, no live progress.
+  Unreachable slskd → stored jobs still listed, no live progress. Unwritable DB → the metadata
+  queue still works, it just stops remembering what you ignored.
 
 ## Gotchas discovered the hard way
 
@@ -172,50 +194,33 @@ Each of these cost real time. Don't rediscover them.
 - **The downloads panel vanishes if `ui/` hasn't been built.** `interface/index.html` loads
   `dist/jimbrainz-ui.js`, which is gitignored and generated. Running from source without
   `npm run build` leaves it 404ing and that panel simply absent. Check this first.
+- **Don't derive an overlay's subject from a list that a write reloads.** The metadata editor
+  originally resolved its album by looking `review.paths[index]` up in `albums` on every
+  render. Applying a release renames the folder, so the reloaded library and the queue's record
+  of where the album now lives land in *two separate state commits* — and for the render
+  between them **neither the old path nor the new one resolves**, so the editor unmounted
+  mid-queue every time a rename was applied. It now holds the album itself and is updated once,
+  explicitly, from the array `reload()` resolves with (never from `albums`, which the caller's
+  own `await` has not necessarily committed yet). One value updated once cannot disagree with
+  itself.
+- **The editor is keyed on a step counter, and that is load-bearing in both directions.** It
+  must NOT reset when its album prop changes — that happens after an apply, where the release
+  list on screen is still right and re-searching MusicBrainz would be waste. It MUST reset when
+  the queue moves to a different album, since nothing about the previous one applies. A `key`
+  that changes only on navigation is what buys both; keying on `album.path` or `album.key`
+  would break the first, because an apply changes them.
+- **New chips in the album rows do not shrink, and the row is a nowrap flex.** Adding the issue
+  chips pushed the edit and delete buttons to 399px and 428px on a 375px screen — unreachable,
+  with no horizontal scroll to go find them. It also took "Selected Ambient Works 85-92" from
+  84px to **9px**, because the chips carry `flex-shrink: 0` and the titles don't. Both are
+  fixed in the responsive block (`.library-album-head` wraps, `.library-album-titles` claims
+  60%). **Anything else added to those rows needs measuring at 375px**, not eyeballing.
 
 ### Backend and data
 
 - **slskd's `averageSpeed` is cumulative** (total bytes ÷ total elapsed), so it only ever
   creeps upward and never shows the current rate. Real speed is derived from `bytesTransferred`
   deltas between polls. Don't "simplify" back to `averageSpeed`.
-- **`request_with_retries` returns an error dict rather than raising.** Reaching straight for
-  `["release-groups"]` produced a `KeyError` that surfaced as *"Error searching MusicBrainz:
-  'release-groups'"* — which reads like a bad query, so an outage looked like user error.
-  `MusicBrainzUnavailable` now distinguishes them.
-- **docker-compose: never declare a var in both `env_file` and `environment:`.** `environment:`
-  wins and re-interpolates `${VAR}` from compose's own env; when that comes back empty it
-  silently overwrites the good value from `.env`. This produced an unusable empty `SLSKD_URL`.
-- **`.env` values must not have trailing `# comments`.** Compose and python-dotenv disagree
-  about inline comments. Examples go on their own lines.
-- **Two editions of one album used to silently not arrive.** `{album} ({year})` gave the
-  standard and deluxe press identical paths; `execute_plan` correctly refused to overwrite,
-  so every track was *skipped* — and the poller only reported a problem when
-  `organized == 0 AND skipped == 0`, so an all-skipped job fell through to status
-  `organized`. Green tick, album missing. Fixed in both places, and both are covered by
-  tests. **This was the exact Lidarr complaint that motivated the fork**, reproduced here.
-- **Cover art is fetched on apply, never on preview.** Previewing runs on every click in the
-  release list, so downloading an image to describe it would be slow and rude to the Archive.
-  `plan_art()` decides what *would* happen with no network call; the route fetches the bytes
-  and hands them to `execute_retag`, which keeps `retag.py` free of network dependencies and
-  testable without one.
-- **Retagging a file does NOT change its directory's mtime** — only adding, removing or
-  renaming entries does. Measured, not assumed. The library cache keys on directory mtime,
-  so an in-place retag is invisible to the scanner and the edit looks like it silently
-  failed. `forget_cached_album()` exists for exactly this, and the retag endpoint calls it
-  for both the old and new locations.
-- **Embedded pictures have a TYPE, and files usually hold several.** Type 3 is
-  `COVER_FRONT`, type 6 is `MEDIA` — a scan of the disc itself. EAC and dBpoweramp rips
-  routinely embed both, in no guaranteed order, so `pictures[0]` showed albums illustrated
-  with a picture of a CD. Selection goes through `PICTURE_TYPE_PREFERENCE`, never by order.
-  The same trap applies to ID3 `APIC` frames (there can be several, keyed by description)
-  and to loose files — a lone `disc.jpg` is not the cover.
-- **`/library/art` is the only endpoint that turns user input into a filesystem read.** It
-  takes a path relative to LIBRARY_PATH, so `is_within()` containment is load-bearing, not
-  decoration — without it `?album=../../..` reads anything the container user can. It
-  answers 404 identically for "outside the library" and "no such album" so a probe learns
-  nothing. Covered by tests including a symlink pointing out of the library. **If you add
-  another endpoint taking a path, copy this pattern.**
-
 ### Tooling and environment
 
 - **The browser preview pane is not a reliable witness.** Two distinct failure modes, both
@@ -243,6 +248,14 @@ Each of these cost real time. Don't rediscover them.
   optional `@rolldown/binding-*` package, and the failure only appears at build time as
   "Cannot find module './rolldown-binding.darwin-arm64.node'". The lockfile still records
   every platform, so Docker's node:22 stage is unaffected — this is a local-only trap.
+- **On 20.12.2 the build now fails before it starts, and the error names none of this.** It
+  dies as `TypeError [ERR_INVALID_ARG_VALUE]: The argument 'format' must be one of: ...
+  Received [ 'underline', 'gray' ]` from `node:util`. `styleText()` only learned to take an
+  ARRAY of formats in a later Node, rolldown calls it at module scope, so vite cannot even be
+  imported — it is not a code error and no flag (`NO_COLOR`, `--logLevel`) avoids it, because
+  it happens at import. **`npm run typecheck` still works and still checks everything**;
+  `npm run build` needs the Node upgrade. The one thing to not do is go looking for the bug in
+  `ui/`.
 
 ## Known performance problems (profiled, not guessed)
 
@@ -275,7 +288,7 @@ the page, and ported panels mount into it via one extra module script.
 
 | ported | still vanilla |
 | --- | --- |
-| Downloads panel, tab shell, library view, metadata editor, delete dialog | search bar, releases grid, filter column, candidates panel, log, profile |
+| Downloads panel, tab shell, library view, metadata editor, metadata queue, delete dialog | search bar, releases grid, filter column, candidates panel, log, profile |
 
 **How the two halves coexist:**
 
@@ -285,8 +298,9 @@ the page, and ported panels mount into it via one extra module script.
 - Ported components reuse the **existing class names and IDs verbatim**, so `main.css` applies
   unchanged. A visual difference means a porting mistake, not a restyle.
 - Both files are ES modules and can't call each other, so cross-boundary calls meet on
-  `window.jimbrainz` (`ui/src/bridge.ts`). Three entries today: `refreshDownloads`,
-  `closeOtherDropdowns`, `runSearch`. **An empty bridge means the migration is done.**
+  `window.jimbrainz` (`ui/src/bridge.ts`). Four entries today: `refreshDownloads`,
+  `closeOtherDropdowns`, `runSearch`, `refreshNewImports`. **An empty bridge means the
+  migration is done.**
 
 Why, from measurements of the original code:
 
@@ -328,7 +342,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 201 tests
+.venv/bin/python -m pytest tests/ -q  # 257 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -348,7 +362,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 201 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 257 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings (matching assumes `"Completed, Succeeded"`, `"Errored"`,
@@ -396,3 +410,11 @@ Worth knowing before someone "fixes" one of these:
   confirmation dialog for the second — so keep both honest.
 - **Persisting the scan cache.** It's in memory, so a restart rescans. Was started and backed
   out as out of scope; the per-folder mtime cache makes the rescan cheap.
+- **Bulk apply in the metadata queue.** Considered and deliberately declined for the first cut.
+  Auto-matching releases across many albums at once would write tags to albums nobody looked
+  at, and **there is no undo** — the preview is the safety net, and a bulk action is precisely
+  the case where nobody reads it. The queue makes reviewing *fast* (facets narrow it, the
+  editor steps through it with its search already running) rather than making it automatic.
+  The bulk operation that would be genuinely safe is folder renames to match the convention,
+  since those are fully determined by the tags and need no MusicBrainz guess: `misfiled` is
+  already its own facet, so that is where it would hang.

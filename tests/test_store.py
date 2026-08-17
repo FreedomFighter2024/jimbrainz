@@ -183,3 +183,165 @@ def test_store_degrades_instead_of_raising_when_path_is_unusable(tmp_path):
     assert asyncio.run(store.list_jobs()) == []
     assert asyncio.run(store.open_jobs()) == []
     asyncio.run(store.update_status(1, "complete"))  # must not raise
+
+    #? the metadata queue degrades the same way: it stops remembering what you ignored, and
+    #? carries on deriving what's wrong with each album from the scan
+    assert asyncio.run(store.album_reviews()) == {}
+    assert asyncio.run(store.record_albums_seen([{"path": "a/b"}])) == 0
+    assert asyncio.run(store.ignore_album_issues("a/b", ["no_art"])) is False
+    assert asyncio.run(store.mark_album_reviewed("a/b")) is False
+    assert asyncio.run(store.new_import_summary()) == {
+        "count": 0, "albums": [], "tracking_enabled": False,
+    }
+
+
+# ---------------------------------------------------------------- album review
+
+def review_store(tmp_path):
+    store = JobStore(str(tmp_path / "jobs.db"))
+    store.init()
+    assert store.available
+    return store
+
+
+def test_first_seen_is_the_first_time_and_import_survives_later_scans(tmp_path):
+    """
+    The whole reason record_albums_seen uses INSERT OR IGNORE. An album filed by jimbrainz has
+    to keep saying 'import' even though every subsequent scan sees it too - otherwise the
+    "something new arrived" prompt is erased by the act of looking at the library.
+    """
+    store = review_store(tmp_path)
+    album = {"path": "Tame Impala/Currents (2015)", "artist": "Tame Impala", "album": "Currents"}
+
+    asyncio.run(store.record_albums_seen([album], source="import"))
+    first = asyncio.run(store.album_reviews())["Tame Impala/Currents (2015)"]
+
+    asyncio.run(store.record_albums_seen([album], source="scan"))
+    second = asyncio.run(store.album_reviews())["Tame Impala/Currents (2015)"]
+
+    assert second["source"] == "import"
+    assert second["first_seen"] == first["first_seen"]
+
+
+def test_new_imports_are_counted_until_they_are_reviewed(tmp_path):
+    store = review_store(tmp_path)
+
+    asyncio.run(store.record_albums_seen(
+        [{"path": "a/one", "artist": "A", "album": "One"},
+         {"path": "a/two", "artist": "A", "album": "Two"}],
+        source="import",
+    ))
+    asyncio.run(store.record_albums_seen([{"path": "a/three"}], source="scan"))
+
+    summary = asyncio.run(store.new_import_summary())
+    assert summary["count"] == 2, "a scanned album is not a new import"
+    assert {a["album"] for a in summary["albums"]} == {"One", "Two"}
+
+    asyncio.run(store.mark_album_reviewed("a/one"))
+    assert asyncio.run(store.new_import_summary())["count"] == 1
+
+
+def test_ignoring_issues_records_them_and_marks_the_album_reviewed(tmp_path):
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen([{"path": "a/one"}], source="import"))
+
+    asyncio.run(store.ignore_album_issues("a/one", ["no_art", "no_release", "no_art"]))
+    review = asyncio.run(store.album_reviews())["a/one"]
+
+    assert review["ignored_issues"] == ["no_art", "no_release"], "deduplicated and sorted"
+    assert review["reviewed_at"], "ignoring an album means you have looked at it"
+    assert asyncio.run(store.new_import_summary())["count"] == 0
+
+
+def test_ignoring_an_album_the_store_has_never_seen_still_works(tmp_path):
+    """
+    The queue can be acted on before any scan has enrolled the album - the interface holds a
+    path, not a row id.
+    """
+    store = review_store(tmp_path)
+    assert asyncio.run(store.ignore_album_issues("never/seen", ["no_art"])) is True
+    assert asyncio.run(store.album_reviews())["never/seen"]["ignored_issues"] == ["no_art"]
+
+
+def test_unignoring_puts_an_album_back_without_losing_its_history(tmp_path):
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen([{"path": "a/one"}], source="import"))
+    asyncio.run(store.ignore_album_issues("a/one", ["no_art"]))
+
+    asyncio.run(store.unignore_album("a/one"))
+    review = asyncio.run(store.album_reviews())["a/one"]
+
+    assert review["ignored_issues"] == []
+    assert review["ignored_at"] is None
+    assert review["reviewed_at"], "un-ignoring doesn't un-see it"
+    assert review["source"] == "import"
+
+
+def test_reviewing_follows_a_folder_that_was_renamed(tmp_path):
+    """
+    A retag renames the folder, and album_review is keyed on the path. Leaving the row behind
+    would orphan the history of an album that is still very much there - and re-enrol it as
+    brand new on the next scan.
+    """
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen(
+        [{"path": "Pink Floyd/wish you were here", "artist": "Pink Floyd"}], source="import",
+    ))
+    original = asyncio.run(store.album_reviews())["Pink Floyd/wish you were here"]
+
+    asyncio.run(store.mark_album_reviewed(
+        "Pink Floyd/wish you were here", "Pink Floyd/Wish You Were Here (1975)",
+    ))
+    reviews = asyncio.run(store.album_reviews())
+
+    assert "Pink Floyd/wish you were here" not in reviews
+    moved = reviews["Pink Floyd/Wish You Were Here (1975)"]
+    assert moved["first_seen"] == original["first_seen"], "it is the same album"
+    assert moved["source"] == "import"
+    assert moved["reviewed_at"]
+
+
+def test_a_rename_onto_an_existing_row_replaces_it(tmp_path):
+    """
+    The destination is keyed by the same primary key, so the move would otherwise be rejected.
+    Anything already recorded there describes a folder that no longer exists.
+    """
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen([{"path": "a/old"}, {"path": "a/new"}]))
+    asyncio.run(store.ignore_album_issues("a/new", ["no_art"]))
+
+    asyncio.run(store.mark_album_reviewed("a/old", "a/new"))
+    reviews = asyncio.run(store.album_reviews())
+
+    assert "a/old" not in reviews
+    assert reviews["a/new"]["ignored_issues"] == [], "the stale row's ignores went with it"
+
+
+def test_reviewing_an_unknown_album_records_it_where_it_is_now(tmp_path):
+    """
+    A retag can move an album the store never enrolled. Recording the source path would leave
+    a row pointing at a folder that has just stopped existing.
+    """
+    store = review_store(tmp_path)
+
+    asyncio.run(store.mark_album_reviewed("a/old", "a/new"))
+    reviews = asyncio.run(store.album_reviews())
+
+    assert list(reviews) == ["a/new"]
+    assert reviews["a/new"]["reviewed_at"]
+
+
+def test_a_corrupt_ignore_list_reads_as_nothing_ignored(tmp_path):
+    """
+    One hand-edited row must not take the whole library view down with it - the view is how you
+    would find out something was wrong in the first place.
+    """
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen([{"path": "a/one"}]))
+
+    import sqlite3
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("UPDATE album_review SET ignored_issues = '{not json'")
+
+    assert asyncio.run(store.album_reviews())["a/one"]["ignored_issues"] == []
+

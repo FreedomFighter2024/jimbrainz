@@ -1,6 +1,7 @@
 import { get, post } from './http'
 import type {
-  DeleteResult, DeletionSummary, LibraryResponse, RetagPlan, RetagRelease, RetagResponse,
+  DeleteResult, DeletionSummary, LibraryResponse, NewImportsResponse, RetagPlan, RetagRelease,
+  RetagResponse,
 } from './types'
 
 /**
@@ -50,6 +51,44 @@ export function applyRetag(
   return post<RetagResponse>('/library/retag/apply', {
     album_path: albumPath, release, fetch_art: fetchArt,
   })
+}
+
+/* ===== the metadata queue ===== */
+
+/**
+ * Albums jimbrainz has filed that you haven't looked at yet.
+ *
+ * Cheap on purpose — one indexed table read, no filesystem. Safe to call on page load, which
+ * `listAlbums` deliberately is not.
+ */
+export function newImports(): Promise<NewImportsResponse> {
+  return get<NewImportsResponse>('/library/queue/new_imports')
+}
+
+/**
+ * Accept an album as it is, so it drops out of the queue.
+ *
+ * The issue codes are sent rather than left to the server to work out, so this can only ever
+ * mute the problems that were actually on screen. An album that develops a *different* problem
+ * later comes back into the queue on its own.
+ */
+export function ignoreIssues(albumPath: string, issues: string[]): Promise<{ ignored: boolean }> {
+  return post('/library/queue/ignore', { album_path: albumPath, issues })
+}
+
+/** Put an ignored album back into the queue. */
+export function unignoreAlbum(albumPath: string): Promise<{ ignored: boolean }> {
+  return post('/library/queue/unignore', { album_path: albumPath })
+}
+
+/**
+ * Note that you've looked at an album.
+ *
+ * Clears it from the new-import prompt and nothing else — its issues stand, because a queue
+ * that empties when you glance at things is a queue that lies.
+ */
+export function markReviewed(albumPath: string): Promise<{ reviewed: boolean }> {
+  return post('/library/queue/reviewed', { album_path: albumPath })
 }
 
 /** What deleting this album would remove. Touches nothing. */

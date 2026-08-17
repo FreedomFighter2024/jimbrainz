@@ -11,6 +11,7 @@ Phase 3 hooks the organizer onto the queued -> complete transition.
 """
 
 import asyncio
+from pathlib import Path
 
 from src.config import Config
 from src.logger import logger
@@ -125,6 +126,7 @@ async def _organize_if_enabled(job: dict, store) -> None:
 
         else:
             await store.update_status(job["id"], "organized")
+            await _enrol_for_review(job, results, store)
 
     except Exception as e:
         logger.error(
@@ -132,6 +134,40 @@ async def _organize_if_enabled(job: dict, store) -> None:
             extra={"frontend": True, "src": "slskd"},
         )
         await store.update_status(job["id"], "complete", f"organize failed: {e}")
+
+
+async def _enrol_for_review(job: dict, results: dict, store) -> None:
+    """
+    Register a just-filed album with the metadata queue.
+
+    This is the moment the interface can honestly say "something new arrived", and recording it
+    here rather than inferring it later is what makes the prompt free: the library is
+    deliberately not scanned until you open its tab, so a badge that had to diff two scans
+    would need a scan to exist. One row, written once, keyed on where the album landed.
+
+    Everything it needs is already in the plan the organizer just executed. It never raises -
+    the download succeeded and the album is filed, so failing to note it down is not a reason
+    to report the job as broken.
+    """
+    album_dir = (results.get("plan") or {}).get("album_dir")
+
+    if not album_dir or not Config.LIBRARY_PATH:
+        return
+
+    try:
+        #? relative to LIBRARY_PATH, because that is the form every library endpoint takes and
+        #? what album_review is keyed on
+        path = str(Path(album_dir).relative_to(Path(Config.LIBRARY_PATH)))
+    except ValueError:
+        #? organized somewhere outside the library, which means LIBRARY_PATH moved under us.
+        #? Nothing useful to record, and the scan won't find it either.
+        logger.debug(f"not enrolling {album_dir} for review, it is outside LIBRARY_PATH")
+        return
+
+    await store.record_albums_seen(
+        [{"path": path, "artist": job.get("artist"), "album": job.get("album")}],
+        source="import",
+    )
 
 
 async def run_download_poller(slskd_client, store) -> None:

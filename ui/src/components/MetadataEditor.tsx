@@ -3,8 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { MusicBrainzUnavailable } from '../api/http'
 import * as libraryApi from '../api/library'
 import * as musicbrainz from '../api/musicbrainz'
-import type { LibraryAlbum, Release, RetagPlan, RetagRelease } from '../api/types'
+import type {
+  LibraryAlbum, MetadataIssueType, Release, RetagPlan, RetagRelease,
+} from '../api/types'
 import { Loading, LoadingPanel } from './Loading'
+import { issueLabel, outstandingIssues } from '../lib/metadataQueue'
 import {
   buildRetagRelease,
   describeRelease,
@@ -13,8 +16,29 @@ import {
   scoreReleaseMatch,
 } from '../lib/release'
 
+/**
+ * Where this album sits in the review queue, when the editor was opened from it.
+ *
+ * Absent when you clicked "edit" on a single album, which is still the ordinary way in - the
+ * queue adds a way to work through several without going back to the list between each, it
+ * doesn't replace editing one.
+ */
+export interface QueueContext {
+  /** 1-based, for display. */
+  position: number
+  total: number
+  onNext: () => void
+  onPrevious: () => void
+}
+
 interface Props {
   album: LibraryAlbum
+  /** Issue code -> label and hint, from the scan. The server owns this vocabulary. */
+  issueTypes: Record<string, MetadataIssueType>
+  //? `| undefined` is not redundant: exactOptionalPropertyTypes is on, so an optional prop
+  //? passed explicitly as undefined - which is what a conditional in JSX produces - is a type
+  //? error without it
+  queue?: QueueContext | undefined
   onClose: () => void
   /**
    * Called after a successful apply with the album's path afterwards, which differs from the
@@ -23,6 +47,13 @@ interface Props {
    * stale copy pointing at a folder that no longer exists.
    */
   onApplied: (newPath: string) => void
+  /**
+   * Accept this album as it is. Given the codes on screen rather than left to the server, so
+   * it can only ever mute what you were actually shown.
+   */
+  onIgnore: (album: LibraryAlbum, issues: string[]) => Promise<void>
+  /** Put an ignored album back into the queue. */
+  onUnignore: (album: LibraryAlbum) => Promise<void>
 }
 
 /** The fields you can type into. Everything else comes from the release you pick. */
@@ -114,7 +145,9 @@ function ArtComparison({ album, release }: { album: LibraryAlbum; release: Relea
  * Nothing is written until Apply. The preview comes from the same planner the write uses, so
  * what it shows is what will happen rather than a separate guess at it.
  */
-export function MetadataEditor({ album, onClose, onApplied }: Props) {
+export function MetadataEditor(
+  { album, issueTypes, queue, onClose, onApplied, onIgnore, onUnignore }: Props,
+) {
   //? An override, normally empty. The search is built from the artist and album fields
   //? below, which are already on screen and editable - a second box holding the same two
   //? values would just be somewhere for them to disagree.
@@ -142,6 +175,7 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [applied, setApplied] = useState<string | null>(null)
+  const [ignoring, setIgnoring] = useState(false)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -379,6 +413,20 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
   const taggedRelease = album.release_mbid
   const foundCurrent = releases.some((r) => isCurrentRelease(r, taggedRelease))
 
+  //? What put this album in the queue. Recomputed from the album prop rather than passed in,
+  //? so it follows the refreshed album after an apply and the list visibly shrinks as you fix
+  //? things - which is the only feedback that the edit did what you wanted.
+  const issues = outstandingIssues(album)
+
+  const ignore = async () => {
+    setIgnoring(true)
+    try {
+      await onIgnore(album, issues)
+    } finally {
+      setIgnoring(false)
+    }
+  }
+
   return (
     <div id="metadata-window" onClick={(event) => event.stopPropagation()}>
       <div id="metadata-panel">
@@ -387,8 +435,47 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
             {album.album} <span class="text default-secondary">{album.artist}</span>
           </h4>
           <span class="text white-tertiary metadata-path">{album.path}</span>
+
+          {queue && (
+            <span class="metadata-queue-position text default-muted">
+              {queue.position} of {queue.total}
+            </span>
+          )}
+
           <button type="button" id="metadata-close-button" title="close" onClick={onClose}>✕</button>
         </div>
+
+        {/*
+          Why this album is in the queue, spelled out. The chips in the library row are two
+          words each because a row has no space; here there is room for the sentence that says
+          what actually fixes it, which is the difference between a warning and instructions.
+        */}
+        {(issues.length > 0 || album.ignored_issues.length > 0) && (
+          <div id="metadata-issues">
+            {issues.map((code) => (
+              <span class="metadata-issue" key={code} title={issueTypes[code]?.hint}>
+                <span class="library-issue-chip">{issueLabel(code, issueTypes)}</span>
+                <span class="text white-tertiary">{issueTypes[code]?.hint}</span>
+              </span>
+            ))}
+
+            {album.ignored_issues.length > 0 && (
+              <span class="metadata-issue is-ignored">
+                <span class="text default-muted">
+                  {album.ignored_issues.length} issue(s) ignored on this album
+                </span>
+                <button
+                  type="button"
+                  class="metadata-issue-undo"
+                  title="put this album back in the queue"
+                  onClick={() => void onUnignore(album)}
+                >
+                  un-ignore
+                </button>
+              </span>
+            )}
+          </div>
+        )}
 
         {/*
           What the album currently claims to be. Without this you can't tell whether it's
@@ -584,18 +671,70 @@ export function MetadataEditor({ album, onClose, onApplied }: Props) {
             </span>
           )}
 
+          {/*
+            Accepting an album as it is. Offered wherever the editor is opened from, not just
+            in queue mode: deciding a bootleg will never be in MusicBrainz is a thing you
+            realise while looking at it, and making you find a different button for that would
+            mean the queue keeps asking.
+          */}
+          {issues.length > 0 && (
+            <button
+              type="button"
+              class="columns-toggle-button metadata-ignore-button"
+              disabled={ignoring}
+              title={`stop asking about: ${issues.map((c) => issueLabel(c, issueTypes)).join(', ')}`}
+              onClick={() => void ignore()}
+            >
+              {ignoring ? <Loading label="ignoring" /> : "it's fine as it is"}
+            </button>
+          )}
+
+          {queue && (
+            <div class="metadata-queue-nav">
+              <button
+                type="button"
+                class="columns-toggle-button"
+                disabled={queue.position <= 1}
+                title="the previous album in the queue"
+                onClick={queue.onPrevious}
+              >
+                ◁
+              </button>
+              <button
+                type="button"
+                class="columns-toggle-button"
+                disabled={queue.position >= queue.total}
+                title="leave this one for now and move on"
+                onClick={queue.onNext}
+              >
+                skip ▷
+              </button>
+            </div>
+          )}
+
           <button type="button" class="columns-toggle-button" onClick={onClose}>
             {applied ? 'close' : 'cancel'}
           </button>
 
-          <button
-            type="button"
-            id="metadata-apply-button"
-            disabled={!plan || plan.empty || planning || applying}
-            onClick={() => void apply()}
-          >
-            {applying ? <Loading label="applying" /> : 'apply'}
-          </button>
+          {/*
+            In queue mode a finished album hands you straight to the next one - going back to
+            the list and picking the next by hand is the busywork this whole thing exists to
+            remove. The last album has nowhere to go, so it keeps the plain close.
+          */}
+          {applied && queue && queue.position < queue.total ? (
+            <button type="button" id="metadata-apply-button" onClick={queue.onNext}>
+              next album ▷
+            </button>
+          ) : (
+            <button
+              type="button"
+              id="metadata-apply-button"
+              disabled={!plan || plan.empty || planning || applying}
+              onClick={() => void apply()}
+            >
+              {applying ? <Loading label="applying" /> : 'apply'}
+            </button>
+          )}
         </div>
       </div>
     </div>

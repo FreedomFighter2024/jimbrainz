@@ -18,6 +18,8 @@ const TABS: readonly Tab[] = [
 interface Props {
   active: TabId
   onChange: (tab: TabId) => void
+  /** Per-tab counts. Only rendered when non-zero — see the badge below. */
+  badges?: Partial<Record<TabId, number>>
 }
 
 /**
@@ -29,21 +31,38 @@ interface Props {
  * handler, leaving the tab button highlighted while the panes never swapped. A DOM write
  * against an element outside this component's tree isn't this component's job.
  */
-export function Tabs({ active, onChange }: Props) {
+export function Tabs({ active, onChange, badges }: Props) {
   return (
     <div id="view-tabs" role="tablist">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={active === tab.id}
-          class={`view-tab${active === tab.id ? ' active' : ''}`}
-          onClick={() => onChange(tab.id)}
-        >
-          {tab.label}
-        </button>
-      ))}
+      {TABS.map((tab) => {
+        const badge = badges?.[tab.id] ?? 0
+
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={active === tab.id}
+            class={`view-tab${active === tab.id ? ' active' : ''}`}
+            onClick={() => onChange(tab.id)}
+          >
+            {tab.label}
+            {/*
+              Rendered only when there is something to say. A badge sitting on 0 is how the
+              other three badges in this interface ended up invisible to everyone including the
+              code that thought it had hidden them - see the `hidden` note in CLAUDE.md.
+            */}
+            {badge > 0 && (
+              <span
+                class="view-tab-badge"
+                title={`${badge} newly added album(s) you haven't looked at`}
+              >
+                {badge}
+              </span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }

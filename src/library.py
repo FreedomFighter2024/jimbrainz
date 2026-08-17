@@ -243,9 +243,16 @@ def read_track(path: Path) -> dict | None:
     except OSError:
         size = 0
 
+    #? Recorded separately because the fallback below is invisible afterwards: an untitled
+    #? file shows its filename stem, which for anything ripped by a normal tool is very close
+    #? to what a real title looks like. Without this the interface cannot tell "titled" from
+    #? "named after the file it happens to live in".
+    tagged_title = _first(audio, "title")
+
     return {
         "filename": path.name,
-        "title": _first(audio, "title") or path.stem,
+        "title": tagged_title or path.stem,
+        "has_title_tag": bool(tagged_title),
         "position": _track_number(_first(audio, "tracknumber")),
         "length": round(length, 1),
         "size": size,
@@ -272,13 +279,17 @@ def _commonest(values: list[str], fallback: str = "") -> str:
     return max(counts, key=lambda k: counts[k])
 
 
-def _edition_from_dirname(name: str) -> str:
+def edition_from_dirname(name: str) -> str:
     """
     Pull the `[...]` suffix back out of a folder the organizer created.
 
     build_album_dirname() writes the edition there, so for anything jimbrainz filed this is
     the label the user already sees on disk, and reusing it keeps the UI and the filesystem
     telling the same story. Folders from elsewhere simply have no suffix.
+
+    Public because metadata_health.py needs the folder's *own* edition to work out whether a
+    folder still matches its tags - `album["edition"]` is not a substitute, since the scan
+    rewrites it to "Standard" further down.
     """
     if name.endswith("]") and "[" in name:
         return name[name.rindex("[") + 1:-1].strip()
@@ -343,7 +354,7 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
         "year": date[:4] if date else "",
         #? empty for anything not tagged with one, which is most libraries
         "original_year": original_date[:4] if original_date else "",
-        "edition": _edition_from_dirname(directory.name),
+        "edition": edition_from_dirname(directory.name),
         "release_mbid": release_mbid,
         #? '' means no art on disk. The interface falls back to the Cover Art Archive when
         #? there's a release MBID, exactly as the search view already does.
@@ -353,6 +364,9 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
         "total_size": sum(t["size"] for t in tracks),
         "duration": round(sum(t["length"] for t in tracks), 1),
         "formats": sorted({t["format"] for t in tracks if t["format"]}),
+        #? rolled up here rather than left for the caller to count, so it survives in the
+        #? per-folder cache alongside everything else the scan worked out
+        "untitled_tracks": sum(1 for t in tracks if not t["has_title_tag"]),
         "tracks": tracks,
         "modified_at": directory.stat().st_mtime if directory.exists() else 0,
         #? surfaced rather than hidden: a folder whose files disagree about the album name is

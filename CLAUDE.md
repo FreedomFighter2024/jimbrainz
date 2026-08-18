@@ -251,6 +251,15 @@ Each of these cost real time. Don't rediscover them.
   54% of polls**, in gaps of up to 5 seconds — a transfer moving at a perfectly constant rate,
   flickering between a number and nothing. It ages out on wall time now (`STALE_RATE_MS`), which
   put that back to 92% and bounded the lie at ~6s whatever the cadence.
+- **The speed is measured over a one-second window, which is also how often it changes.** One
+  constant (`SPEED_UPDATE_MS`), not a measurement plus a display throttle — a short window
+  quantises badly against slskd's own counter, so publishing twice a second gave a figure that
+  was both hard to read and noisier than the transfer really was. Measured on a transfer
+  deliberately wobbling ±30%: 120 distinct figures a minute became 60, and the scatter fell
+  (std dev 0.212 → 0.187 MB/s) while still tracking the real swing. **The poll cadence is
+  independent of this** — the extra polls drive progress and status, and their bytes accumulate
+  into the next window rather than being discarded, so changing `POLL_OPEN_MS` does not change
+  how often the speed updates.
 - **`ui/test/speed.sim.cjs` is the only frontend test in the repo, and it is a script.** There is
   no JS test runner here (adding one needs a newer Node than this repo builds on), and the
   sampler is the piece of frontend logic whose failure is *silent* — a wrong rate looks entirely

@@ -41,6 +41,23 @@ export interface ByteSample {
  */
 const STALE_RATE_MS = 6000
 
+/**
+ * The shortest window a rate is measured over, and therefore how often the figure changes.
+ *
+ * Those are deliberately the same number rather than a measurement plus a display throttle.
+ * Publishing a new figure twice a second gives you one that is hard to read AND noisier than
+ * it needs to be: a short window quantises badly against slskd's own counter, so the value
+ * jumps around far more than the transfer actually does. Measuring across a full second costs
+ * nothing, steadies the number, and updates it at a rate a person can actually follow.
+ *
+ * The panel keeps polling at its own faster cadence - progress and status stay responsive, and
+ * the bytes arriving in between are not discarded, they accumulate into the next window.
+ *
+ * A slower poll cadence than this (the 5s background one) simply publishes on every poll; you
+ * cannot measure more often than you look.
+ */
+const SPEED_UPDATE_MS = 1000
+
 export type SpeedSamples = Map<number, ByteSample>
 
 /**
@@ -74,20 +91,26 @@ export function sampleSpeeds(
       continue
     }
 
-    const seconds = (now - previous.at) / 1000
+    const elapsed = now - previous.at
     const delta = bytes - previous.bytes
 
     // a negative delta means slskd restarted or requeued the transfer; drop everything
     // known about it rather than reporting a nonsense number
-    if (seconds <= 0 || delta < 0) {
+    if (elapsed <= 0 || delta < 0) {
       samples.set(job.id, { bytes, at: now, rate: null, rateAt: now })
       continue
     }
 
-    if (delta === 0) {
-      // deliberately keeps the previous anchor rather than moving it to `now`: the bytes
-      // that arrive next accumulated over the whole quiet stretch, so measuring them
-      // against only the final tick would overstate the rate badly
+    /*
+     * Nothing new to publish yet - either the window isn't a full second old, or the byte
+     * count hasn't moved since it opened.
+     *
+     * Both cases deliberately KEEP the existing anchor rather than moving it to `now`. The
+     * bytes that arrive next accumulated over the whole window, so measuring them against
+     * only the final poll would overstate the rate badly - and that is also what lets a
+     * faster poll cadence feed a one-second measurement instead of fighting it.
+     */
+    if (elapsed < SPEED_UPDATE_MS || delta === 0) {
       samples.set(job.id, previous)
 
       if (previous.rate !== null && now - previous.rateAt <= STALE_RATE_MS) {
@@ -96,7 +119,7 @@ export function sampleSpeeds(
       continue
     }
 
-    const rate = delta / seconds
+    const rate = delta / (elapsed / 1000)
     samples.set(job.id, { bytes, at: now, rate, rateAt: now })
     speeds.set(job.id, rate)
   }

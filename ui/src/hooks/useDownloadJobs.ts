@@ -13,6 +13,11 @@ import { sampleSpeeds, type SpeedSamples } from '../lib/speed'
  * doesn't move - but it's why ../lib/speed.ts holds the last measured rate across quiet
  * ticks instead of reporting "unknown" every other second.
  *
+ * Note the speed is NOT recomputed per poll. ../lib/speed.ts measures it over a one-second
+ * window and so publishes a new figure once a second whatever this cadence is; the extra polls
+ * feed progress and status, and their bytes accumulate into the next window rather than being
+ * thrown away. Changing the numbers here does not change how often the speed updates.
+ *
  * Each open poll is one request to jimbrainz and, while anything is downloading, one onward
  * request to slskd. Going below ~500ms starts being rude to slskd for no visible gain.
  */

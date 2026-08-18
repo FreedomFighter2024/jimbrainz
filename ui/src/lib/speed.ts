@@ -16,19 +16,30 @@ export interface ByteSample {
   at: number
   /** Last rate actually measured for this job, carried across ticks that saw no movement. */
   rate: number | null
-  /** Consecutive polls with no byte movement. Resets on any real change. */
-  idle: number
+  /** When that rate was measured, so it can be aged out in seconds rather than in polls. */
+  rateAt: number
 }
 
 /**
- * How many consecutive no-movement polls to keep reporting the last rate for.
+ * How long to keep reporting the last measured rate once the byte counter goes quiet.
  *
- * We poll faster than slskd updates its byte counters, so a zero delta usually means "no
- * news since last time", not "the transfer stopped" - reporting nothing on those ticks makes
- * the speed flicker between a number and "unknown". Four ticks is ~2s at the open cadence,
- * after which a job really has stalled and claiming a speed would be a lie.
+ * We poll faster than slskd updates its byte counters, so a zero delta usually means "no news
+ * since last time" rather than "the transfer stopped" - and reporting nothing on those polls
+ * makes the speed flicker between a number and nothing at all while the transfer is in fact
+ * moving at a perfectly steady rate.
+ *
+ * WALL TIME, not a number of polls, and that distinction is the whole point. This was four
+ * polls, which the comment described as "~2s at the open cadence" - true only at that cadence.
+ * The panel polls every 500ms open and every 5s in the background, and browsers throttle
+ * background tabs further still, so the same constant meant 2 seconds in one situation and 20+
+ * in another: flickering when watched, and confidently reporting a long-dead rate when not.
+ * Measured against a steady 1 MB/s transfer, a slskd counter refreshing every 5s left the speed
+ * blank on 54% of polls, in gaps of up to 5 seconds.
+ *
+ * Six seconds covers the slowest counter refresh observed with margin, and is short enough that
+ * a genuinely stalled transfer stops claiming a speed promptly rather than lying for 20s.
  */
-const MAX_IDLE_TICKS = 4
+const STALE_RATE_MS = 6000
 
 export type SpeedSamples = Map<number, ByteSample>
 
@@ -59,7 +70,7 @@ export function sampleSpeeds(
     const previous = samples.get(job.id)
 
     if (!previous) {
-      samples.set(job.id, { bytes, at: now, rate: null, idle: 0 })
+      samples.set(job.id, { bytes, at: now, rate: null, rateAt: now })
       continue
     }
 
@@ -69,23 +80,24 @@ export function sampleSpeeds(
     // a negative delta means slskd restarted or requeued the transfer; drop everything
     // known about it rather than reporting a nonsense number
     if (seconds <= 0 || delta < 0) {
-      samples.set(job.id, { bytes, at: now, rate: null, idle: 0 })
+      samples.set(job.id, { bytes, at: now, rate: null, rateAt: now })
       continue
     }
 
     if (delta === 0) {
-      const idle = previous.idle + 1
       // deliberately keeps the previous anchor rather than moving it to `now`: the bytes
       // that arrive next accumulated over the whole quiet stretch, so measuring them
       // against only the final tick would overstate the rate badly
-      samples.set(job.id, { ...previous, idle })
+      samples.set(job.id, previous)
 
-      if (previous.rate !== null && idle <= MAX_IDLE_TICKS) speeds.set(job.id, previous.rate)
+      if (previous.rate !== null && now - previous.rateAt <= STALE_RATE_MS) {
+        speeds.set(job.id, previous.rate)
+      }
       continue
     }
 
     const rate = delta / seconds
-    samples.set(job.id, { bytes, at: now, rate, idle: 0 })
+    samples.set(job.id, { bytes, at: now, rate, rateAt: now })
     speeds.set(job.id, rate)
   }
 

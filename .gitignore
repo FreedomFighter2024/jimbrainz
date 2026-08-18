@@ -10,7 +10,10 @@ __pycache__/
 
 docker-compose.yml
 
-test/
+# anchored: this is for a scratch dir at the repo root. Unanchored, `test/` matched ANY
+# directory named test at any depth, which silently swallowed ui/test/ - a committed file that
+# CLAUDE.md referred to and that simply wasn't there.
+/test/
 TODO.md
 
 .dockerignore

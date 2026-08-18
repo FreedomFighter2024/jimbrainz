@@ -237,6 +237,26 @@ Each of these cost real time. Don't rediscover them.
 - **slskd's `averageSpeed` is cumulative** (total bytes ÷ total elapsed), so it only ever
   creeps upward and never shows the current rate. Real speed is derived from `bytesTransferred`
   deltas between polls. Don't "simplify" back to `averageSpeed`.
+- **`uploadSpeed` is BYTES per second, not bits.** Two comments claimed bits, which would invite
+  someone to "fix" the display by a factor of eight. slskd's own web UI renders the same field
+  as `formatBytes(response.uploadSpeed)/s`, and `score_peer()`'s thresholds only make sense read
+  as bytes — 1 MB/s for a fast peer, 100 KB/s for a decent one; as bits those would be 125 and
+  **12.5** KB/s. The display was always right; only the comments were wrong.
+- **Hold a stale rate for a duration, never for a number of polls.** `speed.ts` kept the last
+  measured rate across quiet polls (a zero delta usually means "slskd hasn't refreshed its
+  counter", not "the transfer stopped") — but it counted four *polls*, and the poll cadence is
+  not fixed: 500ms with the panel open, 5s in the background, and browsers throttle background
+  tabs further. So the same constant meant ~2s when watched and 20s+ when not. Measured against
+  a steady 1 MB/s transfer with slskd's counter refreshing every 5s, **the speed read blank on
+  54% of polls**, in gaps of up to 5 seconds — a transfer moving at a perfectly constant rate,
+  flickering between a number and nothing. It ages out on wall time now (`STALE_RATE_MS`), which
+  put that back to 92% and bounded the lie at ~6s whatever the cadence.
+- **`ui/test/speed.sim.cjs` is the only frontend test in the repo, and it is a script.** There is
+  no JS test runner here (adding one needs a newer Node than this repo builds on), and the
+  sampler is the piece of frontend logic whose failure is *silent* — a wrong rate looks entirely
+  plausible, and "no speed at all, intermittently" is invisible to any assertion about a single
+  poll. It compiles `speed.ts` itself, simulates polling against a known true rate, and exits
+  non-zero. Run it with `node ui/test/speed.sim.cjs`; it fails on the pre-fix code.
 - **An unrecognised slskd transfer substate is a permanently stuck job.** This was predicted in
   "What the tests cannot tell you" below and then happened: `summarize_transfers` knew about
   `"Completed, Succeeded"`, `"Errored"` and `"Cancelled"`, so **`"Completed, Rejected"` counted
@@ -484,6 +504,10 @@ npm install
 npm run build      # tsc --noEmit && vite build -> interface/dist/, required to see downloads
 npm run typecheck  # tsc alone; runs on older Node when the build won't
 npm run dev        # harness on :5173, proxies /jimbrainz + /styles to :8080 (start the backend first)
+```
+
+```bash
+node ui/test/speed.sim.cjs   # the derived download rate, simulated against a known truth
 ```
 
 `npm run dev` serves `ui/index.html`, a harness for working on one component in isolation with

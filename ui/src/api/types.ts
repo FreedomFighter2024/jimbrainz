@@ -130,7 +130,12 @@ export interface Candidate {
   audio_file_count: number
   detected_edition_tags: string[]
   formats: string[]
-  /** The peer's upload speed = our download speed, in bits/sec per slskd. */
+  /**
+   * The peer's upload speed = our download speed, in BYTES/sec.
+   *
+   * Not bits — slskd's own web UI renders this field as `formatBytes(uploadSpeed)/s`, and
+   * src/matching.py's peer thresholds only make sense as bytes. Do not divide by eight.
+   */
   upload_speed: number
   queue_length: number
   has_free_slot: boolean

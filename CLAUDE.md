@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             273 tests, all Python, all fixture-driven
+tests/             279 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -279,9 +279,17 @@ Each of these cost real time. Don't rediscover them.
   *frontend* warning every time it paced a request, which during any normal burst is constantly —
   so the app spent its time telling the user that its own politeness was a fault. It is at debug
   now. A real 429 from the server is still reported.
-- **docker-compose: never declare a var in both `env_file` and `environment:`.** `environment:`
-  wins and re-interpolates `${VAR}` from compose's own env; when that comes back empty it
-  silently overwrites the good value from `.env`. This produced an unusable empty `SLSKD_URL`.
+- **docker-compose: `environment:` beats `env_file`, and that is now a supported way to
+  configure jimbrainz — but only with LITERAL values.** Both sources work and may be mixed
+  (`load_dotenv()` does not override existing variables, so the environment wins; there is a
+  subprocess test pinning that, because flipping it to `override=True` would invert the
+  precedence with nothing to show for it).
+  The trap is `SLSKD_URL=${SLSKD_URL}`: compose re-interpolates that from its *own* env, and an
+  empty result **still counts as set**, so it beats `.env` and leaves the setting blank beside a
+  `.env` line that looks perfectly correct. That produced an unusable empty `SLSKD_URL` once
+  already. `shadowed_by_empty_env()` now detects exactly this and names it in the log, and
+  `setting_source()` reports which source supplied each setting on startup — "check your .env"
+  is useless advice to someone who configured everything in compose.
 - **`.env` values must not have trailing `# comments`.** Compose and python-dotenv disagree
   about inline comments. Examples go on their own lines.
 - **Two editions of one album used to silently not arrive.** `{album} ({year})` gave the
@@ -466,7 +474,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 273 tests
+.venv/bin/python -m pytest tests/ -q  # 279 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -486,7 +494,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 273 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 279 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

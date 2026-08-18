@@ -40,7 +40,16 @@ _Note: if you're an **UnRaid** user like me, ive added a template that can be ma
 
 ### Environment:
 1. either clone the repo: ```git clone https://github.com/real-lizardwizard/jimbrainz.git``` <br> or just grab the ```docker-compose.example.yml``` file
-2. fill in the ```.env.example``` file, and rename it to just ```.env```, if you're unsure about how to format your MusicBrainz user agent see [here](https://MusicBrainz.org/doc/MusicBrainz_API/Rate_Limiting) <br> fill in the ```docker-compose.example.yml``` and rename it to just ```docker-compose.yml``` (here you can change the exposed port and docker network)
+2. fill in the ```docker-compose.example.yml``` and rename it to just ```docker-compose.yml``` (here you can change the exposed port and docker network)
+3. put your settings in **either** place — whichever you prefer:
+   - the ```environment:``` block of your compose file, which keeps everything about the container in one file. This is usually what you want on Unraid.
+   - or ```.env.example```, filled in and renamed to just ```.env```, which keeps your slskd API key out of a file you might paste into a forum post.
+
+   Mixing them is fine: a setting in ```environment:``` wins over the same one in ```.env```, so you can keep the key in ```.env``` and the rest in compose. jimbrainz logs which source each setting came from when it starts, so you can check it picked up what you expected.
+
+   If you're unsure how to format your MusicBrainz user agent, see [here](https://MusicBrainz.org/doc/MusicBrainz_API/Rate_Limiting).
+
+**`SLSKD_URL` has to be reachable from inside this container**, which is not always the address you type into your browser. If slskd is another container on the same docker network, use its service name and internal port — `http://slskd:5030` — rather than your host's IP and published port. It needs the scheme (`http://`) either way; jimbrainz says so specifically if it's missing.
 
 **The one that trips everyone up:** `SLSKD_DOWNLOAD_PATH` has to point at the *same files* slskd writes its finished downloads to, as seen from inside this container. If the two containers disagree about that path, organizing quietly finds nothing. It's the most likely first-run problem by a mile.
 

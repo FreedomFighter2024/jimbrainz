@@ -9,20 +9,57 @@ services:
     container_name: jimbrainz
     restart: unless-stopped
 
-    # everything you configure lives in .env. Deliberately NOT repeated in an `environment:`
-    # block below - `environment:` wins over `env_file`, so listing SLSKD_URL=${SLSKD_URL}
-    # there means compose interpolates it a second time from its own environment, and if that
-    # lookup comes back empty it silently overwrites the perfectly good value .env just
-    # supplied. That failure looks like slskd being unconfigured for no visible reason.
+    # ---------------------------------------------------------------------------------
+    # There are two places to configure jimbrainz, and you can use either or both:
+    #
+    #   env_file      the .env file next to this one. Good for the things you'd rather not
+    #                 have sitting in a file you might paste into a forum post - your slskd
+    #                 API key in particular.
+    #   environment   the block below. Good for keeping everything about this container in
+    #                 one file, which is what you want on Unraid and similar.
+    #
+    # If a setting appears in both, `environment:` wins. That is a deliberate feature and
+    # not an accident - but see the warning on the block below before using it.
+    # ---------------------------------------------------------------------------------
     env_file:
+      # Delete these two lines if you'd rather configure everything in `environment:` below -
+      # compose treats a missing env_file as a hard error, so an unused one has to go rather
+      # than just sit there empty.
       - .env
 
     environment:
-      # only fixed container-internal paths belong here - these match the mounts below and
-      # aren't yours to change in .env
+      # Fixed container-internal paths. These match the mounts below and aren't yours to
+      # change in .env - change the left-hand side of the volume instead.
       - SLSKD_DOWNLOAD_PATH=/downloads
       - LIBRARY_PATH=/music
       - DB_PATH=/config/jimbrainz.db
+
+      # ----- uncomment to configure jimbrainz here instead of in .env -----
+      #
+      # WRITE LITERAL VALUES, as shown. Do NOT write `SLSKD_URL=${SLSKD_URL}`: compose
+      # interpolates that from its OWN environment, and when that lookup comes back empty it
+      # sets the variable to an empty string - which still counts as set, still beats .env,
+      # and leaves you with slskd unconfigured and a .env line that looks perfectly correct.
+      # jimbrainz now says so explicitly in its log if this happens to you, but it is much
+      # easier to just not do it.
+      #
+      # The URL needs the scheme, and must be reachable FROM THIS CONTAINER - if slskd is
+      # another container on the same docker network, that's its service name and internal
+      # port (http://slskd:5030), not the address you use from your browser.
+      #- SLSKD_URL=http://slskd:5030
+      #- SLSKD_APIKEY=your-slskd-api-key
+      #
+      # AppName/1.1.1 (github.com/YourUsername)
+      #- MUSICBRAINZ_USERAGENT=
+      #
+      # off | dry_run | copy | move. Starts at dry_run on purpose - organizing is the only
+      # thing here that writes to your filesystem, so check the event log looks right before
+      # switching to copy or move.
+      #- ORGANIZE_MODE=dry_run
+      #
+      # match these to slskd and your *arr containers so files end up consistently owned
+      #- PUID=1000
+      #- PGID=1000
 
     volumes:
       # jimbrainz needs to SEE slskd's finished downloads to organize them, so this must be

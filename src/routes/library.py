@@ -298,6 +298,10 @@ class CoverArtRequest(BaseModel):
     #? off by default. Somebody's hand-picked sleeve is not ours to overwrite because the
     #? Archive happens to have one too - the same instinct as execute_plan refusing to clobber.
     replace: bool = False
+    #? Optional. Absent, the release comes from the album's own tags, which is what makes the
+    #? plain path require no decision. The editor sends one because it is showing you that
+    #? release's cover at the time, so the choice is deliberate and visible rather than implied.
+    release_mbid: str | None = None
 
 
 @router.post("/art/fetch")
@@ -319,7 +323,7 @@ async def fetch_cover_art(request: Request, body: CoverArtRequest):
 
     try:
         plan = await asyncio.to_thread(
-            plan_cover_art, body.album_path, Config.LIBRARY_PATH, body.replace
+            plan_cover_art, body.album_path, Config.LIBRARY_PATH, body.replace, body.release_mbid
         )
 
         if plan["problem"]:

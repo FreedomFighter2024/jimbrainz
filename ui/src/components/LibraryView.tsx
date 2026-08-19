@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'preact/hooks'
+import { useMemo, useRef, useState } from 'preact/hooks'
 
+import { ApiError } from '../api/http'
 import * as libraryApi from '../api/library'
 import type { LibraryAlbum } from '../api/types'
 import { bridge } from '../bridge'
@@ -97,6 +98,27 @@ export function LibraryView({ active, onNavigate }: Props) {
    */
   const [session, setSession] = useState(0)
 
+  /**
+   * A bulk cover fetch in progress, or the summary of the last one.
+   *
+   * Driven from here one album at a time rather than by a single server-side endpoint, for
+   * three reasons that all point the same way: you can watch it happen, you can stop it, and
+   * every album goes through the exact same tested route a single "get art" click does. A
+   * server-side loop would be one long opaque request that either finishes or doesn't.
+   */
+  const [bulkArt, setBulkArt] = useState<{
+    total: number
+    done: number
+    written: number
+    missing: number
+    failed: number
+    running: boolean
+  } | null>(null)
+
+  //? read by the loop to break out, rather than state, so a click lands immediately instead of
+  //? on the next render
+  const stopBulk = useRef(false)
+
   //? the album awaiting a delete confirmation, or null
   const [deleting, setDeleting] = useState<LibraryAlbum | null>(null)
 
@@ -136,6 +158,64 @@ export function LibraryView({ active, onNavigate }: Props) {
     () => Object.entries(queue.by_issue).sort((a, b) => b[1] - a[1]),
     [queue.by_issue],
   )
+
+  /**
+   * Albums in the CURRENT VIEW that a cover could be fetched for.
+   *
+   * Scoped to what's on screen so the filters compose with it - narrow to "no cover art", or to
+   * one artist, and the bulk action follows. They must already name a release, because that is
+   * what the Archive is asked about; an album with no release id has nothing to look up.
+   */
+  const artCandidates = useMemo(
+    () => visible.flatMap((group) => group.editions)
+                 .filter((album) => !album.art && album.release_mbid),
+    [visible],
+  )
+
+  /**
+   * Fetch covers for all of them, one at a time.
+   *
+   * Sequential on purpose. These go out to the Cover Art Archive, which is a third party that
+   * goes unreachable for minutes at a time, and firing thirty parallel requests at it would be
+   * both rude and a good way to turn one slow patch into thirty failures.
+   *
+   * A 404 is counted separately from a failure because it means something different and far
+   * more common: that release genuinely has no front cover. Lumping them together would report
+   * a run as broken when it did exactly what it could.
+   */
+  const fetchAllArt = async () => {
+    const targets = artCandidates
+    if (!targets.length) return
+
+    stopBulk.current = false
+    setBulkArt({ total: targets.length, done: 0, written: 0, missing: 0, failed: 0, running: true })
+
+    let written = 0
+    let missing = 0
+    let failed = 0
+
+    for (const [index, album] of targets.entries()) {
+      if (stopBulk.current) break
+
+      try {
+        await libraryApi.fetchCoverArt(album.path)
+        written += 1
+      } catch (caught) {
+        //? 404 is "no cover for this release", which is a fact rather than a fault
+        if (caught instanceof ApiError && caught.status === 404) missing += 1
+        else failed += 1
+      }
+
+      setBulkArt({
+        total: targets.length, done: index + 1, written, missing, failed, running: true,
+      })
+    }
+
+    setBulkArt((current) => current && { ...current, running: false })
+    //? one reload at the end rather than per album: each write already dropped that folder from
+    //? the server's scan cache, so this picks up every new cover in a single pass
+    await reload(false)
+  }
 
   //? the tab badge lives in a different render tree and can't see any of this state, so it is
   //? told to recount rather than being left to notice on its own timer - see bridge.ts
@@ -410,6 +490,34 @@ export function LibraryView({ active, onNavigate }: Props) {
             </button>
           )}
 
+          {/*
+            Bulk cover fetch. Labelled with the count so it can't surprise you, and scoped to
+            what is on screen so narrowing to the "no cover art" facet narrows this too.
+          */}
+          {loaded && artCandidates.length > 0 && !bulkArt?.running && (
+            <button
+              type="button"
+              id="library-bulk-art-button"
+              title={`fetch a cover for the ${artCandidates.length} album(s) in view that have a `
+                   + `release but no art - nothing else about them changes`}
+              onClick={() => void fetchAllArt()}
+            >
+              get art · {artCandidates.length}
+            </button>
+          )}
+
+          {bulkArt?.running && (
+            <button
+              type="button"
+              id="library-bulk-art-button"
+              class="is-running"
+              title="stop after the album currently being fetched"
+              onClick={() => { stopBulk.current = true }}
+            >
+              <Loading label={`${bulkArt.done}/${bulkArt.total} · stop`} />
+            </button>
+          )}
+
           <button
             type="button"
             class="columns-toggle-button"
@@ -462,6 +570,20 @@ export function LibraryView({ active, onNavigate }: Props) {
               onArtFetched={() => void reload(false)}
             />
           ))}
+
+          {/*
+            What the run actually did. "No cover on the Archive" is reported apart from "the
+            request failed" because they are different facts - the first is about the release
+            and nothing can be done, the second is worth trying again.
+          */}
+          {bulkArt && !bulkArt.running && (
+            <p class="text default-muted library-bulk-summary">
+              fetched {bulkArt.written} cover{bulkArt.written === 1 ? '' : 's'}
+              {bulkArt.missing ? `, ${bulkArt.missing} had none on the Archive` : ''}
+              {bulkArt.failed ? `, ${bulkArt.failed} failed - try those again` : ''}
+              {bulkArt.done < bulkArt.total ? ` (stopped at ${bulkArt.done} of ${bulkArt.total})` : ''}
+            </p>
+          )}
 
           {loaded && albums.length > 0 && (
             <p class="text white-tertiary library-scan-note">

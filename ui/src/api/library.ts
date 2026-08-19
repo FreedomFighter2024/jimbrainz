@@ -104,9 +104,15 @@ export function markReviewed(albumPath: string): Promise<{ reviewed: boolean }> 
  */
 export function fetchCoverArt(
   albumPath: string,
-  replace = false,
+  options: { replace?: boolean; releaseMbid?: string | null } = {},
 ): Promise<{ written: string | null; replaced: string | null }> {
-  return post('/library/art/fetch', { album_path: albumPath, replace })
+  return post('/library/art/fetch', {
+    album_path: albumPath,
+    replace: options.replace ?? false,
+    //? omitted for the plain path, where the release comes from the album's own tags. The
+    //? editor sends one because it is showing you that release's cover as you decide.
+    release_mbid: options.releaseMbid ?? null,
+  })
 }
 
 /** What deleting this album would remove. Touches nothing. */

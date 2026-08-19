@@ -91,7 +91,12 @@ def plan_art(entries: list[Path], release: dict, want_art: bool) -> dict:
     return {"action": "download", "reason": "", "existing": None}
 
 
-def plan_cover_art(album_path: str, library_root: str, replace: bool = False) -> dict:
+def plan_cover_art(
+    album_path: str,
+    library_root: str,
+    replace: bool = False,
+    release_mbid: str | None = None,
+) -> dict:
     """
     Whether a cover could be saved into this album, and which release to ask for. Writes nothing.
 
@@ -125,9 +130,15 @@ def plan_cover_art(album_path: str, library_root: str, replace: bool = False) ->
         return {"release_mbid": None, "existing": existing_name, "action": "",
                 "problem": f"this album already has {existing_name}"}
 
-    #? read from the files rather than taken from the caller: the point of this path is that it
-    #? needs no decision from anyone, and a release id supplied over the wire would be one
-    release_mbid = read_album_mbid(directory)
+    #? Normally read from the files: the point of the plain "get art" path is that it needs no
+    #? decision from anyone, so it fetches art for the release the album already says it is.
+    #?
+    #? An explicit id overrides that, and only the editor sends one - it is showing you that
+    #? release's cover beside the current one at the time, so the choice has already been made
+    #? deliberately and visibly. Fetching art for a release the album is NOT is a reasonable
+    #? thing to want (the tags are wrong, or you're about to apply that release anyway); doing
+    #? it silently would not be.
+    release_mbid = (release_mbid or "").strip() or read_album_mbid(directory)
 
     if not release_mbid:
         return {"release_mbid": None, "existing": existing_name, "action": "",

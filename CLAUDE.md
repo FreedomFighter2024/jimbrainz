@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             299 tests, all Python, all fixture-driven
+tests/             303 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -123,6 +123,18 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   guessed at, and an existing cover is never replaced unless asked.
   The `get art` button appears only on albums that have a release id and no art — exactly the
   set it can help — which also keeps it off the already-tight mobile rows.
+  **Replacing art lives in the editor, not on the row.** Overwriting a sleeve you chose
+  yourself is not recoverable, and the editor is where you are looking at both covers as you
+  decide — that comparison is the point. The cheap, additive direction gets the one-click
+  button out in the list; the destructive one sits behind a preview. The editor also sends an
+  explicit `release_mbid`, since it is showing you that release's cover at the time; the plain
+  path sends none and uses the album's own tags, which is what makes it need no decision.
+  **The bulk run is driven from the client, one album at a time**, so you can watch it, stop
+  it, and have every album go through the identical tested route a single click does. A
+  server-side loop would be one long opaque request that either finishes or doesn't. It is
+  scoped to what is on screen, so the facets compose with it, and it reports "no cover on the
+  Archive" separately from "the request failed" — the first is a fact about the release and
+  nothing can be done, the second is worth trying again.
 - **There are now THREE writers to the user's filesystem**, and both use the same plan/execute
   split: `organizer.py` files downloads in, `retag.py` corrects albums already there, and
   `save_cover_art()` writes a single cover (narrow enough not to need a plan/execute split, but
@@ -230,6 +242,11 @@ Each of these cost real time. Don't rediscover them.
   children, `#main-content` put a fixed 220px filter column beside the content leaving 155px,
   and the dropdown panels were 440–460px wide. **Anything new with a fixed px width needs a
   mobile rule**, and the responsive block at the bottom of `main.css` is where it goes.
+- **Right-align the library toolbar from the SUMMARY, not from each button.** Every trailing
+  control used to carry its own `margin-left: auto` plus a rule cancelling the one before it,
+  so adding a third button meant adding another override — and two live auto margins split the
+  free space instead of pooling it, putting a gap in the middle of the group. `#library-summary`
+  takes the slack with `margin-right: auto` and any number of controls after it stay together.
 - **The filter columns collapse on mobile and the class is inert on desktop.** Both the
   vanilla and Preact columns always carry `collapsed`; only the `max-width: 768px` block acts
   on it. Don't "tidy" that by removing the class on desktop — it's what keeps one code path.
@@ -580,7 +597,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 299 tests
+.venv/bin/python -m pytest tests/ -q  # 303 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -605,7 +622,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 299 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 303 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

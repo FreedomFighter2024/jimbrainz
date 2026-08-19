@@ -126,3 +126,49 @@ def test_writing_outside_the_library_is_refused(tmp_path):
     assert result["written"] is None
     assert "not inside the library" in result["problem"]
     assert not list(outside.iterdir()), "nothing was written out there"
+
+
+# ---------------------------------------------------------------- the release override
+
+def test_the_release_normally_comes_from_the_albums_own_tags(tmp_path):
+    """The plain path makes no choice, which is what lets it run without a preview."""
+    seed(tmp_path, "A/B", mbid="mb-from-tags")
+
+    assert plan_cover_art("A/B", str(tmp_path))["release_mbid"] == "mb-from-tags"
+
+
+def test_an_explicit_release_wins_when_one_is_given(tmp_path):
+    """
+    Only the editor sends one, and only while showing you that release's cover beside the
+    current one - so the choice has already been made deliberately and visibly. Fetching art
+    for a release the album is NOT is a reasonable thing to want; doing it silently would not be.
+    """
+    seed(tmp_path, "A/B", mbid="mb-from-tags")
+
+    plan = plan_cover_art("A/B", str(tmp_path), release_mbid="mb-chosen")
+
+    assert plan["release_mbid"] == "mb-chosen"
+
+
+def test_an_override_still_needs_a_cover_slot_to_write_into(tmp_path):
+    """Choosing a release doesn't override the refusal to clobber - `replace` does that."""
+    seed(tmp_path, "A/B", mbid="mb-from-tags", cover="cover.jpg")
+
+    plan = plan_cover_art("A/B", str(tmp_path), release_mbid="mb-chosen")
+
+    assert plan["action"] == ""
+    assert "already has cover.jpg" in plan["problem"]
+
+
+def test_an_override_lets_an_untagged_album_get_art(tmp_path):
+    """
+    The case the override exists for: the album names no release, so the plain path has nothing
+    to ask about - but you have just picked one in the editor and can see its cover.
+    """
+    seed(tmp_path, "A/B")
+
+    plan = plan_cover_art("A/B", str(tmp_path), release_mbid="mb-chosen")
+
+    assert plan["problem"] is None
+    assert plan["release_mbid"] == "mb-chosen"
+    assert plan["action"] == "download"

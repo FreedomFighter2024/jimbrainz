@@ -205,6 +205,10 @@ export function MetadataEditor(
   const [applyError, setApplyError] = useState<string | null>(null)
   const [applied, setApplied] = useState<string | null>(null)
   const [ignoring, setIgnoring] = useState(false)
+  //? the art-only action, which is a different thing from the `fetchArt` checkbox below - that
+  //? one rides along with an apply, this one writes the cover and nothing else
+  const [savingArt, setSavingArt] = useState(false)
+  const [artResult, setArtResult] = useState<string | null>(null)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -546,6 +550,35 @@ export function MetadataEditor(
   //? things - which is the only feedback that the edit did what you wanted.
   const issues = outstandingIssues(album)
 
+  /**
+   * Write the cover on its own, replacing whatever is there.
+   *
+   * Deliberately placed beside the art comparison rather than on the library row: this
+   * overwrites a file, and a sleeve you chose yourself is not recoverable once it is gone. Here
+   * you are looking at both covers as you decide, which is the whole reason the comparison
+   * exists. The cheap, safe direction - an album with NO art - is the one that gets a one-click
+   * button out in the list.
+   */
+  const saveArtOnly = async () => {
+    setSavingArt(true)
+    setArtResult(null)
+
+    try {
+      const result = await libraryApi.fetchCoverArt(album.path, {
+        replace: true,
+        //? the release whose cover you are looking at, falling back to the one the album
+        //? already names when nothing is selected
+        releaseMbid: selectedId ?? album.release_mbid ?? null,
+      })
+      setArtResult(`Saved ${result.written}${result.replaced ? `, replacing ${result.replaced}` : ''}.`)
+      onApplied(album.path)
+    } catch (caught) {
+      setArtResult(caught instanceof Error ? caught.message : 'could not save the cover')
+    } finally {
+      setSavingArt(false)
+    }
+  }
+
   const ignore = async () => {
     setIgnoring(true)
     try {
@@ -733,6 +766,33 @@ export function MetadataEditor(
             </span>
 
             <ArtComparison album={album} releaseId={selectedId} />
+
+            {/*
+              Just the cover, nothing else. The checkbox below rides along with an apply, which
+              also rewrites tags and can rename the folder - a lot to agree to when the sleeve
+              is the only thing you came to change.
+            */}
+            {(selectedId || album.release_mbid) && (
+              <div class="metadata-art-actions">
+                <button
+                  type="button"
+                  class="columns-toggle-button"
+                  disabled={savingArt}
+                  title={
+                    album.art
+                      ? 'replace the cover on disk with this one, and change nothing else'
+                      : 'save this cover into the album folder, and change nothing else'
+                  }
+                  onClick={() => void saveArtOnly()}
+                >
+                  {savingArt
+                    ? <Loading label="saving" />
+                    : album.art ? 'replace cover only' : 'save cover only'}
+                </button>
+
+                {artResult && <span class="text white-tertiary metadata-hint">{artResult}</span>}
+              </div>
+            )}
 
             <label class="metadata-checkbox">
               <input type="checkbox" checked={fetchArt}

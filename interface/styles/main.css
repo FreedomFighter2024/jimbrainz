@@ -2499,8 +2499,10 @@ span.red { color: var(--red-text); }
 }
 
 #library-filter-input { flex: 0 0 220px; }
-#library-summary { font-size: 0.9em; }
-#library-toolbar > .columns-toggle-button { margin-left: auto; }
+/* the summary takes the slack, which right-aligns every control after it however many there
+   are. Previously each trailing button carried its own margin-left:auto and a rule to cancel
+   the one before it, which needed a new override every time a button was added. */
+#library-summary { font-size: 0.9em; margin-right: auto; }
 
 #library-scrollable {
     display: flex;
@@ -2703,18 +2705,9 @@ span.red { color: var(--red-text); }
     letter-spacing: 0.05em;
     padding: 4px 12px;
     text-transform: uppercase;
-    /* pushes itself and the rescan button to the right end of the toolbar */
-    margin-left: auto;
 }
 
 #library-review-button:hover { color: var(--main-hover-text); border-color: var(--main-hover-text); }
-
-/*
- * #library-toolbar sets margin-left:auto on the rescan button to push it right. With the
- * review button also claiming it, both would be pushed and the gap would land between them
- * instead of before them - so once review is present it owns the margin and rescan drops it.
- */
-#library-toolbar > #library-review-button ~ .columns-toggle-button { margin-left: 0; }
 
 /*
  * The count of albums waiting on the library tab.
@@ -3253,13 +3246,11 @@ span.red { color: var(--red-text); }
     }
 
     /*
-     * The toolbar wraps on a phone, so the auto margin that right-aligns these on the desktop
-     * would instead strand the review button alone on its own line with the filter above it.
-     * The row is already wrapping; let them sit together.
+     * The toolbar wraps on a phone, so the auto margin that right-aligns the controls on the
+     * desktop would instead strand them one per line. The row is already wrapping; let them
+     * sit together.
      */
-    #library-review-button {
-        margin-left: 0;
-    }
+    #library-summary { margin-right: 0; }
 
     /*
      * The album and edition heads are nowrap flex rows whose buttons refuse to shrink, so
@@ -3794,3 +3785,33 @@ span.red { color: var(--red-text); }
 /* a fetch that came back with nothing - still clickable, since the Archive going quiet for a
    few minutes looks identical to a release genuinely having no cover */
 .library-art-button.failed { color: var(--white-tertiary-text); }
+
+/* the art-only action, under the current/incoming cover comparison */
+.metadata-art-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+
+/* bulk cover fetch, beside review and rescan in the library toolbar */
+#library-bulk-art-button {
+    background-color: var(--background-color-input);
+    border: 1px solid var(--muted-text);
+    color: var(--main-text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.85em;
+    letter-spacing: 0.05em;
+    padding: 4px 12px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+#library-bulk-art-button:hover { color: var(--main-hover-text); border-color: var(--main-text); }
+/* while it's running the same button is the stop control, so it reads as active not disabled */
+#library-bulk-art-button.is-running { border-color: var(--main-text); }
+
+.library-bulk-summary { font-size: 0.82em; padding: 6px 0; text-align: center; }

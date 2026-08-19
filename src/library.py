@@ -320,13 +320,26 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
     #? Recorded during the scan so the interface knows whether asking for art is worth a
     #? request at all. The embedded check costs one extra file open per album, which is
     #? cheap beside the per-track opens above and is cached with the rest of the album.
-    if find_cover_file(entries) is not None:
+    cover_file = find_cover_file(entries)
+    first_audio = next((e for e in entries if file_extension(e.name) in AUDIO_EXTENSIONS), None)
+
+    if cover_file is not None:
         art = "file"
+        art_source = cover_file
     else:
-        first_audio = next(
-            (e for e in entries if file_extension(e.name) in AUDIO_EXTENSIONS), None
-        )
         art = "embedded" if first_audio and read_embedded_art(first_audio) else ""
+        art_source = first_audio if art else None
+
+    #? When the art last changed, used by the interface to bust its own cache.
+    #?
+    #? The ART's mtime, deliberately, not the album's. Replacing cover.jpg in place does not
+    #? touch the DIRECTORY's mtime - only adding, removing or renaming entries does - so
+    #? `modified_at` sits perfectly still through exactly the operation that needs to be
+    #? noticed. The file itself is the only thing that always moves.
+    try:
+        art_mtime = round(art_source.stat().st_mtime) if art_source is not None else 0
+    except OSError:
+        art_mtime = 0
 
     #? the album artist is what groups a library; falling back to the track artist keeps
     #? compilations and badly-tagged folders visible instead of dropping them
@@ -359,6 +372,9 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
         #? '' means no art on disk. The interface falls back to the Cover Art Archive when
         #? there's a release MBID, exactly as the search view already does.
         "art": art,
+        #? changes whenever the cover does, which is what lets the interface ask for the new
+        #? one instead of being handed the cached old one
+        "art_mtime": art_mtime,
         "path": relative,
         "track_count": len(tracks),
         "total_size": sum(t["size"] for t in tracks),

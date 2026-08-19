@@ -332,6 +332,14 @@ export interface LibraryAlbum {
   art: 'file' | 'embedded' | ''
   /** Relative to LIBRARY_PATH. Also the key the art endpoint takes. */
   path: string
+  /**
+   * When the cover last changed, as a unix timestamp — the ART file's mtime, not the album's.
+   *
+   * Used to version the art URL. The endpoint caches for five minutes, so without this a
+   * replaced cover keeps serving the old bytes from the browser cache exactly when you're
+   * looking at it. See albumArtUrl in ../lib/format.ts.
+   */
+  art_mtime: number
   track_count: number
   total_size: number
   /** seconds */

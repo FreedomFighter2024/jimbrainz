@@ -6,6 +6,7 @@ import * as musicbrainz from '../api/musicbrainz'
 import type {
   LibraryAlbum, MetadataIssueType, Release, RetagPlan, RetagRelease,
 } from '../api/types'
+import { albumArtUrl } from '../lib/format'
 import { Loading, LoadingPanel } from './Loading'
 import { issueLabel, outstandingIssues } from '../lib/metadataQueue'
 import {
@@ -102,9 +103,7 @@ function ArtComparison(
   //? reset when the release changes, or a single failure would stick for every later pick
   useEffect(() => setIncomingFailed(false), [releaseId])
 
-  const current = album.art
-    ? `/jimbrainz/library/art?album=${encodeURIComponent(album.path)}`
-    : null
+  const current = album.art ? albumArtUrl(album) : null
   //? Keyed on the id alone, so the cover appears as soon as you click rather than waiting on
   //? the tracklist fetch behind it - the art is how you decide whether you want the release.
   const incoming = releaseId ? `https://coverartarchive.org/release/${releaseId}/front-250` : null

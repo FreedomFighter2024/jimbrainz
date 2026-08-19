@@ -379,6 +379,16 @@ Each of these cost real time. Don't rediscover them.
   `plan_art()` decides what *would* happen with no network call; the route fetches the bytes
   and hands them to `execute_retag`, which keeps `retag.py` free of network dependencies and
   testable without one.
+- **Cover art is served with a five-minute cache, so its URL has to carry a version.** Without
+  one, replacing a cover showed the old image for five minutes — precisely when you are looking
+  at it, since you had just changed it. The version is the **art file's own mtime**, and the
+  distinction matters: replacing `cover.jpg` in place does not touch the *directory's* mtime, so
+  `album.modified_at` sits perfectly still through the one operation that must be noticed
+  (measured: dir mtime unchanged, file mtime moved). `albumArtUrl()` is the only place that
+  builds this URL — keep it that way.
+  Note the corollary: the scan cache also keys on directory mtime, so an in-place cover
+  replacement is invisible to it too. `forget_cached_album()` on the retag path is what makes
+  the new art appear; a cover changed by anything else needs a rescan.
 - **Retagging a file does NOT change its directory's mtime** — only adding, removing or
   renaming entries does. Measured, not assumed. The library cache keys on directory mtime,
   so an in-place retag is invisible to the scanner and the edit looks like it silently

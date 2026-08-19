@@ -91,6 +91,24 @@ export function markReviewed(albumPath: string): Promise<{ reviewed: boolean }> 
   return post('/library/queue/reviewed', { album_path: albumPath })
 }
 
+/**
+ * Put a cover in an album's folder, changing nothing else about it.
+ *
+ * The narrow counterpart to `applyRetag`. That one rewrites every file's tags and can rename
+ * the folder — a lot to agree to when the only thing missing is the picture. This asks the
+ * Cover Art Archive for art belonging to the release the album's own tags already name, so
+ * there is nothing to choose and nothing to preview.
+ *
+ * `replace` is off by default: a sleeve you picked yourself is not ours to overwrite because
+ * the Archive happens to have one too.
+ */
+export function fetchCoverArt(
+  albumPath: string,
+  replace = false,
+): Promise<{ written: string | null; replaced: string | null }> {
+  return post('/library/art/fetch', { album_path: albumPath, replace })
+}
+
 /** What deleting this album would remove. Touches nothing. */
 export function deletionSummary(albumPath: string): Promise<DeletionSummary> {
   return get<DeletionSummary>(`/library/deletion_summary?album=${encodeURIComponent(albumPath)}`)

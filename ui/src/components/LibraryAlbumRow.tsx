@@ -1,9 +1,12 @@
 import { useState } from 'preact/hooks'
 
+import * as libraryApi from '../api/library'
+
 import type { LibraryAlbum, MetadataIssueType } from '../api/types'
 import { albumArtUrl, formatSize } from '../lib/format'
 import type { AlbumGroup } from '../lib/groupAlbums'
 import { describeIssues, isNewImport, issueLabel, outstandingIssues } from '../lib/metadataQueue'
+import { Loading } from './Loading'
 
 //? Two chips and a count, not the full list. An unidentified album trips five or six rules at
 //? once - all of them downstream of the one fact that it was never matched to a release - and a
@@ -119,12 +122,13 @@ function TrackList({ album }: { album: LibraryAlbum }) {
  * Only rendered when an album actually has more than one edition - see the group row below.
  */
 function EditionRow(
-  { album, issueTypes, onEdit, onDelete }:
+  { album, issueTypes, onEdit, onDelete, onArtFetched }:
   {
     album: LibraryAlbum
     issueTypes: Record<string, MetadataIssueType>
     onEdit: (a: LibraryAlbum) => void
     onDelete: (a: LibraryAlbum) => void
+    onArtFetched: () => void
   },
 ) {
   const [expanded, setExpanded] = useState(false)
@@ -166,6 +170,8 @@ function EditionRow(
 
         <span class="text white-tertiary library-path" title={album.path}>{album.path}</span>
 
+        <GetArtButton album={album} onDone={onArtFetched} />
+
         <button
           type="button"
           class="library-edit-button"
@@ -190,6 +196,59 @@ function EditionRow(
   )
 }
 
+/**
+ * Fetch just the cover for one album.
+ *
+ * Rendered only for albums that have no art but DO name a release, which is exactly the set
+ * it can help - there is nothing to look a cover up by otherwise, and an album that already
+ * has one isn't asking. Keeping it off every other row also keeps it out of the way of the
+ * mobile layout, which these rows are already tight for.
+ */
+function GetArtButton({ album, onDone }: { album: LibraryAlbum; onDone: () => void }) {
+  const [state, setState] = useState<'idle' | 'working' | 'failed'>('idle')
+
+  if (album.art || !album.release_mbid) return null
+
+  const fetchArt = async (event: MouseEvent) => {
+    event.stopPropagation()
+    setState('working')
+
+    try {
+      await libraryApi.fetchCoverArt(album.path)
+      onDone()
+    } catch (caught) {
+      //? almost always "the Archive has no front cover for that release", which is a fact
+      //? about the release rather than a fault - so it says so and stops asking
+      setState('failed')
+      console.error(caught)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      class={`library-art-button${state === 'failed' ? ' failed' : ''}`}
+      /*
+       * Disabled only while a request is actually in flight. A failure leaves it clickable on
+       * purpose: the usual reason is that the Archive has no front cover for this release, but
+       * the second usual reason is that the Archive was briefly unreachable - it goes away for
+       * minutes at a time, exactly like MusicBrainz - and a button that latches off after one
+       * bad answer turns a passing outage into a permanent dead end with no way to retry.
+       */
+      disabled={state === 'working'}
+      title={
+        state === 'failed'
+          ? "no front cover came back for this release - the Archive may not have one, or may "
+            + 'have been briefly unreachable. Click to try again.'
+          : 'download a cover for this album and change nothing else'
+      }
+      onClick={(event) => void fetchArt(event as unknown as MouseEvent)}
+    >
+      {state === 'working' ? <Loading /> : state === 'failed' ? 'retry art' : 'get art'}
+    </button>
+  )
+}
+
 interface Props {
   group: AlbumGroup
   /** Issue code -> label and hint, straight from the scan. See lib/metadataQueue.ts. */
@@ -200,6 +259,8 @@ interface Props {
   onEdit: (album: LibraryAlbum) => void
   /** Opens the delete confirmation. Also per-edition: one pressing is not the others. */
   onDelete: (album: LibraryAlbum) => void
+  /** A cover was just written, so the library needs re-reading to show it. */
+  onArtFetched: () => void
 }
 
 /**
@@ -214,7 +275,7 @@ interface Props {
  * common case in a real library.
  */
 export function LibraryAlbumRow(
-  { group, issueTypes, onSearchArtist, onSearchAlbum, onEdit, onDelete }: Props,
+  { group, issueTypes, onSearchArtist, onSearchAlbum, onEdit, onDelete, onArtFetched }: Props,
 ) {
   const [expanded, setExpanded] = useState(false)
 
@@ -315,6 +376,8 @@ export function LibraryAlbumRow(
 
         {/* with several editions the control belongs on each of them, since correcting one
             is not correcting the others */}
+        {!multiple && only && <GetArtButton album={only} onDone={onArtFetched} />}
+
         {!multiple && only && (
           <button
             type="button"
@@ -359,6 +422,7 @@ export function LibraryAlbumRow(
               issueTypes={issueTypes}
               onEdit={onEdit}
               onDelete={onDelete}
+              onArtFetched={onArtFetched}
             />
           ))}
         </div>

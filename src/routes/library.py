@@ -11,7 +11,7 @@ from src.logger import logger
 from src.metadata_health import ISSUE_TYPES, attach_issues
 from src.organizer import is_within
 from src.api.coverart_endpoint import CoverArtClient
-from src.retag import execute_retag, plan_retag
+from src.retag import execute_retag, plan_cover_art, plan_retag, save_cover_art
 
 #? One client for the process, closed with the app in src/api/app.py. Cover art is fetched
 #? rarely and one at a time, so there is nothing to gain from per-request clients and a
@@ -290,6 +290,69 @@ async def retag_apply(request: Request, body: RetagRequest):
     except Exception as e:
         logger.error(f"Exception in /retag/apply endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error applying the retag: {e}")
+
+
+class CoverArtRequest(BaseModel):
+    #? relative to LIBRARY_PATH, as the scan reports it
+    album_path: str
+    #? off by default. Somebody's hand-picked sleeve is not ours to overwrite because the
+    #? Archive happens to have one too - the same instinct as execute_plan refusing to clobber.
+    replace: bool = False
+
+
+@router.post("/art/fetch")
+async def fetch_cover_art(request: Request, body: CoverArtRequest):
+    """
+    Put a cover in an album's folder. Changes nothing else about it.
+
+    The narrow counterpart to /retag/apply. Applying a release rewrites every file's tags and
+    can rename the folder, which is a lot to agree to when the only thing missing is the
+    picture - and an album whose tags are already correct shouldn't have to be re-tagged to
+    gain a sleeve.
+
+    Nothing is chosen here. The release comes from the album's own tags, so this asks the Cover
+    Art Archive for art belonging to the release the album already claims to be. That is what
+    makes it safe to fire without a preview: there is no judgement to get wrong.
+    """
+    if not Config.LIBRARY_PATH:
+        raise HTTPException(status_code=400, detail="LIBRARY_PATH is not set")
+
+    try:
+        plan = await asyncio.to_thread(
+            plan_cover_art, body.album_path, Config.LIBRARY_PATH, body.replace
+        )
+
+        if plan["problem"]:
+            raise HTTPException(status_code=400, detail=plan["problem"])
+
+        art = await coverart_client.fetch_front(plan["release_mbid"] or "")
+
+        if art is None:
+            raise HTTPException(
+                status_code=404,
+                detail="the Cover Art Archive has no front cover for that release",
+            )
+
+        results = await asyncio.to_thread(
+            save_cover_art, body.album_path, Config.LIBRARY_PATH, art
+        )
+
+        if results["problem"]:
+            raise HTTPException(status_code=500, detail=results["problem"])
+
+        #? the folder's mtime doesn't move when a cover REPLACES one of the same name, so
+        #? without this the scan would keep serving the old art_mtime and the interface would
+        #? go on showing the previous cover - see read_album_dir
+        forget_cached_album(str(Path(Config.LIBRARY_PATH) / body.album_path))
+
+        return {"written": results["written"], "replaced": plan["existing"]}
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"Exception in /art/fetch endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching the cover art: {e}")
 
 
 class QueueRequest(BaseModel):

@@ -30,7 +30,8 @@ from src.logger import logger
 from src.library import find_cover_file
 from src.matching import AUDIO_EXTENSIONS, file_extension, match_tracks_to_files
 from src.api.coverart_endpoint import extension_for
-from src.organizer import build_album_dirname, is_within, sanitize_filename, tag_values, write_tags
+from src.organizer import (build_album_dirname, is_within, read_album_mbid,
+                           sanitize_filename, tag_values, write_tags)
 
 #? Same vocabulary as the organizer's ORGANIZE_MODES, minus the copy/move distinction which
 #? has no meaning here - a retag either happens or it doesn't.
@@ -88,6 +89,87 @@ def plan_art(entries: list[Path], release: dict, want_art: bool) -> dict:
         return {"action": "replace", "reason": "", "existing": existing.name}
 
     return {"action": "download", "reason": "", "existing": None}
+
+
+def plan_cover_art(album_path: str, library_root: str, replace: bool = False) -> dict:
+    """
+    Whether a cover could be saved into this album, and which release to ask for. Writes nothing.
+
+    Separate from plan_retag because the two answer different questions. That one asks "what
+    would applying this release change", and the answer is tags, a folder name and maybe a
+    cover - all or nothing. This asks only "can I put a cover in here", which is the far more
+    common thing to want: an album whose tags are already right and whose only gap is the
+    sleeve. Wanting the picture is not a reason to rewrite twelve files and rename a folder.
+
+    The release id comes from the album's OWN tags. That is what makes this safe to run without
+    choosing anything: it fetches art for the release the album already says it is, so there is
+    no judgement being made and nothing to get wrong.
+    """
+    root = Path(library_root)
+    directory = root / album_path
+
+    if not album_path or not is_within(directory, root) or not directory.is_dir():
+        return {"release_mbid": None, "existing": None, "action": "",
+                "problem": "that album is not inside the library"}
+
+    try:
+        entries = sorted(p for p in directory.iterdir() if p.is_file())
+    except OSError as e:
+        return {"release_mbid": None, "existing": None, "action": "",
+                "problem": f"could not read the album folder: {e}"}
+
+    existing = find_cover_file(entries)
+    existing_name = existing.name if existing else None
+
+    if existing is not None and not replace:
+        return {"release_mbid": None, "existing": existing_name, "action": "",
+                "problem": f"this album already has {existing_name}"}
+
+    #? read from the files rather than taken from the caller: the point of this path is that it
+    #? needs no decision from anyone, and a release id supplied over the wire would be one
+    release_mbid = read_album_mbid(directory)
+
+    if not release_mbid:
+        return {"release_mbid": None, "existing": existing_name, "action": "",
+                "problem": "this album isn't tagged with a MusicBrainz release, so there's "
+                           "nothing to look a cover up by - match it to a release first"}
+
+    return {
+        "release_mbid": release_mbid,
+        "existing": existing_name,
+        "action": "replace" if existing is not None else "download",
+        "problem": None,
+    }
+
+
+def save_cover_art(album_path: str, library_root: str, art: tuple[bytes, str]) -> dict:
+    """
+    Write a cover into an album folder, and touch nothing else.
+
+    The whole point of this function is what it does NOT do: no tags, no rename, no companion
+    files. It is the third writer to the user's filesystem and by far the narrowest, which is
+    why it takes the bytes already downloaded rather than fetching them - the same split
+    execute_retag uses, so this module stays testable without a network.
+
+    Containment is re-checked here rather than trusted from the plan, for the reason the retag
+    endpoint recomputes its plan: a path that arrived over the wire is not evidence.
+    """
+    root = Path(library_root)
+    directory = root / album_path
+
+    if not album_path or not is_within(directory, root) or not directory.is_dir():
+        return {"written": None, "problem": "that album is not inside the library"}
+
+    name = f"cover.{extension_for(art[1])}"
+
+    try:
+        (directory / name).write_bytes(art[0])
+    except OSError as e:
+        logger.error(f"could not write cover art into {directory}: {e}")
+        return {"written": None, "problem": f"could not save the cover: {e}"}
+
+    logger.info(f"saved {name} into {directory.name}", extra={"frontend": True})
+    return {"written": name, "problem": None}
 
 
 def plan_retag(album_path: str, release: dict, library_root: str, want_art: bool = False) -> dict:

@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             291 tests, all Python, all fixture-driven
+tests/             299 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -113,8 +113,21 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   the whole discography, which a test caught. The confirmation is a real dialog rather than
   `confirm()` because it names the track count, the size and any non-audio files, which
   might be the only copy of a rip log or cue sheet.
-- **There are now TWO writers to the user's filesystem**, and both use the same plan/execute
-  split: `organizer.py` files downloads in, `retag.py` corrects albums already there. A
+- **Getting a cover must not require applying a release.** `/library/art/fetch` writes one
+  file and touches nothing else — no tags, no rename, no companions. Applying a release is a
+  lot to agree to when the only thing missing is the picture, and an album whose tags are
+  already right shouldn't have to be re-tagged to gain a sleeve.
+  **It chooses nothing**, which is what makes it safe to fire with no preview: the release id
+  comes from the album's own tags, so it asks the Archive for art belonging to the release the
+  album already claims to be. An untagged album is told to match a release first rather than
+  guessed at, and an existing cover is never replaced unless asked.
+  The `get art` button appears only on albums that have a release id and no art — exactly the
+  set it can help — which also keeps it off the already-tight mobile rows.
+- **There are now THREE writers to the user's filesystem**, and both use the same plan/execute
+  split: `organizer.py` files downloads in, `retag.py` corrects albums already there, and
+  `save_cover_art()` writes a single cover (narrow enough not to need a plan/execute split, but
+  it re-checks containment at the write rather than trusting the plan, for the same reason the
+  retag endpoint recomputes its own). A
   preview that disagrees with the write it previews is worse than no preview, so both derive
   the tags from one shared `organizer.tag_values()` rather than computing them twice. The
   apply endpoint **recomputes the plan** rather than accepting the previewed one back — a
@@ -423,6 +436,13 @@ Each of these cost real time. Don't rediscover them.
   So: **verify against computed styles and DOM state rather than screenshots** — except when
   the thing you are checking needs a paint, where you need the screenshot first and the
   measurement second.
+- **A transient upstream failure must never latch into a permanent dead end.** The `get art`
+  button first disabled itself after a failed fetch, on the reasoning that the Archive simply
+  has no cover for that release. That is usually true and sometimes badly wrong: the Archive
+  goes away for minutes at a time exactly like MusicBrainz, and the two are indistinguishable
+  from a single 404. It now says `retry art` and stays clickable. Same shape as the rejected
+  download and the empty release list — **when an upstream answer could mean "never" or "not
+  right now", leave the user a way to ask again.**
 - **MusicBrainz and the Cover Art Archive go unreachable for minutes at a time**, repeatedly,
   from dev machines. A failing search is far more often that than a bug — retry before
   concluding anything; the 503 path is deliberate and says which it is. It also produced a
@@ -560,7 +580,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 291 tests
+.venv/bin/python -m pytest tests/ -q  # 299 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -585,7 +605,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 291 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 299 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

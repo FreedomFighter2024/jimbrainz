@@ -457,6 +457,9 @@ export function LibraryView({ active, onNavigate }: Props) {
               onSearchAlbum={searchAlbum}
               onEdit={setEditing}
               onDelete={setDeleting}
+              /* the server dropped the folder from its scan cache when it wrote the cover, so
+                 a plain reload picks up the new art_mtime and the URL changes with it */
+              onArtFetched={() => void reload(false)}
             />
           ))}
 

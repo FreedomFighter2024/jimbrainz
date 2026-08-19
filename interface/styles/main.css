@@ -3766,3 +3766,31 @@ span.red { color: var(--red-text); }
 
 .library-facet.newly-added { color: var(--main-text); }
 .library-facet.newly-added.active { color: var(--main-text); font-weight: var(--font-bold); }
+
+/*
+ * "get art" - fetch just the cover, without applying a whole release.
+ *
+ * Shaped like the edit button beside it because it belongs to the same family of per-album
+ * actions, and tinted toward the main colour rather than the warning amber: a missing sleeve
+ * is a gap to fill, not something wrong.
+ */
+.library-art-button {
+    background: transparent;
+    border: 1px solid var(--muted-text);
+    color: var(--main-text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    letter-spacing: 0.05em;
+    padding: 1px 7px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.library-art-button:hover:not(:disabled) { color: var(--main-hover-text); border-color: var(--main-text); }
+.library-art-button:disabled { opacity: 0.6; cursor: default; }
+
+/* a fetch that came back with nothing - still clickable, since the Archive going quiet for a
+   few minutes looks identical to a release genuinely having no cover */
+.library-art-button.failed { color: var(--white-tertiary-text); }

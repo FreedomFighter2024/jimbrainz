@@ -444,6 +444,45 @@ class JobStore:
             logger.error(f"failed to mark {album_path} reviewed: {e}")
             return False
 
+    async def forget_missing_albums(self, known_paths: set[str]) -> int:
+        """
+        Drop review rows for albums that are no longer in the library.
+
+        A row is keyed on the album's path, so anything that moves a folder without going
+        through the retag endpoint - a rename by hand, a delete from another tool - orphans it.
+        An orphaned import row is worse than clutter: the tab badge counts it, and since the
+        album isn't in the scan there is no row to put a chip on and no queue entry to step
+        through. The interface ends up reporting an album that wants attention while being
+        unable to name it or clear it, which is exactly the state this method exists to prevent.
+
+        Called only after a scan that actually found albums. A library that reads as empty is
+        far more often an unmounted volume than a deleted collection, and wiping every ignore
+        the moment a mount goes missing would be a rotten trade for tidiness.
+        """
+        if not self.available or not known_paths:
+            return 0
+
+        def write():
+            with self._connect() as connection:
+                rows = connection.execute("SELECT album_path FROM album_review").fetchall()
+                missing = [(r["album_path"],) for r in rows if r["album_path"] not in known_paths]
+
+                if not missing:
+                    return 0
+
+                connection.executemany("DELETE FROM album_review WHERE album_path = ?", missing)
+                return len(missing)
+
+        try:
+            removed = await asyncio.to_thread(write)
+            if removed:
+                logger.info(f"forgot {removed} review record(s) for albums no longer in the library")
+            return removed
+
+        except Exception as e:
+            logger.error(f"failed to forget missing albums: {e}")
+            return 0
+
     async def new_import_summary(self, limit: int = 8) -> dict:
         """
         Albums jimbrainz filed that you haven't looked at yet.

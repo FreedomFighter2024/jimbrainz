@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             288 tests, all Python, all fixture-driven
+tests/             291 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -150,6 +150,21 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   it, so ignoring one would silently ignore the other. The cost is that a rename orphans the
   row, which is why `mark_album_reviewed()` takes a destination and the retag endpoint passes
   it.
+- **The tab badge and the queue must never count different things.** They did, and it produced
+  a notification that named no album: the badge counts albums jimbrainz *filed and you haven't
+  looked at*, the queue counts albums with *outstanding issues*, and a freshly imported album
+  with perfect tags is the first without being the second. It appeared in no facet, carried no
+  chip, and the whole metadata section was hidden when nothing else was wrong — and it could
+  never be cleared either, because there was nothing to apply, nothing to ignore, and it wasn't
+  in the walkthrough. `queueAlbums()` now includes new imports whatever their state, there is a
+  `newly added` facet and a `new` row chip, and **stepping past one is what marks it seen**.
+  A notification you cannot act on is worse than no notification.
+- **Prune review rows for albums that are gone.** A row is keyed on the album's path, so a
+  folder renamed or deleted outside jimbrainz orphans it — and an orphaned *import* row is
+  counted by the badge while being in no scan, so it can be neither named nor cleared. The scan
+  drops them, but **only after a scan that actually found albums**: an empty library is far more
+  often an unmounted volume than a deleted collection, and wiping every ignore the moment a
+  mount goes missing would be a rotten trade.
 - **The new-import prompt is recorded at import time, not derived from a scan.** The library is
   deliberately not read until its tab is opened, so a badge that had to diff two scans would
   need a scan to exist — absent at exactly the moment it has something to say. The poller writes
@@ -535,7 +550,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 288 tests
+.venv/bin/python -m pytest tests/ -q  # 291 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -549,6 +564,7 @@ npm run dev        # harness on :5173, proxies /jimbrainz + /styles to :8080 (st
 
 ```bash
 node ui/test/speed.sim.cjs   # the derived download rate, simulated against a known truth
+node ui/test/queue.sim.cjs   # the tab badge and the review queue agreeing on what's outstanding
 ```
 
 `npm run dev` serves `ui/index.html`, a harness for working on one component in isolation with
@@ -559,7 +575,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 288 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 291 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

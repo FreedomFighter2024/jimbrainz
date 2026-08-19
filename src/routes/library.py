@@ -60,6 +60,15 @@ async def _scan_with_queue(request: Request, force: bool) -> dict:
     if store:
         await store.record_albums_seen(result["albums"])
 
+        #? Only after a scan that found something. An orphaned row - one whose folder was
+        #? renamed or removed outside jimbrainz - is counted by the tab badge but has no album
+        #? in this list to put a chip on and no queue entry to step through, so it reports an
+        #? album needing attention that it cannot name or clear. Guarded on the scan being
+        #? trustworthy because an empty library is far more often an unmounted volume than a
+        #? deleted collection.
+        if not result["problem"] and result["albums"]:
+            await store.forget_missing_albums({a["path"] for a in result["albums"]})
+
     return result
 
 

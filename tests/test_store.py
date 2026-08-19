@@ -397,3 +397,44 @@ def test_an_unmatched_job_reports_no_failures_rather_than_omitting_them():
     summary = summarize_transfers(JOB, {})
     assert summary["files_failed"] == 0
     assert summary["failure_reason"] is None
+
+
+def test_review_rows_for_albums_that_are_gone_are_forgotten(tmp_path):
+    """
+    A row is keyed on the path, so a folder renamed outside jimbrainz orphans it. The tab badge
+    counts an orphaned import row while the album is in no scan - so the interface reports an
+    album wanting attention that it can neither name nor clear.
+    """
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen(
+        [{"path": "a/still here"}, {"path": "a/moved away"}], source="import"))
+    assert asyncio.run(store.new_import_summary())["count"] == 2
+
+    removed = asyncio.run(store.forget_missing_albums({"a/still here"}))
+
+    assert removed == 1
+    assert list(asyncio.run(store.album_reviews())) == ["a/still here"]
+    assert asyncio.run(store.new_import_summary())["count"] == 1
+
+
+def test_forgetting_nothing_is_not_a_wipe(tmp_path):
+    """
+    The guard that matters. An empty set means the caller has nothing to compare against -
+    an unmounted library rather than a deleted one - and must never be read as "none of these
+    exist any more".
+    """
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen([{"path": "a/one"}], source="import"))
+
+    assert asyncio.run(store.forget_missing_albums(set())) == 0
+    assert list(asyncio.run(store.album_reviews())) == ["a/one"]
+
+
+def test_ignores_survive_for_albums_that_are_still_there(tmp_path):
+    store = review_store(tmp_path)
+    asyncio.run(store.record_albums_seen([{"path": "a/one"}, {"path": "a/two"}]))
+    asyncio.run(store.ignore_album_issues("a/one", ["no_art"]))
+
+    asyncio.run(store.forget_missing_albums({"a/one", "a/two"}))
+
+    assert asyncio.run(store.album_reviews())["a/one"]["ignored_issues"] == ["no_art"]

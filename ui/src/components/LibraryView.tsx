@@ -5,7 +5,7 @@ import type { LibraryAlbum } from '../api/types'
 import { bridge } from '../bridge'
 import { useLibrary } from '../hooks/useLibrary'
 import { groupAlbums, type AlbumGroup } from '../lib/groupAlbums'
-import { issueLabel, queueAlbums } from '../lib/metadataQueue'
+import { isNewImport, issueLabel, queueAlbums } from '../lib/metadataQueue'
 import { DeleteAlbumDialog } from './DeleteAlbumDialog'
 import { LibraryAlbumRow } from './LibraryAlbumRow'
 import { Loading, LoadingPanel } from './Loading'
@@ -60,6 +60,8 @@ export function LibraryView({ active, onNavigate }: Props) {
   const [queueOnly, setQueueOnly] = useState(false)
   /** Narrowed further to one kind of issue, or null for any. */
   const [issueFilter, setIssueFilter] = useState<string | null>(null)
+  /** Only albums jimbrainz just filed that haven't been looked at — what the tab badge counts. */
+  const [newOnly, setNewOnly] = useState(false)
   /*
    * Only has any effect on mobile, where CSS both reveals the toggle and acts on the class.
    * Starts collapsed because on a phone a 190px artist list above the albums pushes the
@@ -108,6 +110,7 @@ export function LibraryView({ active, onNavigate }: Props) {
       if (artistFilter && group.artist !== artistFilter) return false
       if (multiOnly && group.editions.length < 2) return false
       if (queueOnly && !group.needsAttention) return false
+      if (newOnly && !group.editions.some(isNewImport)) return false
       if (issueFilter && !group.issues.includes(issueFilter)) return false
       if (!needle) return true
 
@@ -117,7 +120,7 @@ export function LibraryView({ active, onNavigate }: Props) {
         group.editions.some((e) => e.edition.toLowerCase().includes(needle))
       )
     })
-  }, [groups, filter, artistFilter, multiOnly, queueOnly, issueFilter])
+  }, [groups, filter, artistFilter, multiOnly, queueOnly, newOnly, issueFilter])
 
   const multiEditionCount = useMemo(
     () => groups.filter((g) => g.editions.length > 1).length,
@@ -160,8 +163,21 @@ export function LibraryView({ active, onNavigate }: Props) {
   }
 
   const leaveQueue = () => {
+    const wasReviewing = review !== null
+
     setEditing(null)
     setReview(null)
+
+    /*
+     * Reload once on the way out, not on every step.
+     *
+     * Stepping through marks each album reviewed on the server, but the facet counts come from
+     * the scan payload - so without this you close the queue having just cleared the tab badge
+     * while the column still says "newly added 1". Deliberately NOT per step: the walkthrough
+     * works from a snapshot so that "next" can't reorder underneath you, and a scan between
+     * every album would be paying for a list nothing is reading yet.
+     */
+    if (wasReviewing) void reload(false)
   }
 
   const step = (delta: number) => {
@@ -223,6 +239,7 @@ export function LibraryView({ active, onNavigate }: Props) {
     setArtistFilter(null)
     setMultiOnly(false)
     setQueueOnly(false)
+    setNewOnly(false)
     setIssueFilter(null)
   }
 
@@ -235,7 +252,7 @@ export function LibraryView({ active, onNavigate }: Props) {
           <button
             type="button"
             id="library-clear-filters"
-            disabled={!artistFilter && !multiOnly && !queueOnly && !issueFilter}
+            disabled={!artistFilter && !multiOnly && !queueOnly && !newOnly && !issueFilter}
             onClick={clearFilters}
           >
             clear
@@ -267,18 +284,38 @@ export function LibraryView({ active, onNavigate }: Props) {
           when there is something in it: a permanent "0 need metadata" heading is a heading you
           stop reading, and then the day it says 12 you don't notice either.
         */}
-        {loaded && queue.total > 0 && (
+        {loaded && (queue.total > 0 || queue.new_imports > 0) && (
           <div id="library-queue-facets">
             <h3 class="text default">░▒▓ metadata ▓▒░</h3>
 
-            <button
-              type="button"
-              class={`library-facet needs-attention${queueOnly ? ' active' : ''}`}
-              title="albums with something missing or off-convention"
-              onClick={() => setQueueOnly((on) => !on)}
-            >
-              needs attention <span class="library-facet-count">{queue.total}</span>
-            </button>
+            {/*
+              The tab badge counts these, so there has to be a way to see WHICH albums it
+              means. Without it the interface said one album wanted attention and then had
+              nowhere to point - a freshly imported album with good tags has no issues, so it
+              appeared in no facet and in no row chip, and the whole section was hidden when
+              nothing else was wrong.
+            */}
+            {queue.new_imports > 0 && (
+              <button
+                type="button"
+                class={`library-facet newly-added${newOnly ? ' active' : ''}`}
+                title="albums jimbrainz just filed that you haven't looked at yet"
+                onClick={() => setNewOnly((on) => !on)}
+              >
+                newly added <span class="library-facet-count">{queue.new_imports}</span>
+              </button>
+            )}
+
+            {queue.total > 0 && (
+              <button
+                type="button"
+                class={`library-facet needs-attention${queueOnly ? ' active' : ''}`}
+                title="albums with something missing or off-convention"
+                onClick={() => setQueueOnly((on) => !on)}
+              >
+                needs attention <span class="library-facet-count">{queue.total}</span>
+              </button>
+            )}
 
             {issueFacets.map(([code, count]) => (
               <button
@@ -362,12 +399,14 @@ export function LibraryView({ active, onNavigate }: Props) {
               title={
                 issueFilter
                   ? `work through the ${waiting.length} album(s) with: ${issueLabel(issueFilter, issueTypes)}`
-                  : 'work through every album that needs metadata, one at a time'
+                  : 'work through every album that needs metadata or has just been added, '
+                    + 'one at a time - stepping past a new one is what marks it seen'
               }
               onClick={startReview}
             >
               review {waiting.length}
               {issueFilter ? ` · ${issueLabel(issueFilter, issueTypes)}` : ''}
+              {!issueFilter && queue.new_imports > 0 ? ` · ${queue.new_imports} new` : ''}
             </button>
           )}
 

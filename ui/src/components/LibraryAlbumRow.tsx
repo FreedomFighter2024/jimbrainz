@@ -1,9 +1,9 @@
 import { useState } from 'preact/hooks'
 
 import type { LibraryAlbum, MetadataIssueType } from '../api/types'
-import { formatSize } from '../lib/format'
+import { albumArtUrl, formatSize } from '../lib/format'
 import type { AlbumGroup } from '../lib/groupAlbums'
-import { describeIssues, issueLabel, outstandingIssues } from '../lib/metadataQueue'
+import { describeIssues, isNewImport, issueLabel, outstandingIssues } from '../lib/metadataQueue'
 
 //? Two chips and a count, not the full list. An unidentified album trips five or six rules at
 //? once - all of them downstream of the one fact that it was never matched to a release - and a
@@ -72,7 +72,7 @@ function AlbumArt({ album }: { album: LibraryAlbum }) {
   const sources: string[] = []
 
   if (album.art) {
-    sources.push(`/jimbrainz/library/art?album=${encodeURIComponent(album.path)}`)
+    sources.push(albumArtUrl(album))
   }
   if (album.release_mbid) {
     sources.push(`https://coverartarchive.org/release/${album.release_mbid}/front-250`)
@@ -153,6 +153,12 @@ function EditionRow(
         <span class="library-edition has-siblings">{album.edition || 'Standard'}</span>
         {album.year && <span class="library-year">{album.year}</span>}
         <span class="text default-muted library-edition-meta">{meta.join(' · ')}</span>
+
+        {isNewImport(album) && (
+          <span class="library-new-chip" title="jimbrainz just filed this - you haven't looked at it yet">
+            new
+          </span>
+        )}
 
         {/* mixed tags is one of the issue codes now, so it arrives as a chip like the rest
             rather than as its own hand-placed warning */}
@@ -295,6 +301,13 @@ export function LibraryAlbumRow(
             title={`${group.needsAttention} of ${group.editions.length} editions need metadata`}
           >
             {group.needsAttention} of {group.editions.length}
+          </span>
+        )}
+
+        {/* what the tab badge is counting, said where you can actually see it */}
+        {group.editions.some(isNewImport) && (
+          <span class="library-new-chip" title="jimbrainz just filed this - you haven't looked at it yet">
+            new
           </span>
         )}
 

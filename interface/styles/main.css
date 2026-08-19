@@ -3744,3 +3744,25 @@ span.red { color: var(--red-text); }
 @media (prefers-reduced-motion: reduce) {
     .loading-panel::before { animation: none; content: "▒█▒"; }
 }
+
+/*
+ * "new" - an album jimbrainz has just filed that you haven't looked at yet.
+ *
+ * Deliberately not amber like the issue chips. Nothing is WRONG with a new album; the tab
+ * badge is counting it and this is how you find which one it means, which was the whole
+ * complaint - a notification that named no album.
+ */
+.library-new-chip {
+    flex-shrink: 0;
+    font-family: var(--font-family-condensed);
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--background-color);
+    background-color: var(--main-text);
+    padding: 0 5px;
+    white-space: nowrap;
+}
+
+.library-facet.newly-added { color: var(--main-text); }
+.library-facet.newly-added.active { color: var(--main-text); font-weight: var(--font-bold); }

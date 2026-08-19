@@ -25,7 +25,25 @@ export function outstandingIssues(album: LibraryAlbum): string[] {
 }
 
 /**
+ * An album jimbrainz filed that you haven't looked at yet. What the tab badge counts.
+ *
+ * Kept separate from "has issues" because they are genuinely different questions, and
+ * conflating them was a real bug: a freshly imported album with perfect metadata counted
+ * towards the badge while appearing nowhere in the queue, so the interface said one album
+ * wanted attention and then declined to say which. Worse, there was no way to clear it —
+ * nothing to apply, nothing to ignore, and not in the walkthrough.
+ */
+export function isNewImport(album: LibraryAlbum): boolean {
+  return album.imported && !album.reviewed
+}
+
+/**
  * The albums to work through, in the order worth working through them.
+ *
+ * Includes anything with an outstanding issue AND anything newly imported, even when that
+ * import is perfectly tagged. A clean new album takes one glance and a press of skip, and that
+ * press is what marks it reviewed — which is the only way the badge can ever reach zero. An
+ * item you are told about but cannot act on is worse than no notification at all.
  *
  * Albums jimbrainz just filed come first: those are the ones you were prompted about, and
  * burying a fresh import under a hundred pre-existing gaps is how the prompt stops meaning
@@ -35,9 +53,9 @@ export function outstandingIssues(album: LibraryAlbum): string[] {
  */
 export function queueAlbums(albums: readonly LibraryAlbum[], issue?: string | null): LibraryAlbum[] {
   const waiting = albums.filter((album) => {
-    if (!album.needs_attention) return false
-    if (!issue) return true
-    return outstandingIssues(album).includes(issue)
+    //? the issue facet narrows to one KIND of problem, so a clean new import isn't one of them
+    if (issue) return album.needs_attention && outstandingIssues(album).includes(issue)
+    return album.needs_attention || isNewImport(album)
   })
 
   return waiting.sort((a, b) => {

@@ -331,6 +331,24 @@ class MusicBrainzClient:
             }
 
             data = await self.request_with_retries("release/", params)
+
+            #? A FAILED request and a group with no releases are not the same thing, and this
+            #? is the one place they were indistinguishable: request_with_retries answers with
+            #? an error dict rather than raising, so `data.get("releases", [])` quietly turned
+            #? an outage into "this album has no pressings". The interface believed it, showed
+            #? the top result with nothing to expand, and built its filter facets from the
+            #? grids that never mounted - so a MusicBrainz blip read as a search with no
+            #? releases and no filters, with nothing on screen suggesting a retry.
+            if data.get("status") == "failed":
+                problem = data.get("error") or "the request failed"
+                logger.warning(
+                    f"couldn't load the releases for that album ({problem}) - "
+                    f"expand it to try again",
+                    extra={"frontend": True, "src": "musicbrainz"},
+                )
+                return {"release-count": len(all_releases), "releases": all_releases,
+                        "problem": problem}
+
             releases = data.get("releases", [])
 
             if not releases:
@@ -346,6 +364,8 @@ class MusicBrainzClient:
         return {
             "release-count": len(all_releases),
             "releases": all_releases,
+            #? None means the answer is complete and an empty list really does mean empty
+            "problem": None,
         }
 
     

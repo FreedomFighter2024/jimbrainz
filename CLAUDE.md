@@ -289,6 +289,25 @@ Each of these cost real time. Don't rediscover them.
   **A first attempt got this wrong in an instructive way**: it kept the splitting and dropped
   the one-character debris instead, which fixed nothing here (`S M2` → `M2`, still no match) and
   quietly turned `Vol. 2` into `Vol`. Length is not the signal — position is.
+- **A failed releases fetch used to be indistinguishable from an album with no releases.**
+  `get_releases()` read `data.get("releases", [])` straight off whatever `request_with_retries`
+  returned — and that answers with an *error dict* rather than raising, so a MusicBrainz blip
+  came back as `{"release-count": 0, "releases": []}`. The interface believed it. The top search
+  result rendered with nothing to expand, and since the filter facets are built from whatever
+  release grids are mounted, **an entire search came up with no filters at all**. It now returns
+  a `problem` alongside, and says so in the event log.
+- **`renderFacets()` has to be called by hand, and one call site didn't.** Fetching a release
+  group's releases mounted a grid without telling the facets, so expanding a group left the
+  filter column still reading "expand a release group to see filters" — and with the bug above,
+  that was the *only* way to mount a grid, so the filters never appeared at all. This is exactly
+  the hand-rolled render bookkeeping counted below (29 call sites that must remember). It goes
+  away with the port, not before; until then, **anything that mounts or unmounts a release grid
+  must call `renderFacets()` and `updateResultsSummary()`**.
+- **A non-total branch in `createReleaseGroupElement` produced a dead card.** It tested
+  `if (releases && releases.length)` then `else if (releases === null)`, so an empty array
+  matched neither and the group rendered with no grid *and* no fetch button — unexpandable, with
+  no way back. `processSearchResults` now passes `null` for an empty list and the second arm is
+  a plain `else`. Watch for this shape: `[]` is neither truthy-with-length nor `null`.
 - **`request_with_retries` returns an error dict rather than raising.** Reaching straight for
   `["release-groups"]` produced a `KeyError` that surfaced as *"Error searching MusicBrainz:
   'release-groups'"* — which reads like a bad query, so an outage looked like user error.

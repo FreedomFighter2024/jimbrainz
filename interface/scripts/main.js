@@ -507,7 +507,12 @@ function processSearchResults(results) {
     const bestMatchReleases = results['best-match-releases'] || [];
 
     releaseGroups.forEach((rg, index) => {
-        const releases = index === 0 ? bestMatchReleases : null;
+        // Only the top group arrives with its releases already fetched. An EMPTY list is
+        // passed as null on purpose: it means we have nothing to show for that group, which is
+        // the same situation as never having asked - and the server cannot currently tell an
+        // empty release group apart from a releases request that failed, which MusicBrainz
+        // does often. Either way the group needs a way to be fetched again.
+        const releases = index === 0 && bestMatchReleases.length ? bestMatchReleases : null;
 
         container.appendChild(createReleaseGroupElement(rg, releases));
     });
@@ -1780,7 +1785,11 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
         `;
     }
 
-    else if (releases === null) {
+    // `else`, not `else if (releases === null)`. An empty array matched neither arm, so a group
+    // whose releases came back empty rendered with no grid and no fetch button at all: a dead
+    // card you could not expand, and - because the filter facets are built from whatever grids
+    // are mounted - an entire search with no filters. Every path now leaves a way forward.
+    else {
         html +=
         `
             <hr>
@@ -1820,7 +1829,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     }
 
 
-    else if (releases === null) {
+    else {
         const fetchButton = div.querySelector('.fetch-releases-button');
 
         fetchButton.addEventListener('click', async () => {
@@ -1858,9 +1867,27 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
 
                     checkScrollability();
                 });
+
+                /*
+                 * The grid has just joined mountedReleaseGrids, and the filter facets are built
+                 * from whatever is mounted - so without these two the newly fetched releases
+                 * were invisible to the filters and to the results count. Expanding a group
+                 * left the column still saying "expand a release group to see filters", which
+                 * is the whole complaint: filters that never populate.
+                 *
+                 * This is the hand-rolled render bookkeeping CLAUDE.md counts - a call site
+                 * that has to remember to call a render function, and didn't. It goes away with
+                 * the port, not before.
+                 */
+                renderFacets();
+                updateResultsSummary();
             }
 
             catch (error) {
+                // Left the fetch button in place deliberately: this is nearly always
+                // MusicBrainz being briefly unreachable, and the button is the retry.
+                // The server already logs the reason to the event log over SSE; the button
+                // staying put is what tells you it can be retried.
                 console.error(`Fetch releases error: ${error.message}`);
             }
         });

@@ -33,6 +33,13 @@ services:
       - SLSKD_DOWNLOAD_PATH=/downloads
       - LIBRARY_PATH=/music
       - DB_PATH=/config/jimbrainz.db
+      #
+      # Optional. slskd's INCOMPLETE folder, which is a different directory from the completed
+      # downloads above. Set it (and mount it below) and cancelling a download also deletes the
+      # half-finished file it left behind. Leave it out and that file stays, which is slskd's
+      # own behaviour - it keeps partials so a retried download can RESUME from them rather
+      # than starting over, so this is only junk for a transfer you meant to abandon.
+      #- SLSKD_INCOMPLETE_PATH=/incomplete
 
       # ----- uncomment to configure jimbrainz here instead of in .env -----
       #
@@ -66,6 +73,9 @@ services:
       # the same underlying directory slskd writes to. If the two containers disagree about
       # this path, organizing silently finds nothing - it's the most likely first-run problem.
       - /path/to/slskd/downloads:/downloads
+      # only needed if you set SLSKD_INCOMPLETE_PATH above - slskd's incomplete folder, the
+      # same one its `directories.incomplete` setting points at
+      #- /path/to/slskd/incomplete:/incomplete
       # where organized albums get filed
       - /path/to/music:/music
       # holds the database that remembers which download belongs to which release

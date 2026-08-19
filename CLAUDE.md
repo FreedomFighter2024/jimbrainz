@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             279 tests, all Python, all fixture-driven
+tests/             288 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -155,6 +155,19 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   need a scan to exist — absent at exactly the moment it has something to say. The poller writes
   one row as it files each download, and `/queue/new_imports` is a single indexed count that
   touches no filesystem. This is the only reason the import source is recorded at all.
+- **Cancelling a download can remove its partial file, but only if you asked for it.**
+  slskd keeps partials *deliberately*: it writes them to
+  `<incomplete>/<username>/<remote path>/<file>` and, with `retry.partial` set to `Resume`,
+  starts the next attempt at the partial's length instead of at zero. So a leftover is a
+  feature for a transfer that failed and junk only for one you meant to abandon — which is why
+  `remove_incomplete_downloads()` runs on cancel alone, and does nothing at all until
+  `SLSKD_INCOMPLETE_PATH` points at that folder. Setting it *is* the opt-in.
+  It matches by basename under the root rather than rebuilding slskd's path (slskd sanitizes
+  the remote path into the on-disk name — `C:` becomes `C_` — and that mapping is its
+  business), but it is **stricter than `find_local_file`**: that one guesses because a wrong
+  guess misfiles a track, whereas here a wrong guess deletes somebody else's download. An
+  ambiguous basename, or one whose parent folder isn't this job's, is skipped and reported.
+  Every other guard mirrors `delete_album()`.
 - **Errors degrade rather than crash.** Unwritable DB → downloads still work, untracked.
   Unreachable slskd → stored jobs still listed, no live progress. Unwritable DB → the metadata
   queue still works, it just stops remembering what you ignored.
@@ -522,7 +535,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 279 tests
+.venv/bin/python -m pytest tests/ -q  # 288 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -546,7 +559,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 279 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 288 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

@@ -91,6 +91,12 @@ class Config:
 
     #? filesystem paths for organizing finished downloads
     SLSKD_DOWNLOAD_PATH = _env("SLSKD_DOWNLOAD_PATH")
+
+    #? Optional, and cleanup is off without it. slskd's INCOMPLETE folder as seen from this
+    #? container, which is a different mount from the completed downloads above. Setting it
+    #? lets a cancelled download take its half-finished file with it; leaving it unset keeps
+    #? slskd's own behaviour, where a partial file is retained so a retry can resume from it.
+    SLSKD_INCOMPLETE_PATH = _env("SLSKD_INCOMPLETE_PATH")
     LIBRARY_PATH = _env("LIBRARY_PATH")
     DB_PATH = _env("DB_PATH", "/config/jimbrainz.db")
 
@@ -148,6 +154,15 @@ class Config:
             logger.warning("SLSKD_DOWNLOAD_PATH not found in environment, organizing downloaded files will be disabled")
 
         else: logger.info(f"SLSKD_DOWNLOAD_PATH found!")
+
+        if cls.SLSKD_INCOMPLETE_PATH:
+            logger.info("SLSKD_INCOMPLETE_PATH found! cancelled downloads will take their partial files with them")
+
+        else:
+            logger.info(
+                "SLSKD_INCOMPLETE_PATH not set, so cancelling a download leaves its partial "
+                "file in slskd's incomplete folder (which is what lets slskd resume it)"
+            )
 
         if not cls.LIBRARY_PATH:
             logger.warning("LIBRARY_PATH not found in environment, organizing downloaded files will be disabled")

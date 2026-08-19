@@ -1,9 +1,13 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from src.api.slskd_endpoint import build_search_query
+from src.config import Config
 from src.logger import logger
 from src.matching import rank_candidates
+from src.organizer import remove_incomplete_downloads
 from src.store import (CLEARABLE_STATUSES, OPEN_STATUSES, index_transfers_by_user,
                        summarize_transfers)
 
@@ -270,8 +274,12 @@ async def cancel_job(request: Request, job_id: int):
     """
     Stop a download and mark the job cancelled.
 
-    Cancels every transfer slskd currently holds for this job. Files already written stay on
-    disk in slskd's folder - deleting a partial download is the user's call, not ours.
+    Cancels every transfer slskd currently holds for this job.
+
+    Anything already filed into the library stays. The half-finished file in slskd's INCOMPLETE
+    folder is removed only when SLSKD_INCOMPLETE_PATH says where that folder is - slskd keeps
+    partials deliberately so a retried download can resume from them, so pointing jimbrainz at
+    it is the explicit "no, a cancelled download is finished with" signal.
     """
     try:
         store = request.app.state.store
@@ -293,12 +301,36 @@ async def cancel_job(request: Request, job_id: int):
                     cancelled += 1
 
         await store.update_status(job_id, "cancelled", "cancelled from jimbrainz")
+
+        #? After the transfers are cancelled, never before: slskd holds the file open while a
+        #? transfer is live, and deleting it underneath would be a race with slskd's own writer.
+        removed = await asyncio.to_thread(
+            remove_incomplete_downloads,
+            Config.SLSKD_INCOMPLETE_PATH or "",
+            job["files"],
+            job.get("directory", ""),
+        )
+
         logger.info(
-            f"cancelled {job['artist']} - {job['album']} ({cancelled} transfer(s))",
+            f"cancelled {job['artist']} - {job['album']} ({cancelled} transfer(s))"
+            + (f", removed {len(removed['removed'])} partial file(s)" if removed["removed"] else ""),
             extra={"frontend": True, "src": "slskd"},
         )
 
-        return {"status": "ok", "cancelled": cancelled}
+        for skipped in removed["skipped"]:
+            logger.warning(
+                f"left a partial file in place: {skipped}",
+                extra={"frontend": True, "src": "slskd"},
+            )
+
+        return {
+            "status": "ok",
+            "cancelled": cancelled,
+            "partials_removed": len(removed["removed"]),
+            #? surfaced rather than swallowed so "why is my incomplete folder still full" has
+            #? an answer in the response as well as the log
+            "partials_problem": removed["problem"],
+        }
 
     except HTTPException:
         raise

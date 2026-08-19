@@ -512,6 +512,101 @@ def cleanup_source_dirs(plan: dict, download_root: str, results: dict) -> list[s
     return removed
 
 
+def remove_incomplete_downloads(
+    incomplete_root: str,
+    files: list[dict],
+    remote_directory: str = "",
+) -> dict:
+    """
+    Delete the partial files a cancelled download left in slskd's incomplete folder.
+
+    **slskd keeps these on purpose.** It stores a partial download at
+    `<incomplete>/<username>/<remote path>/<file>` and, when `retry.partial` is `Resume`, starts
+    the next attempt at the partial file's length instead of from zero. So a leftover is a
+    feature for a download that failed, and only junk for one you deliberately cancelled - which
+    is why this runs on cancel and nowhere else, and why it does nothing at all unless
+    SLSKD_INCOMPLETE_PATH has been pointed at that folder.
+
+    Matching is by basename under the root rather than by rebuilding slskd's path, for the same
+    reason find_local_file() does it: slskd sanitizes the remote path into the name on disk
+    (`C:` becomes `C_`) and that mapping is its business, not ours.
+
+    But it is STRICTER than find_local_file, deliberately. That one picks a best guess because
+    guessing wrong means organizing the wrong file; here guessing wrong means DELETING someone
+    else's download. A basename that appears more than once, or whose parent folder isn't the
+    one this job was downloading from, is left alone - `01 - Intro.flac` is not a rare name.
+
+    Every guard mirrors delete_album(), which is the other place in jimbrainz that removes data
+    the user did not just ask for.
+    """
+    results: dict = {"removed": [], "skipped": [], "problem": None}
+
+    if not incomplete_root:
+        results["problem"] = "SLSKD_INCOMPLETE_PATH is not set"
+        return results
+
+    root = Path(incomplete_root)
+
+    if not root.is_dir():
+        results["problem"] = f"the incomplete folder isn't there: {incomplete_root}"
+        return results
+
+    #? the last component of the remote folder, which is the directory name slskd nests the
+    #? partial under - same derivation find_local_file uses to prefer the right match
+    wanted_dir = remote_directory.replace("\\", "/").rstrip("/").rpartition("/")[2] if remote_directory else ""
+
+    for entry in files:
+        remote_filename = entry.get("filename", "")
+        _, basename = split_remote_path(remote_filename)
+
+        if not basename:
+            continue
+
+        matches = [p for p in root.rglob(basename) if p.is_file()]
+
+        #? the strictness described above: only a file sitting in the folder this job was
+        #? downloading from is unambiguously ours to remove
+        if wanted_dir:
+            matches = [p for p in matches if p.parent.name == wanted_dir]
+
+        if not matches:
+            continue
+
+        if len(matches) > 1:
+            results["skipped"].append(f"{basename} (several partial files share that name)")
+            continue
+
+        partial = matches[0]
+
+        #? resolves both sides, so neither a symlink nor a ".." in the configured path can walk
+        #? the delete out of the incomplete folder
+        if not is_within(partial, root) or partial.resolve() == root.resolve():
+            logger.warning(f"refused to remove {partial}, it is not inside {incomplete_root}")
+            results["skipped"].append(f"{basename} (outside the incomplete folder)")
+            continue
+
+        try:
+            partial.unlink()
+            results["removed"].append(str(partial))
+        except OSError as e:
+            logger.warning(f"could not remove the partial file {partial}: {e}")
+            results["skipped"].append(f"{basename} ({e})")
+
+    #? Tidy the folders the partials sat in, innermost first. rmdir refuses a non-empty
+    #? directory by construction, so anything still holding a file is left exactly as it was -
+    #? the same reasoning as cleanup_source_dirs.
+    for directory in sorted({Path(p).parent for p in results["removed"]},
+                            key=lambda d: len(d.parts), reverse=True):
+        while directory != root and is_within(directory, root):
+            try:
+                directory.rmdir()
+            except OSError:
+                break
+            directory = directory.parent
+
+    return results
+
+
 async def organize_job(job: dict, download_root: str, library_root: str, mode: str) -> dict:
     """Plan then execute, with the logging the UI's event log surfaces."""
     label = f"{job.get('artist')} - {job.get('album')}"

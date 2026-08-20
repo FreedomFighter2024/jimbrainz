@@ -13,7 +13,27 @@ A one-page interface for finding music on MusicBrainz, pulling it down through s
 
 Pick the release you actually want, and jimbrainz searches Soulseek, ranks what comes back against that release's real tracklist, and shows you why each candidate scored what it did. One click queues it; when it finishes it gets tagged from the MusicBrainz data and filed into your library. Then the **library tab** shows you what you've actually got — including when you're holding three different pressings of the same record — and lets you correct anything that landed wrong.
 
-![Alt text](assets/videos/demo_1.gif)
+<!--
+  SCREENSHOT / DEMO GOES HERE.
+
+  The previous demo GIF was removed rather than left in place: it was recorded before the
+  Lidarr removal, so it showed the LidBrainz wordmark, a log line reading "fetching system
+  info from Lidarr", and the metadata-profile / quality-profile / folder-select panels that
+  this fork does not have. It advertised the wrong application on the README of the fork that
+  exists specifically to not be that application. It was also 21MB, which GitHub serves
+  slowly on every page view.
+
+  To replace it, record the search -> candidates -> download -> library flow and drop it in
+  as assets/videos/demo.gif, then restore an embed here. A still of the search view works
+  just as well and costs a fraction of the bytes:
+
+      ![jimbrainz search view](assets/images/search.png)
+
+  ffmpeg, to get a README-sized GIF out of a screen recording (roughly 2-4MB rather than 21):
+
+      ffmpeg -i recording.mov -vf "fps=12,scale=1200:-1:flags=lanczos,split[a][b];\
+      [a]palettegen[p];[b][p]paletteuse" -loop 0 assets/videos/demo.gif
+-->
 
 _Please note; this is a silly and fun container i made for my own server, its probably kinda shitty, the code is a mess, and theres certainly better alternatives out there. buuut if you like it thats awesome :)_<3
 
@@ -59,8 +79,8 @@ _Note: if you're an **UnRaid** user like me, ive added a template that can be ma
 
 | tag | what it is |
 | --- | --- |
-| `:latest` | **the current release** — slskd direct, no Lidarr. 0.4.x, and what the settings above describe. |
-| `:0.4.0` etc | pinned releases of that same line |
+| `:latest` | **the current release** — slskd direct, no Lidarr. 0.5.x, and what the settings above describe. |
+| `:0.5.0` etc | pinned releases of that same line |
 | `:experimental` | the `experimental/*` branch, rebuilt on every push. Ahead of `:latest`, and moves under you. |
 | `:0.2.1` and older | the original Lidarr-based line, still on `main`. Does **not** understand the settings above. |
 
@@ -112,7 +132,9 @@ The year is the <em>album's</em> year, not the pressing's, so a 2011 remaster of
 ### A library tab that knows what you've got
 <details>
 <summary style="font-style:italic">Including when you're holding three versions of the same record</summary>
-Reads your library off disk with mutagen and lists one row per album, with its editions nested underneath — the same shape as release group → releases in the search tab. Albums you hold more than one version of are marked and filterable, which was the entire point.
+Reads your library off disk with mutagen and lists one row per album, with its editions listed underneath — the same shape as release group → releases in the search tab. Albums you hold more than one version of are marked and filterable, which was the entire point.
+<br><br>
+Those editions are <em>always on screen</em>, not hidden behind a disclosure triangle: holding three pressings of a record is the thing this view exists to tell you, so it would be an odd thing to make you click for. Each edition has its own toggle for its tracklist, which is the part worth deferring — track lists are large and most are never opened.
 <br><br>
 Identity comes from tags rather than folder names, so renaming a folder by hand doesn't split an album in two. Folders with no MusicBrainz id at all — i.e. anything that predates jimbrainz — are left as their own albums rather than being guessed at and merged.
 <br><br>
@@ -135,6 +157,16 @@ Nothing is written until you press apply, and the preview showing what would cha
 Each album (and each edition of it) has a delete control. The confirmation names the folder, the track count, the size, and any files in there that are neither audio nor artwork — a rip log or a cue sheet might be the only copy, so those get listed individually.
 <br><br>
 It's permanent, there's no undo, and it says so. It refuses anything that isn't an album inside your library, including artist folders, so it can't take a whole discography by accident.
+</details>
+
+### A settings tab that tells you why something isn't working
+<details>
+<summary style="font-style:italic">Your preferences, and a straight answer about the container's configuration</summary>
+Two halves, deliberately kept apart. The top is <em>yours</em> - format preference, auto-grab, how a new search starts, where the Soulseek candidate filters begin - stored in your browser and saved as you change them.
+<br><br>
+The bottom is the container's configuration, and it is <strong>read-only because it can only be read-only</strong>: those are environment variables read once when the container started, so nothing the app writes could change them. Instead of pretending otherwise with disabled inputs, it reports. For every setting: the value this container <em>actually received</em>, <strong>which file supplied it</strong> (your compose <code>environment:</code> block or <code>.env</code> — indistinguishable from the value alone, and always the first question when something's wrong), and what is broken about it if anything.
+<br><br>
+It resolves the paths rather than trusting them, which is the point. <code>SLSKD_DOWNLOAD_PATH</code> pointing at a path that exists on the <em>host</em> but not inside the container is the most common first-run failure by a wide margin, and it is invisible from the value — the string looks perfectly correct. It also answers "why did nothing get filed" once, in a sentence, with every reason listed, rather than leaving you to infer it from four separate rows. The API key is never sent to the browser at all.
 </details>
 
 ### It works on a phone now

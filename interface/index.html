@@ -81,6 +81,14 @@
                     <div class="text default search-input-cursor-holder" >
                         <input type="text" id="artist-search-input" class="text default search-input" name="artist-search-input" placeholder="ArtistName">
                     </div>
+                    <!-- Release-group type filter. Narrows the SEARCH rather than the results:
+                         MusicBrainz spends the limit on whatever matches, and for a prolific
+                         artist that is overwhelmingly live albums and compilations - a plain
+                         "Metallica" search returns 25 groups of which 2 are studio albums. -->
+                    <div class="releases-columns-control" id="type-filter-control">
+                        <button type="button" id="type-filter-button" class="columns-toggle-button">Type ▾</button>
+                        <div class="columns-dropdown" id="type-filter-dropdown"></div>
+                    </div>
                     <div id="search-limit-container">
                         <h3 class="text default">Limit:</h3>
                         <button type="button" id="limit-decrease" class="text default limit-button glow">▽</button>

@@ -73,7 +73,17 @@ def client(monkeypatch):
 
 
 def use(client, fake):
-    client.get_client = lambda: asyncio.sleep(0, result=fake)  # type: ignore[method-assign]
+    """
+    Point the client at a fake instead of the network.
+
+    A plain async function rather than `asyncio.sleep(0, result=fake)` as a cheap awaitable -
+    that trick made the helper depend on asyncio.sleep, so a test that patches out the retry
+    backoff silently got None back instead of the fake and recorded no requests at all.
+    """
+    async def get_client():
+        return fake
+
+    client.get_client = get_client  # type: ignore[method-assign]
     return fake
 
 
@@ -271,3 +281,44 @@ def test_a_search_still_fetches_releases_by_default(client):
     asyncio.run(client.fully_search("metallica", 25))
 
     assert len(fake.calls) == 2, "the group search, then that group's releases"
+
+
+# ---------------------------------------------------------------- rejected queries
+
+def test_a_malformed_query_fails_immediately_instead_of_retrying(client):
+    """
+    A 400 is the server saying the QUERY is wrong, which is deterministic - retrying it ten
+    times with rate-limit pacing in between spends about thirty seconds arriving at the same
+    answer, and then reports it as "MusicBrainz is unreachable". That sends you to look at your
+    network instead of at your search. It matters more now the search view builds type-filter
+    clauses into the query, where a syntax mistake is possible.
+    """
+    fake = use(client, FakeClient(FakeResponse(status_code=400)))
+
+    result = asyncio.run(client.request_with_retries("release-group/", {"query": "primarytype:"}))
+
+    assert result["code"] == 400
+    assert "malformed" in result["error"]
+    assert len(fake.calls) == 1, "asked once, believed the answer"
+
+
+def test_a_503_is_still_retried(client, monkeypatch):
+    """
+    The opposite case: overloaded is transient, and giving up on the first one would be wrong.
+
+    The backoff is patched out - this asserts that it retries, not that it waits, and the real
+    sleeps make it a thirty-second test for a one-line behaviour.
+    """
+    #? the original captured first - patching asyncio.sleep with something that calls
+    #? asyncio.sleep is a recursion, and the broad except in request_with_retries swallows it
+    real_sleep = asyncio.sleep
+
+    async def instant(*_args, **_kwargs):
+        await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", instant)
+    fake = use(client, FakeClient(FakeResponse(status_code=503)))
+
+    asyncio.run(client.request_with_retries("release-group/", {"query": "metallica"}))
+
+    assert len(fake.calls) > 1, "kept trying"

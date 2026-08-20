@@ -60,7 +60,7 @@ interface/         vanilla JS/CSS. Still the served page; main.js is shrinking a
                    are ported. main.css (~3,500 lines) styles BOTH halves - see below.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
-tests/             303 tests, all Python, all fixture-driven
+tests/             305 tests, all Python, all fixture-driven
 ```
 
 API routes are prefixed **`/jimbrainz/`** (renamed from `/lidbrainz/`).
@@ -90,6 +90,22 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   MusicBrainz's release-GROUP `first-release-date` (`original_year` on the payload, written
   to the `originaldate` tag); the `date` tag still records this pressing's own year. Absent
   `original_year` the behaviour is exactly as before, so nothing already filed moves.
+- **The search type filter narrows the QUERY, not the results.** That distinction is the whole
+  point: MusicBrainz spends the `limit` on whatever matches, so for a prolific artist it goes
+  almost entirely on things nobody wanted. Measured — `releasegroup:"Metallica" AND
+  artist:"Metallica"` returns 25 groups of which **15 are Live, 6 Compilation, 1 Interview and
+  exactly 2 are the studio album**. Filtering the returned list would leave 2 results out of 25;
+  filtering the query spends all 25 on studio albums.
+  `primarytype` and `secondarytype` are MusicBrainz's own documented release-group fields.
+  "Studio only" excludes secondary types **by name** rather than asking for "no secondary type
+  at all" — a bare `-secondarytype:*` relies on how the index treats a wildcard against an
+  absent field, and negating specific terms is ordinary Lucene that behaves the same anywhere.
+  **The original query is parenthesised before the filter is ANDed on.** A title-only search is
+  bare free text, and without brackets the `AND` binds to the last term alone — quietly turning
+  `dark side of the moon` into something the user did not type.
+  The active filter is shown in the button, in the results summary, and as a tooltip carrying
+  the exact clauses sent, because a search that silently returns less than it could is a search
+  you stop trusting.
 - **The metadata editor searches with a FIELDED query**, like the search view, built from its
   artist and album fields. Free text matched a one-track 2013 release group for "Pink Floyd
   Wish You Were Here" — the song, not the album — and since the folder year comes from the
@@ -366,6 +382,13 @@ Each of these cost real time. Don't rediscover them.
   matched neither and the group rendered with no grid *and* no fetch button — unexpandable, with
   no way back. `processSearchResults` now passes `null` for an empty list and the second arm is
   a plain `else`. Watch for this shape: `[]` is neither truthy-with-length nor `null`.
+- **A 400 from MusicBrainz is a rejected QUERY, and retrying it is pointless.** It used to fall
+  through to the generic branch and go round the retry loop ten times, with rate-limit pacing
+  between each, before reporting "MusicBrainz is unreachable" — about thirty seconds spent
+  arriving at the same deterministic answer, and then blaming the network for a bad search. It
+  breaks out immediately now and says the query was rejected. This matters more since the
+  search view began composing type-filter clauses: a syntax mistake there has to be legible as
+  a syntax mistake.
 - **`request_with_retries` returns an error dict rather than raising.** Reaching straight for
   `["release-groups"]` produced a `KeyError` that surfaced as *"Error searching MusicBrainz:
   'release-groups'"* — which reads like a bad query, so an outage looked like user error.
@@ -597,7 +620,7 @@ compile time.
 
 ```bash
 .venv/bin/python -m src.main          # needs .env; DB_PATH=.devdata/jimbrainz.db
-.venv/bin/python -m pytest tests/ -q  # 303 tests
+.venv/bin/python -m pytest tests/ -q  # 305 tests
 ```
 
 Frontend, from `ui/`. **Needs Node `^20.19.0 || >=22.12.0`** — see the npm gotcha above:
@@ -622,7 +645,7 @@ HMR — **not** the real page. The real page is still `interface/index.html` ser
 
 ## What the tests cannot tell you
 
-All 303 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
+All 305 tests are fixture-driven. **Nothing has ever talked to a real slskd.** The parts most
 likely to break on deployment are exactly the parts tests can't reach:
 
 - slskd transfer `state` strings. **This one already came true**: `"Completed, Rejected"` was

@@ -245,11 +245,27 @@ class MusicBrainzClient:
                     await asyncio.sleep(6) #? this is just a fallback if the rate limit class is a little zesty 
                     continue
 
+                if status == 400:
+                    #? A rejected QUERY, not an outage - deterministic, so retrying it ten
+                    #? times just spends thirty seconds arriving at the same answer and then
+                    #? reports "MusicBrainz is unreachable", which sends you looking at your
+                    #? network instead of at your search. Matters more now that the search view
+                    #? builds type-filter clauses: a syntax mistake has to say so.
+                    logger.error(
+                        f"MusicBrainz rejected that search as malformed - this is a problem "
+                        f"with the query, not the connection ({exc.response.text[:160]})",
+                        extra={"frontend": True, "src": "musicbrainz"},
+                    )
+                    ping_error_obj["error"] = "MusicBrainz rejected the search as malformed"
+                    ping_error_obj["status"] = "failed"
+                    ping_error_obj["code"] = 400  # type: ignore
+                    break
+
                 else:
                     ping_error_obj["error"] =  f"musicbrainz ping failed with uncaught HTTP error {status}, unknown"
                     ping_error_obj["status"] =  "failed"
                     ping_error_obj["code"] = "UNKNOWN_HTTP_ERROR" # type: ignore
-                
+
                 logger.error(f"HTTP {status}: {exc.response.text[:200]}")
             
             except ValueError as exc: 

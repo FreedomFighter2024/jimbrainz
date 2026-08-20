@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 const searchCache = {};
+//? so the summary can tell "no search yet" apart from "that search found nothing"
+let lastSearchRan = false;
 
 
 
@@ -435,6 +437,134 @@ function quoteLuceneTerm(value) {
 
 
 
+/* ===== release-group type filter: narrows the search itself, not the results ===== */
+
+/*
+ * MusicBrainz's own fields, not our vocabulary - `primarytype` and `secondarytype` are
+ * documented on the release-group search index.
+ *
+ * This filters the QUERY rather than the returned list, and that distinction is the whole
+ * point. The limit is spent on whatever matches, so for a prolific artist it goes almost
+ * entirely on things you didn't want: searching `releasegroup:"Metallica" AND
+ * artist:"Metallica"` returns 25 groups of which 15 are Live, 6 Compilation, 1 Interview and
+ * exactly 2 are the studio album. Filtering afterwards would leave you with those 2 out of 25;
+ * filtering the query spends all 25 on studio albums.
+ */
+const PRIMARY_TYPES = [
+    { id: 'Album',  label: 'Albums' },
+    { id: 'Single', label: 'Singles' },
+    { id: 'EP',     label: 'EPs' },
+    { id: 'Other',  label: 'Other' },
+];
+
+/*
+ * Secondary types worth being able to drop in one go.
+ *
+ * Excluded by NAME rather than by asking for "no secondary type at all". A bare
+ * `-secondarytype:*` would be relying on how the index treats a wildcard against an absent
+ * field, which is exactly the kind of assumption that is quietly wrong; negating specific
+ * terms is ordinary Lucene and behaves the same everywhere.
+ */
+const NOISY_SECONDARY_TYPES = ['Live', 'Compilation', 'Interview', 'Demo', 'Remix', 'DJ-mix'];
+
+const typeFilterState = {
+    //? empty = no type filter at all, which is the previous behaviour and the default
+    primary: new Set(),
+    studioOnly: false,
+};
+
+/**
+ * The type clauses to AND onto a search, or '' when nothing is selected.
+ *
+ * Kept as a pure string builder so the query it produces is inspectable - a search that
+ * silently narrows itself is a search you can't trust, and the built query is shown in the
+ * results summary.
+ */
+function buildTypeFilter() {
+    const clauses = [];
+
+    if (typeFilterState.primary.size) {
+        const types = [...typeFilterState.primary].map(t => `primarytype:"${t}"`);
+        //? parenthesised so the OR binds to itself rather than to whatever precedes it
+        clauses.push(types.length > 1 ? `(${types.join(' OR ')})` : types[0]);
+    }
+
+    if (typeFilterState.studioOnly) {
+        for (const type of NOISY_SECONDARY_TYPES) clauses.push(`-secondarytype:"${type}"`);
+    }
+
+    return clauses.join(' AND ');
+}
+
+function describeTypeFilter() {
+    const parts = [];
+    if (typeFilterState.primary.size) parts.push([...typeFilterState.primary].join(', '));
+    if (typeFilterState.studioOnly) parts.push('studio only');
+    return parts.join(' · ');
+}
+
+function renderTypeFilterDropdown() {
+    const dropdown = document.getElementById('type-filter-dropdown');
+    dropdown.innerHTML = '';
+
+    for (const type of PRIMARY_TYPES) {
+        const label = document.createElement('label');
+        label.className = 'columns-dropdown-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = typeFilterState.primary.has(type.id);
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) typeFilterState.primary.add(type.id);
+            else typeFilterState.primary.delete(type.id);
+            updateTypeFilterButton();
+        });
+
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(type.label));
+        dropdown.appendChild(label);
+    }
+
+    const separator = document.createElement('hr');
+    dropdown.appendChild(separator);
+
+    const studio = document.createElement('label');
+    studio.className = 'columns-dropdown-item';
+    studio.title = `hides release groups tagged ${NOISY_SECONDARY_TYPES.join(', ')}`;
+
+    const studioBox = document.createElement('input');
+    studioBox.type = 'checkbox';
+    studioBox.checked = typeFilterState.studioOnly;
+    studioBox.addEventListener('change', () => {
+        typeFilterState.studioOnly = studioBox.checked;
+        updateTypeFilterButton();
+    });
+
+    studio.appendChild(studioBox);
+    studio.appendChild(document.createTextNode('studio only'));
+    dropdown.appendChild(studio);
+}
+
+function updateTypeFilterButton() {
+    const button = document.getElementById('type-filter-button');
+    const described = describeTypeFilter();
+    button.textContent = described ? `Type: ${described} ▾` : 'Type ▾';
+    button.classList.toggle('active', Boolean(described));
+}
+
+const typeFilterControl = document.getElementById('type-filter-control');
+document.getElementById('type-filter-button').addEventListener('click', (e) => {
+    e.stopPropagation();
+    typeFilterControl.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+    if (!typeFilterControl.contains(e.target)) typeFilterControl.classList.remove('open');
+});
+
+renderTypeFilterDropdown();
+updateTypeFilterButton();
+
+
 async function handleSearch() {
     const release = releaseSearchInput.value.trim();
     let artist = artistSearchInput.value.trim();
@@ -453,6 +583,23 @@ async function handleSearch() {
     }
 
     if (!query) return;
+
+    /*
+     * The type filter goes into the QUERY, so the limit is spent on things you asked for.
+     *
+     * Appended after the emptiness check on purpose: a filter is not a search. Selecting
+     * "Albums" with both boxes empty should still do nothing rather than fetching every album
+     * in MusicBrainz.
+     *
+     * The original query is PARENTHESISED before the filter is ANDed on. A title-only search
+     * is bare free text - `dark side of the moon` - and without the brackets the AND would
+     * bind to the last term alone rather than to the whole phrase, quietly turning it into
+     * something the user did not type. Brackets around an already-fielded query cost nothing.
+     */
+    const typeFilter = buildTypeFilter();
+    if (typeFilter) {
+        query = `(${query}) AND ${typeFilter}`;
+    }
 
     try {
         let limit = parseInt(limitValueDisplay.innerText);
@@ -500,6 +647,7 @@ artistSearchInput.addEventListener('keypress', (e) => {
 
 
 function processSearchResults(results) {
+    lastSearchRan = true;
     const container = document.getElementById('search-results-scrollable');
     container.innerHTML = '';
     mountedReleaseGrids.clear();
@@ -1390,17 +1538,31 @@ function updateResultsSummary() {
     const summary = document.getElementById('results-summary');
     const total = allMountedReleases().length;
 
+    /*
+     * Say when a type filter is narrowing things, and say what it was.
+     *
+     * A search that quietly returns less than it could is a search you stop trusting - and this
+     * one narrows the QUERY, so "no results" with a filter on means something different from
+     * "no results" without. The tooltip carries the exact clauses that were sent, so if
+     * MusicBrainz reads them differently than expected that is visible rather than mysterious.
+     */
+    const described = describeTypeFilter();
+    const filterNote = described ? ` · ${described}` : '';
+    summary.title = described ? `search was narrowed with: ${buildTypeFilter()}` : '';
+
     if (!total) {
-        summary.textContent = document.querySelectorAll('.results-box.release-group-result').length
-            ? 'expand a release group to list releases'
-            : 'no search yet';
+        const groups = document.querySelectorAll('.results-box.release-group-result').length;
+        summary.textContent = groups
+            ? `expand a release group to list releases${filterNote}`
+            : (lastSearchRan && described
+                ? `nothing matched${filterNote} - try widening the type filter`
+                : 'no search yet');
         return;
     }
 
     const visible = document.querySelectorAll('.releases-table tbody tr.release-row').length;
-    summary.textContent = visible === total
-        ? `${total} releases`
-        : `${visible} of ${total} releases`;
+    const counts = visible === total ? `${total} releases` : `${visible} of ${total} releases`;
+    summary.textContent = `${counts}${filterNote}`;
 }
 
 

@@ -3815,3 +3815,21 @@ span.red { color: var(--red-text); }
 #library-bulk-art-button.is-running { border-color: var(--main-text); }
 
 .library-bulk-summary { font-size: 0.82em; padding: 6px 0; text-align: center; }
+
+/* the release-group type filter, in the search bar beside the limit control */
+#type-filter-control { position: relative; flex-shrink: 0; }
+
+#type-filter-button.active {
+    color: var(--main-text);
+    border-color: var(--main-text);
+}
+
+/* the dropdown reuses .columns-dropdown; this only separates the primary types from the
+   secondary-type exclusion below them */
+#type-filter-dropdown hr {
+    display: block;
+    height: 1px;
+    border: 0;
+    border-top: 1px solid var(--muted-text);
+    margin: 4px 0;
+}

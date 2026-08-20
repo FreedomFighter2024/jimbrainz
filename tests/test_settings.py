@@ -220,6 +220,19 @@ def test_a_good_slskd_url_has_no_detail(monkeypatch):
 # ===== the payload's shape ====================================================
 
 
+def test_the_reported_version_matches_the_package():
+    """
+    The tab renders this as the answer to "what version are you running", which is the first
+    question on any bug report. A hardcoded or drifting value here is a wrong answer, and a
+    wrong answer is worse than none.
+    """
+    from src import __version__
+
+    assert call_settings()["version"] == __version__
+    #? guards against someone reporting a placeholder
+    assert __version__[0].isdigit()
+
+
 def test_the_payload_states_that_it_is_read_only():
     """
     Not decoration. The tab renders controls from this, and a client that assumed editable

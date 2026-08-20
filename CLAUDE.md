@@ -761,6 +761,18 @@ compile time.
 - **Commits must set the author explicitly**, git defaults to a local placeholder here:
   `GIT_AUTHOR_NAME="James Barnett" GIT_AUTHOR_EMAIL="jamesambarnett@gmail.com" git commit …`
 - Commit messages explain *why*, and name what was verified vs assumed.
+- **Every commit bumps the patch version and leaves the README current.** Both in the same
+  commit as the change itself, not swept up afterwards — the point is that the history reads
+  as a clean progression rather than as a pile of work with a version bolted on at the end.
+  The README is the only description of this project most people will ever read, so a commit
+  that changes behaviour and leaves it stale has made the docs wrong, not merely incomplete.
+  If a commit genuinely changes nothing a user could notice (a comment, a test, a refactor),
+  say so in the message rather than inventing a README edit for it.
+- **Bumping the patch version is not the same as tagging it, and the difference matters
+  here.** `docker-publish.yml` builds and publishes an image for every pushed `v*` tag, and
+  moves **`:latest`** for any version without a hyphen in it. So tagging every commit would
+  move `:latest` on every commit, which is exactly what `:experimental` exists to prevent —
+  see the image-tag note below. Bump the version as you go; tag when you mean to ship.
 - Versions: `v0.x` tags. **1.0.0 is reserved for when this is genuinely polished** — a
   deliberate choice, don't jump to it.
 - Image tags: `:experimental` = this branch (rebuilt on every push); `:latest` = the newest

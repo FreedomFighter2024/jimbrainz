@@ -428,6 +428,15 @@ export function SettingsView({ active }: { active: boolean }) {
                 ))}
               </div>
             </Section>
+
+            {/*
+              The running version. Worth a permanent spot: "what version are you running" is
+              the first question on any bug report, and the honest answer was previously
+              "whichever image tag you happened to pull", which nobody remembers.
+            */}
+            <div class="settings-version">
+              jimbrainz <code>v{server.version}</code>
+            </div>
           </>
         ) : null}
       </div>

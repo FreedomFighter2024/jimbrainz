@@ -3151,6 +3151,19 @@ span.red { color: var(--red-text); }
     color: var(--white-tertiary-text);
 }
 
+/* the running version, at the very bottom where a version belongs */
+.settings-version {
+    text-align: center;
+    font-size: var(--text-2xs);
+    color: var(--white-tertiary-text);
+    padding-top: var(--space-2);
+}
+
+.settings-version code {
+    font-family: var(--font-mono);
+    color: var(--white-secondary-text);
+}
+
 .settings-error {
     padding: var(--space-4);
     border: 1px solid #f8717140;

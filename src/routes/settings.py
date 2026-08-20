@@ -32,6 +32,7 @@ from pathlib import Path
 
 from fastapi import APIRouter
 
+from src import __version__
 from src.config import Config, describe_slskd_url, setting_source, shadowed_by_empty_env
 from src.logger import logger
 
@@ -170,6 +171,10 @@ async def settings():
         )
 
     return {
+        #? Rendered in the tab's footer. "What version are you running" is the first question
+        #? asked about any bug report, and until now the only way to answer it was to check
+        #? which image tag you happened to pull.
+        "version": __version__,
         #? Read-only, and the tab says so prominently. See this module's docstring.
         "editable": False,
         "groups": [

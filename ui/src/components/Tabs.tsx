@@ -1,4 +1,4 @@
-export type TabId = 'search' | 'library'
+export type TabId = 'search' | 'library' | 'settings'
 
 interface Tab {
   id: TabId
@@ -6,13 +6,14 @@ interface Tab {
 }
 
 /*
- * Settings is the third tab this shell exists for - the deferred settings pane goes here
- * with no structural change, just another entry and another pane. Adding it means adding a
- * `#settings-root` beside the other panes and a rule in main.css.
+ * Settings was the third tab this shell was built for, and it landed exactly as predicted:
+ * one more entry here, a `#settings-root` beside the other panes, and a `[data-tab]` rule in
+ * main.css. No structural change was needed.
  */
 const TABS: readonly Tab[] = [
   { id: 'search', label: 'search' },
   { id: 'library', label: 'library' },
+  { id: 'settings', label: 'settings' },
 ]
 
 interface Props {

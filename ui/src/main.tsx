@@ -2,6 +2,7 @@ import { render, type VNode } from 'preact'
 
 import { DownloadsPanel } from './components/DownloadsPanel'
 import { LibraryView } from './components/LibraryView'
+import { SettingsView } from './components/SettingsView'
 import { Tabs, type TabId } from './components/Tabs'
 import { useNewImports } from './hooks/useNewImports'
 
@@ -64,6 +65,7 @@ function renderShell(active: TabId): void {
 
   mount('tabs-root', <TabBar active={active} onChange={renderShell} />)
   mount('library-root', <LibraryView active={active === 'library'} onNavigate={renderShell} />)
+  mount('settings-root', <SettingsView active={active === 'settings'} />)
 }
 
 mount('downloads-root', <DownloadsPanel />)

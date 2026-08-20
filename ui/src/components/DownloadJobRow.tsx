@@ -1,5 +1,7 @@
 import { useState } from 'preact/hooks'
 
+import { readPreferences } from '../state/persisted'
+
 import type { DownloadJob } from '../api/types'
 import { JOB_STATUS_CLASS, isActive, jobDetailClass, jobDetailText } from '../lib/jobs'
 
@@ -29,6 +31,21 @@ export function DownloadJobRow({ job, liveSpeed, onCancel }: Props) {
 
   const cancel = async (event: MouseEvent) => {
     event.stopPropagation()
+
+    /*
+     * Cancelling is not quite reversible: with SLSKD_INCOMPLETE_PATH configured it also
+     * deletes the partial file, and either way you lose your place in that peer's queue,
+     * which on Soulseek can be the expensive part. Off by default would be the wrong
+     * default, so this asks unless you have turned it off in settings.
+     *
+     * Read at click time, not at render: the preference can change in another tab while a
+     * transfer is running, and the value that matters is the one in force when you click.
+     */
+    if (readPreferences().confirmCancel) {
+      const label = [job.artist, job.album].filter(Boolean).join(' — ') || 'this download'
+      if (!confirm(`Cancel ${label}?\n\nYou'll lose your place in this peer's queue.`)) return
+    }
+
     setCancelling(true)
 
     try {

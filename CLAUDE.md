@@ -55,9 +55,15 @@ src/
   retag.py         the metadata manager's write half - applies a chosen release to an album
                    already on disk. Same plan/execute split, for the same reasons.
   api/             musicbrainz_endpoint.py, slskd_endpoint.py, coverart_endpoint.py, app.py
-  routes/          search_musicbrainz, download, monitor_slskd, interface_logs, library
+  routes/          search_musicbrainz, download, monitor_slskd, interface_logs, library,
+                   settings (READ-ONLY by nature - see the decision below)
 interface/         vanilla JS/CSS. Still the served page; main.js is shrinking as panels
-                   are ported. main.css (~3,500 lines) styles BOTH halves - see below.
+                   are ported. main.css styles BOTH halves - see below.
+  styles/theme.css THE TOKEN LAYER. Every colour, size, space, radius, shadow, duration and
+                   easing in the application. Because both halves consume it, editing a
+                   value here restyles the vanilla and Preact sides together. Raw values in
+                   main.css or in a component are a bug. NOTE it is @import-ed, so it caches
+                   separately - hard-refresh when verifying a palette change.
   dist/            BUILT from ui/, gitignored. Not present in a fresh checkout.
 ui/                Preact + Vite + TypeScript. New work goes here — see below.
 tests/             305 tests, all Python, all fixture-driven
@@ -228,6 +234,122 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   Unreachable slskd → stored jobs still listed, no live progress. Unwritable DB → the metadata
   queue still works, it just stops remembering what you ignored.
 
+### The library view's editions
+
+- **An album's editions are ALWAYS visible; only their track lists are behind a toggle.**
+  They used to sit behind the album's own disclosure triangle, which hid the single fact
+  this view exists to show — that you are holding three pressings of this record — behind a
+  click, on a row that looked identical to every single-edition album until you opened it.
+  Holding multiple versions is the feature, so it is shown, not disclosed.
+  **This is not an oversight to "fix" by making them collapsible again.**
+- **The 711ms rule still holds, because an edition HEADER is not a track list.** What must
+  stay deferred is `<TrackList>`, and every one of them still is — one toggle per edition.
+  Verified: with a three-edition album on screen, `.library-tracks` in the document is **0**
+  until an edition is opened, and opening one blocks for 0.3ms. If you ever render editions
+  and their tracks together, this view will hit the search view's freeze harder, because a
+  library holds far more albums than one search returns.
+- **A single-edition album keeps its own toggle, and it opens the tracks directly.** The
+  album row IS the release row in that case, so nesting it under a lone "Standard" row would
+  be a click that buys nothing. The resulting rule is simple and worth preserving: **one
+  disclosure per release, and it is always for tracks.**
+- **The multi-edition album head renders a hidden spacer where the toggle would be**
+  (`.library-expand-spacer`). It has nothing to disclose, but its artwork and titles still
+  have to line up with the single-edition rows directly above and below it in the same list;
+  without the spacer every multi-edition album steps out of alignment with its neighbours.
+  `visibility: hidden` keeps the glyph's width — which is where the alignment comes from —
+  while taking it out of the accessibility tree and out of hit testing.
+
+### The settings tab
+
+- **The server half is READ-ONLY, and that is a property of the deployment, not a shortcut.**
+  Every server setting arrives as an environment variable, read once at process start, from a
+  compose `environment:` block or `.env`. Nothing this app could write would change them:
+  editing `.env` from inside the container would not affect the running process, and would be
+  discarded on the next `docker compose up` for anyone configuring through compose — which is
+  most people and all Unraid users. **Do not add a save button to that half.** A save button
+  that needs a restart to take effect, and sometimes does nothing even then, is worse than a
+  clearly read-only report. If a writable server setting is ever wanted (naming templates are
+  the obvious candidate), it needs a real persistence story first — a settings table in the
+  sqlite DB, with env vars as the fallback — not a form bolted onto this endpoint.
+- **So the endpoint's job is DIAGNOSIS.** It answers the three questions someone actually
+  has: what value did the container receive, which file do I edit to change it, and what is
+  wrong with it. The middle one is the one that is genuinely hard from outside — once
+  `load_dotenv()` has run, a compose value and a .env value are indistinguishable in
+  `os.environ`. `config.py` captures that at import time and `setting_source()` reports it.
+- **Paths are RESOLVED, not echoed.** `_describe_path()` stats every configured path and
+  checks readability, and writability where it matters. A path that exists on the host but
+  not inside the container is the most common first-run failure in this project and it is
+  completely invisible from the string — which looks correct, because it is correct, just
+  not from in here.
+- **The API key never reaches the browser.** The row reports `set` or nothing. This payload
+  renders on a page people screenshot into bug reports. A test asserts the key's value does
+  not appear anywhere in the payload.
+- **Only `error` is decorated.** An unset OPTIONAL setting renders plain. When every row
+  carries a colour, the row that needs attention stops standing out, which is the list's
+  whole job.
+- **The organizing verdict is derived server-side and stated once**, with every blocker
+  listed at the same time. "Why did nothing get filed" has four possible causes across two
+  groups; discovering them one at a time is how people conclude the feature is broken rather
+  than misconfigured.
+- **Client preferences are a separate storage key (`jimbrainz-preferences`), not more fields
+  on `jimbrainz-download-defaults`.** That older blob is read and rewritten wholesale by
+  `main.js` too, so any field it did not know about would survive only until the next time it
+  saved. New key, one writer.
+- **Every preference is genuinely wired to behaviour**, and the vanilla half reads them at
+  the point of use rather than caching at load — so a change in the settings tab applies to
+  the next action without a reload. `PREFERENCE_FALLBACK` is duplicated in `main.js` because
+  the two files are separate ES modules that cannot import each other; **keep the two copies
+  in step** until the search view is ported and the duplicate goes away.
+- **"Studio only" as a default still shows in the button label.** A filter that is silently
+  on is a search that quietly returns less than you asked for, which is the exact failure the
+  visible label exists to prevent — see the search-type-filter decision above.
+
+### The v0.5 design system
+
+The brief was "snappy, and modernise the dated aesthetic". The direction chosen was **modern
+foundation, keep the signature**: the ASCII wordmark, the purple accent and monospace data
+stay; the CRT overlay, the text-glow and the ░▒▓ chrome go.
+
+- **`theme.css` is the token layer and the only place raw values belong.** Colours, type
+  sizes, spacing, radii, shadows, durations and easings are all defined there once. This is
+  load-bearing *because the migration is unfinished*: `main.css` styles the vanilla half and
+  the Preact half, so one token edit restyles both together and the two can't drift apart
+  while they coexist. A hex code or a px size typed into a rule defeats that.
+- **The type scale is REM, and that is the whole point.** The old sheet was ~15 unrelated
+  `em` sizes, which COMPOUND through nesting — the same `<h4>` rendered at different sizes
+  depending on where it sat, and each value had been hand-picked to look right after
+  whatever compounding applied at that spot. That is also why it could never be fixed by
+  setting a base size on `body`: the headings scaled with it. rem resolves against the root,
+  so a step means one thing everywhere and the interface can be rescaled from one line.
+- **The glow tokens still exist and resolve to `transparent`.** ~23 `text-shadow` rules
+  reference them. Neutralising the tokens switched every one of those off without editing
+  them, which makes the CRT bloom one edit to restore and one edit to remove. That is why
+  they weren't deleted — resist tidying them away.
+- **The bundled scene font is unreferenced, not deleted.** All 30 `@font-face` rules went and
+  the UI uses the platform's own stacks; the `.otf` files are still on disk and in git. This
+  app is self-hosted and often runs with no internet at all, so a webfont CDN was never an
+  option — local stacks are the only honest choice, and they cost nothing to load.
+- **The wordmark is figlet-style ASCII art and therefore needs `--font-mono`.** It used to
+  inherit a *proportional* face, which is why the letterforms never quite lined up.
+- **The foundation layer at the top of `main.css` is written with `:where()`, so it carries
+  ZERO specificity.** The ~3,500 legacy lines below beat it on any property they actually
+  set, and it only fills in what they never mention. That is what made it safe to add a
+  baseline to a stylesheet whose own header calls it an abomination: it cannot take anything
+  away. Keep new baseline rules inside `:where()`.
+- **Overlays animate via `@starting-style` + `transition-behavior: allow-discrete`.** Every
+  dropdown here is toggled by swapping `display`, which is a discrete property — the panel
+  simply existed on one frame and not the one before, and that hard cut was most of why the
+  app read as abrupt despite never being slow. Browsers without support ignore both and get
+  the instant show/hide it always had, so there is no fallback to write.
+- **`prefers-reduced-motion` is handled once, in `theme.css`, by collapsing the duration
+  tokens** rather than by redefining animations. One block therefore covers every transition
+  in both halves — including ones written after it.
+- **Accent is spent, not sprinkled.** Solid purple fills appear on exactly two controls:
+  Search, and the metadata editor's Apply. Apply writes tags to disk and renames a folder
+  with no undo, so it must not look like the Cancel button beside it. Everything purple used
+  to be purple — three accent-coloured boxes sat in the top bar — and when everything is
+  accented the accent marks nothing.
+
 ## Gotchas discovered the hard way
 
 Each of these cost real time. Don't rediscover them.
@@ -266,15 +388,17 @@ Each of these cost real time. Don't rediscover them.
 - **The filter columns collapse on mobile and the class is inert on desktop.** Both the
   vanilla and Preact columns always carry `collapsed`; only the `max-width: 768px` block acts
   on it. Don't "tidy" that by removing the class on desktop — it's what keeps one code path.
-- **The loading indicator animates `content`**, swapping ░▒▓█ on `steps(1)` — see
-  `.loading-blocks` in main.css. A rotating arc would have looked borrowed from another
-  application; these are the same glyphs the filter headings use, so they are known to render
-  in the bundled font. Verified by sampling the computed `::before` content over time, since
-  animating `content` is the part that could silently do nothing.
-- **Decorated headings wrap if you let them.** `░ ▒ ▓ filters ▓ ▒ ░` measured 138px in a
-  190px header that also holds a "clear" button, so a lone `░` wrapped onto a second line and
-  the whole column read as broken. Tightened to `░▒▓ filters ▓▒░` and pinned `nowrap`. Any
-  new decorated heading in a fixed-width column needs the same treatment.
+- ~~The loading indicator animates `content`~~ **Replaced in v0.5.** It swapped ░▒▓█ on
+  `steps(1)`, justified as using "the same glyphs the filter headings use". Those headings
+  are plain words now, so that justification expired with them — and animating `content`
+  replaces a text node twelve times a second, each swap a layout and a paint. It is a
+  gradient sweep over a 2px bar instead. Still deliberately not a rotating arc: a horizontal
+  sweep suits an interface built out of rows and tables.
+- ~~Decorated headings wrap if you let them~~ **Moot in v0.5 — the ░▒▓ chrome is gone.**
+  Worth knowing why it was ever a rule: `░ ▒ ▓ filters ▓ ▒ ░` measured 138px in a 190px
+  header that also holds a "clear" button, so a lone `░` wrapped to a second line and the
+  column read as broken. The general lesson survives the decoration: **anything in a
+  fixed-width column needs measuring at that width**, not eyeballing.
 - **`hidden` did nothing to any badge.** `.log-unread-badge` and `.signals-badge` both set
   `display`, which beats the browser's `[hidden] { display: none }` — so all three badges sat
   on screen showing `0` while their JS believed it had hidden them. Found by checking
@@ -547,15 +671,45 @@ writing nothing, and reading exactly like the edit silently failed. The editor t
 while the tracklist is in flight, and clears the selection outright if the fetch fails. Do not
 collapse those two pieces of state back together.
 
-**Two causes in the interface, both still unfixed:****Two causes in the interface, both still unfixed:**
+**Both interface causes are now FIXED.** Measured in the running app, not estimated:
 
-1. `renderBody` (~`main.js:1803`) eagerly builds the full track list for every release even
-   though it's hidden until clicked — roughly half the entire DOM is invisible.
-2. `checkScrollability()` reads `scrollHeight`/`clientHeight`, forcing synchronous full-document
-   layout. Called from **6** places including every expand toggle.
+| | before | after |
+| --- | --- | --- |
+| expanding a release row | 711 ms freeze | **1.2 ms** |
+| track `<div>`s built while `display:none` | 2,832 | **0** |
+| forced synchronous layouts per expand | 1 (up to 962 ms) | **0** |
+| font bytes fetched on load | 1.6 MB / 30 faces | **0** |
 
-**Neither is a framework problem.** Both are reintroducible in Preact/React verbatim. Fix them
-regardless of stack — it's ~30 lines.
+1. **`renderBody` builds a release's track list on FIRST EXPAND, not up front.** It used to
+   build every track of every release eagerly into a container that is `display:none` until
+   clicked — roughly half of every node in the document, for markup nobody had asked to see.
+   A `tracksBuilt` flag makes it once-only and a DocumentFragment makes it one insertion.
+   **Keep it lazy.** This is the single largest interaction win in the app and it is one
+   `if` away from being undone.
+
+2. **`checkScrollability()` is gone entirely**, along with its resize listener and all six
+   call sites. It read `scrollHeight`/`clientHeight` on two containers — forcing a
+   synchronous full-document layout, on every expand toggle — to toggle a class whose whole
+   effect was **ten pixels of right padding** to clear the scrollbar. `scrollbar-gutter:
+   stable` on `.scrollable` does that in CSS, always, for nothing. It also removed the
+   layout shift the probe caused, where content jumped sideways the instant it grew past the
+   fold. **Do not reintroduce a JS scrollbar probe** — reserve the space in CSS.
+
+**Neither was a framework problem**, and both are reintroducible in Preact verbatim. When the
+releases grid is finally ported, port the laziness with it.
+
+**Three more came out of the design overhaul**, all of them things that cost nothing to keep
+fixed:
+
+- **The 30 bundled OTF faces are no longer referenced.** Only 7 ever loaded and `main-font-semi`
+  (10 faces) was referenced by nothing at all. The interface uses the platform's own UI and
+  monospace stacks now, so the page fetches **no font files whatsoever** — verified in the
+  network log. The `.otf` files are still on disk and in git; only the `@font-face` rules went.
+- **The loading indicator no longer animates the `content` property.** Swapping `content`
+  twelve times a second replaces a text node, and each swap is a layout plus a paint. It is a
+  gradient sweep now, over a 2px-tall element.
+- **The full-viewport fractal-noise overlay is gone.** It was a repeated SVG the compositor
+  repainted on scroll, for an effect set to 5.5% opacity.
 
 ## Frontend migration (in progress)
 
@@ -669,19 +823,22 @@ A green suite here means the logic is sound, not that it works against real infr
    Lidarr README to anyone who visits, while `:latest` has been the slskd line since v0.3.0.
 3. Continue the port in the order in [docs/FRONTEND-MIGRATION.md](docs/FRONTEND-MIGRATION.md):
    candidates panel, filter column, releases grid, top bar.
-4. **A Settings tab.** The shell is built for it — add a `#settings-root` pane, an entry in
-   `TABS` in `ui/src/components/Tabs.tsx`, and a `[data-tab="settings"]` rule. Nothing
-   structural. The natural first contents are the env-only settings (`ORGANIZE_MODE`, paths)
-   and naming templates.
-5. Fix the two performance bugs — as part of the port, not after. The library view already
-   avoids #1 (`{expanded && <Tracks/>}`); the search view still has both.
-6. **A type scale.** The one systemic CSS fault left. Measured: ~15 hand-picked `em` values
-   with no relationship to each other, 10 distinct button heights, 10 distinct paddings.
-   Because every value is `em` relative to the 16px browser base, it can't be fixed by setting
-   a base size on `body` — the headings would all shrink. It needs a scale defined once and
-   applied, which is a visual decision, not a mechanical one. Un-sized `<span>`/`<div>` still
-   land at 16px against neighbours at 14.4px; `#results-summary` and the grid expand column
-   are patched individually for now.
+4. ~~A Settings tab~~ **Done in v0.5.** It landed exactly as this entry predicted — one
+   `TABS` entry, a `#settings-root` pane, one `[data-tab]` rule, no structural change. It
+   also replaced the "download profile" dropdown, which is gone from the top bar.
+   Naming templates are still not in it: they'd be the first *writable* server setting and
+   there is nowhere to persist one yet (see the decision below).
+5. ~~Fix the two performance bugs~~ **Done in v0.5** — see the performance section above.
+   When the releases grid is ported, carry the laziness across with it.
+6. ~~A type scale~~ **Done in v0.5.** The scale, and the spacing/radius/shadow/motion scales
+   beside it, live in `theme.css`. What is NOT done is applying it exhaustively: the
+   foundation and every surface touched in the overhaul are on it, but `main.css` still holds
+   legacy `em` sizes in corners nothing has revisited. Convert them as you touch them —
+   a mechanical sweep of 3,800 lines would be a large untestable diff for little gain.
+7. **The candidates panel is the one surface the overhaul could not verify.** It needs a live
+   slskd, and there has never been one (see "What the tests cannot tell you"). Its chrome was
+   restyled with everything else and it uses the same shared classes, so it should be right —
+   but it has not been *seen*. Look at it the first time slskd is connected.
 
 ### Deliberately not built
 

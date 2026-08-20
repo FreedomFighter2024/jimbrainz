@@ -65,21 +65,29 @@ async function fetchServerConfig() {
 async function refreshServerConfig() {
     console.log("refreshing server config")
     try {
-        const serverConfig = await fetchServerConfig();
-        populateFormatPreference();
-        setLabel('library-path-display', serverConfig.library_path || 'not configured');
-        return serverConfig;
+        return await fetchServerConfig();
     }
 
     catch (error) {
-        // still render the format picker, it's purely client side
-        populateFormatPreference();
+        //? Nothing to render from it here any more. The settings tab owns displaying server
+        //? configuration and fetches its own, richer view from /jimbrainz/settings; this is
+        //? still called because other code wants the returned object.
+        return null;
     }
 }
 
 
 
-/* ===== persisted "default download profile" ===== */
+/* ===== persisted "default download profile" =====
+ *
+ * The UI for these moved to the SETTINGS TAB (ui/src/components/SettingsView.tsx). The
+ * storage key and shape are unchanged and deliberately so: it is the same key the Preact
+ * side writes, so a change made in the settings tab is picked up here on the next read
+ * without either half having to tell the other.
+ *
+ * What is left is the READ path, because the vanilla search flow still needs the format
+ * preference when it builds a download request. There is no writer in this file any more.
+ */
 
 const DOWNLOAD_DEFAULTS_STORAGE_KEY = 'jimbrainz-download-defaults';
 
@@ -94,111 +102,77 @@ function loadDownloadDefaults() {
     }
 }
 
-function saveDownloadDefaults(partial) {
-    Object.assign(downloadDefaults, partial);
+function setLabel(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (el) el.textContent = text || '\u2014';
+}
 
+/*
+ * Client preferences owned by the settings tab, read fresh rather than cached at load. The
+ * settings tab writes them while this page is up, so a cached copy would go stale the moment
+ * somebody changed one - and the point of a default is that the next thing you do uses it.
+ *
+ * The fallback is duplicated from PREFERENCE_FALLBACK in ui/src/state/persisted.ts because
+ * the two files are separate ES modules that cannot import each other. Keep them in step
+ * until the search view is ported and this copy goes away.
+ */
+const PREFERENCE_FALLBACK = {
+    searchLimit: 50,
+    searchStudioOnly: false,
+    candidateMinScore: 0,
+    candidateFreeSlotOnly: false,
+    candidateCompleteOnly: false,
+    logOpenOnStart: false,
+    confirmCancel: true,
+};
+
+function loadPreferences() {
     try {
-        localStorage.setItem(DOWNLOAD_DEFAULTS_STORAGE_KEY, JSON.stringify(downloadDefaults));
+        const saved = JSON.parse(localStorage.getItem('jimbrainz-preferences'));
+        return saved && typeof saved === 'object'
+            ? { ...PREFERENCE_FALLBACK, ...saved }
+            : { ...PREFERENCE_FALLBACK };
     }
 
     catch {
-        // storage unavailable (private browsing, quota, etc) - just skip persisting
+        return { ...PREFERENCE_FALLBACK };
     }
 }
 
 let downloadDefaults = loadDownloadDefaults();
 
-function setLabel(elementId, text) {
-    const el = document.getElementById(elementId);
-    if (el) el.textContent = text || '—';
-}
-
-/* the download profile lives in a top-bar popover now that the right sidebar is gone */
-const profileControl = document.getElementById('profile-control');
-document.getElementById('profile-toggle-button').addEventListener('click', (e) => {
-    e.stopPropagation();
-    profileControl.classList.toggle('open');
-    if (typeof setLogOpen === 'function') setLogOpen(false);
-});
-document.addEventListener('click', (e) => {
-    if (!profileControl.contains(e.target)) profileControl.classList.remove('open');
-});
-
-const autoGrabCheckbox = document.getElementById('auto-download-checkbox');
-if (typeof downloadDefaults.autoGrab === 'boolean') {
-    autoGrabCheckbox.checked = downloadDefaults.autoGrab;
-}
-autoGrabCheckbox.addEventListener('change', () => {
-    saveDownloadDefaults({ autoGrab: autoGrabCheckbox.checked });
-});
-
-
-
-const FORMAT_PREFERENCES = [
-    { id: 'any', name: 'Any format' },
-    { id: 'prefer_lossless', name: 'Prefer lossless' },
-    { id: 'lossless_only', name: 'Lossless only' },
-];
-
-function populateFormatPreference() {
-    console.log("populating format preference")
-    const container = document.getElementById('format-preference-select');
-    container.innerHTML = '';
-
-    const savedId = downloadDefaults.formatPreference;
-    const savedExists = FORMAT_PREFERENCES.some(f => f.id === savedId);
-    const selectedId = savedExists ? savedId : 'prefer_lossless';
-
-    FORMAT_PREFERENCES.forEach(format => {
-        const elementId = `format-preference-${format.id}`;
-        container.innerHTML +=
-        `
-            <input type="radio" id="${elementId}" name="format-preference" value="${format.id}" ${format.id === selectedId ? 'checked' : ''}>
-            <label for="${elementId}">\u2514\u2500\u2572 ${format.name}</label>
-        `;
-    });
-
-    container.addEventListener('change', () => {
-        const checked = document.querySelector('#format-preference-select > input[type="radio"]:checked');
-        if (!checked) return;
-        saveDownloadDefaults({ formatPreference: checked.value });
-    });
-}
-
-
-
+/*
+ * Read from localStorage, not from the DOM.
+ *
+ * It used to read the checked radio out of the top-bar profile dropdown and the auto-grab
+ * checkbox beside it. Both elements are gone - the settings tab owns them now - and reading
+ * storage is what makes this work regardless of which half of the app rendered the control.
+ * Re-read on every call so a change in the settings tab applies to the very next download.
+ */
 function getSettings() {
-    const checkedFormat = document.querySelector('#format-preference-select > input[type="radio"]:checked');
+    const saved = loadDownloadDefaults();
+    const format = saved.formatPreference;
+    const known = ['any', 'prefer_lossless', 'lossless_only'];
+
     return {
-        formatPreference: checkedFormat ? checkedFormat.value : 'prefer_lossless',
-        autoGrab: document.getElementById('auto-download-checkbox').checked,
+        formatPreference: known.includes(format) ? format : 'prefer_lossless',
+        autoGrab: saved.autoGrab === true,
     };
 }
 
 
 
-function checkScrollability() {
-    const resultsContainer = document.getElementById("search-results-scrollable")
-    const logsContainer = document.getElementById("logs-scrollable")
+/*
+  checkScrollability() used to live here. It read scrollHeight/clientHeight on two
+  containers to toggle an .is-scrollable class, and it was called from six places
+  including every single expand toggle - forcing a synchronous full-document layout
+  each time (measured: 23ms typical, 962ms worst case).
 
-    if (resultsContainer.scrollHeight > resultsContainer.clientHeight) {
-        resultsContainer.classList.add('is-scrollable');
-    }
-
-    else {
-        resultsContainer.classList.remove('is-scrollable');
-    }
-
-    if (logsContainer.scrollHeight > logsContainer.clientHeight) {
-        logsContainer.classList.add('is-scrollable');
-    }
-
-    else {
-        logsContainer.classList.remove('is-scrollable');
-    }
-}
-window.addEventListener('resize', checkScrollability);
-checkScrollability();
+  All of that bought TEN PIXELS of right padding to clear the scrollbar. CSS does
+  that natively now with `scrollbar-gutter: stable` on .scrollable, so the whole
+  function, its resize listener and all six call sites are gone. Don't reintroduce
+  a JS scrollbar probe - if you need space for a scrollbar, reserve it in CSS.
+*/
 
 
 
@@ -287,7 +261,6 @@ function setLogOpen(open) {
         unreadLogCount = 0;
         logUnreadBadge.hidden = true;
         logUnreadBadge.textContent = '0';
-        checkScrollability();
     }
 }
 
@@ -301,7 +274,20 @@ function isLogOpenSaved() {
     }
 }
 
-setLogOpen(isLogOpenSaved());
+/*
+ * Two separate ideas, deliberately:
+ *
+ *   jimbrainz-log-open remembers whether you left the log open, so it comes back how you
+ *   left it. That is session continuity.
+ *
+ *   logOpenOnStart (settings tab) is a standing instruction to open it regardless. It is for
+ *   the case where you are still confirming a new install behaves, and you want the log up
+ *   every time until you say otherwise.
+ *
+ * OR rather than override, so the preference can only ever open it, never force it shut on
+ * somebody who just closed it.
+ */
+setLogOpen(isLogOpenSaved() || loadPreferences().logOpenOnStart);
 
 logToggleButton.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -367,6 +353,15 @@ decreaseLimitButton.addEventListener('click', () => {
         limitValueDisplay.innerText = currentLimit.toString();
     }
 });
+
+/*
+ * Seed the limit from the settings tab. The markup ships "50" so the control is never blank
+ * before scripts run; this overwrites it with the saved preference if there is one.
+ */
+(function applySearchDefaults() {
+    const prefs = loadPreferences();
+    if (limitValueDisplay) limitValueDisplay.innerText = String(prefs.searchLimit);
+})();
 
 
 
@@ -470,7 +465,10 @@ const NOISY_SECONDARY_TYPES = ['Live', 'Compilation', 'Interview', 'Demo', 'Remi
 const typeFilterState = {
     //? empty = no type filter at all, which is the previous behaviour and the default
     primary: new Set(),
-    studioOnly: false,
+    //? "studio only" can be made the default in the settings tab. It stays off unless asked
+    //? for, because a filter that is silently on is a search that quietly returns less than
+    //? you asked for - which is the exact failure the visible filter label exists to prevent.
+    studioOnly: loadPreferences().searchStudioOnly,
 };
 
 /**
@@ -665,7 +663,6 @@ function processSearchResults(results) {
         container.appendChild(createReleaseGroupElement(rg, releases));
     });
 
-    checkScrollability();
     loadAllCoverImages(container);
     renderFacets();
     updateResultsSummary();
@@ -844,11 +841,43 @@ const SIGNAL_LABELS = {
 };
 
 let lastCandidateResult = null;
+/*
+ * Seeded from the settings tab's preferences rather than hard-coded.
+ *
+ * Read once here, at module scope, which is the right scope for a DEFAULT: changing a filter
+ * in the panel is meant to be temporary and must not write anything back, while changing it
+ * in settings is meant to stick. Re-reading per search would make the panel's own controls
+ * snap back under the user mid-session.
+ */
+const candidateDefaults = loadPreferences();
+
 const candidateFilterState = {
-    freeSlotOnly: false, completeOnly: false, minScore: 0, formats: new Set(),
+    freeSlotOnly: candidateDefaults.candidateFreeSlotOnly,
+    completeOnly: candidateDefaults.candidateCompleteOnly,
+    minScore: candidateDefaults.candidateMinScore,
+    formats: new Set(),
     // per-signal minimums, e.g. "only show me folders where every track length lines up"
     minSignals: Object.fromEntries(Object.keys(SIGNAL_LABELS).map(k => [k, 0])),
 };
+
+/*
+ * The panel's controls are plain HTML with their own hard-coded initial values, so they have
+ * to be told what the state above says or the two disagree silently - the checkbox reads
+ * unticked while the filter it represents is on, which looks exactly like a broken filter.
+ */
+function applyCandidateFilterDefaults() {
+    const freeSlot = document.getElementById('candidate-free-slot-only');
+    const complete = document.getElementById('candidate-complete-only');
+    const score = document.getElementById('candidate-min-score');
+    const scoreValue = document.getElementById('candidate-min-score-value');
+
+    if (freeSlot) freeSlot.checked = candidateFilterState.freeSlotOnly;
+    if (complete) complete.checked = candidateFilterState.completeOnly;
+    if (score) score.value = String(candidateFilterState.minScore);
+    if (scoreValue) scoreValue.textContent = String(candidateFilterState.minScore);
+}
+
+applyCandidateFilterDefaults();
 
 /**
  * Soulseek reports transfer rates in bytes/sec (protocol "avgspeed"), which slskd passes
@@ -1359,7 +1388,12 @@ const globalFilterState = {
 };
 
 const FACET_STATES = ['neutral', 'include', 'exclude'];
-const FACET_MARKERS = { neutral: '[ ]', include: '[+]', exclude: '[-]' };
+/*
+  The marker is a real box drawn in CSS now (.facet-marker), so these are just the glyph
+  that goes INSIDE it. They used to be "[ ]", "[+]" and "[-]" - ASCII checkboxes drawn with
+  brackets, which is what you do when you have no styling available, and this has styling.
+*/
+const FACET_MARKERS = { neutral: '', include: '✓', exclude: '✕' };
 
 function facetStateOf(facetId, value) {
     const facet = globalFilterState.facets[facetId];
@@ -1828,32 +1862,43 @@ function buildReleasesGrid(releases, releaseGroupId, artistId, releaseGroupConte
                 const tracksContainer = document.createElement('div');
                 tracksContainer.className = 'release-tracks';
 
-                for (const disc of media) {
-                    for (const track of (disc.tracks || [])) {
-                        const { minutes, seconds } = millisecondsToMinutesAndSeconds(track.recording?.length);
-                        const recordingTitle = track.recording?.title || 'N/A';
-                        const recordingId = track.recording?.id;
-                        const lengthStr = minutes === 'N/A' ? 'N/A' : `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                        const trackDiv = document.createElement('div');
-                        trackDiv.className = 'track';
-                        trackDiv.innerHTML = `
-                            <h4 class="text default trackNumber">${track.number}.${track.position}</h4>
-                            <h4 class="text white trackName"><a href="https://musicbrainz.org/recording/${recordingId}" target="_blank" rel="noopener noreferrer">${recordingTitle}</a></h4>
-                            <h4 class="text white-tertiary trackLength">[${lengthStr}]</h4>
-                        `;
-                        tracksContainer.appendChild(trackDiv);
-                    }
-                }
-
                 tracksCell.appendChild(tracksContainer);
                 tracksRow.appendChild(tracksCell);
                 tbody.appendChild(tracksRow);
 
+                // Track rows are built on FIRST EXPAND, not here. Building them eagerly cost
+                // ~711ms per release group and roughly half of every node in the document -
+                // markup that is display:none until someone clicks the row. Keep this lazy:
+                // it is the fix for "Expanding one release group: 711ms" in CLAUDE.md.
+                let tracksBuilt = false;
+                const buildTracks = () => {
+                    if (tracksBuilt) return;
+                    tracksBuilt = true;
+                    const frag = document.createDocumentFragment();
+                    for (const disc of media) {
+                        for (const track of (disc.tracks || [])) {
+                            const { minutes, seconds } = millisecondsToMinutesAndSeconds(track.recording?.length);
+                            const recordingTitle = track.recording?.title || 'N/A';
+                            const recordingId = track.recording?.id;
+                            const lengthStr = minutes === 'N/A' ? 'N/A' : `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                            const trackDiv = document.createElement('div');
+                            trackDiv.className = 'track';
+                            trackDiv.innerHTML = `
+                                <h4 class="text default trackNumber">${track.number}.${track.position}</h4>
+                                <h4 class="text white trackName"><a href="https://musicbrainz.org/recording/${recordingId}" target="_blank" rel="noopener noreferrer">${recordingTitle}</a></h4>
+                                <h4 class="text white-tertiary trackLength">[${lengthStr}]</h4>
+                            `;
+                            frag.appendChild(trackDiv);
+                        }
+                    }
+                    tracksContainer.appendChild(frag);
+                };
+
                 row.addEventListener('click', (e) => {
                     if (e.target.closest('a') || e.target.closest('.releaseAddButton')) return;
+                    buildTracks();
                     tracksContainer.classList.toggle('expanded');
                     expandCell.textContent = tracksContainer.classList.contains('expanded') ? '▽' : '▷';
-                    checkScrollability();
                 });
             }
         }
@@ -1906,6 +1951,16 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     const secondaryTypes = releaseGroup['secondary-types'] || [];
     const typeDisplay = secondaryTypes.length ? `${type}, ${secondaryTypes.join(', ')}` : type;
     const score = releaseGroup.score ?? 'N/A';
+    /*
+      MusicBrainz's own relevance score for the search, 0-100. It is banded rather than shown
+      raw-and-uniform because the number only matters comparatively: the useful question is
+      "is this the record I meant", and a colour answers that faster than reading two digits
+      off fifty rows. 'N/A' falls to the low band, which is honest - an absent score is not a
+      good score.
+    */
+    const scoreBand = typeof score === 'number'
+        ? (score >= 90 ? 'high' : score >= 70 ? 'mid' : 'low')
+        : 'low';
     const releaseGroupId = releaseGroup.id;
     const artistId = getArtistId(releaseGroup['artist-credit']);
     // carried down into the releases grid so each row can build a soulseek search for itself
@@ -1929,7 +1984,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
                 <h3 class="text white-tertiary releaseGrpType">&nbsp;[${typeDisplay}] &nbsp;</h3>
             </div>
             <div class="non-shrinkable">
-                <h3 class="text default matchScore">Match%: ${score}</h3>
+                <h3 class="matchScore ${scoreBand}" title="MusicBrainz relevance score for this search">${score}<span class="matchScore-unit">% match</span></h3>
                 <button class="text default addButton" type="button">Find</button>
             </div>
         </div>
@@ -1986,7 +2041,6 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
                 toggleButton.innerHTML = `<h4 class="text white releaseName">Specific releases ▷ (${releases.length})</h4>`;
             }
 
-            checkScrollability();
         });
     }
 
@@ -2027,7 +2081,6 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
                         toggleButton.innerHTML = `<h4 class="text white releaseName">Specific releases ▷ (${fetchedReleases.length})</h4>`;
                     }
 
-                    checkScrollability();
                 });
 
                 /*

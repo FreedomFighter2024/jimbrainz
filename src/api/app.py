@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from src.routes import search_musicbrainz, interface_logs, monitor_slskd, download, library
+from src.routes import search_musicbrainz, interface_logs, monitor_slskd, download, library, settings
 from src.logger import logger, cleanup_logging
 from src.poller import run_download_poller
 from src.store import JobStore
@@ -94,6 +94,7 @@ def start() -> FastAPI:
     app.include_router(monitor_slskd.router, prefix="/jimbrainz/monitor_slskd", tags=["monitor_slskd"])
     app.include_router(download.router, prefix="/jimbrainz/download", tags=["download"])
     app.include_router(library.router, prefix="/jimbrainz/library", tags=["library"])
+    app.include_router(settings.router, prefix="/jimbrainz/settings", tags=["settings"])
 
     logger.info("mounting static interface files")
     interface_path = Path(__file__).parent.parent.parent / "interface"

@@ -9,10 +9,10 @@
 <link rel="stylesheet" href="styles/main.css">
 </head>
 <body >   <div class="background-layer" ></div>
-<div id="main-container" class="crt">
+<div id="main-container">
     <div id="top-bar">
         <div id="brand">
-<pre class="text glow default">
+<pre class="text default">
      _ _           ____            _
     | (_)_ __ ___ | __ ) _ __ __ _(_)_ __  ____
  _  | | | '_ ` _ \|  _ \| '__/ _` | | '_ \|_  /
@@ -20,7 +20,7 @@
  \___/|_|_| |_| |_|____/|_|  \__,_|_|_| |_|/___|
 </pre>
         </div>
-        <div id="general-connection-status" class="text default glow"></div>
+        <div id="general-connection-status" class="text default"></div>
         <div id="top-bar-actions">
             <!--
               Mount point for the Preact bundle (ui/), which renders the whole downloads
@@ -36,21 +36,6 @@
                     <div class="scrollable" id="logs-scrollable"></div>
                 </div>
             </div>
-            <div id="profile-control">
-                <button type="button" id="profile-toggle-button">download profile ▾</button>
-                <div id="profile-dropdown">
-                    <h4 class="text default profile-section-title">format</h4>
-                    <div id="format-preference-select" class="text default"></div>
-                    <h4 class="text default profile-section-title">library</h4>
-                    <div id="library-path-display" class="text white-secondary profile-value">—</div>
-                    <label id="download-settings-label" for="auto-download-checkbox" class="white">
-                        <div id="auto-download-checkbox-container" class="custom-checkbox">
-                            <input id="auto-download-checkbox" type="checkbox" class="white" name="auto-download-checkbox">
-                            <div id="download-settings-label-text" class="label-text">auto-grab best match</div>
-                        </div>
-                    </label>
-                </div>
-            </div>
         </div>
     </div>
     <!--
@@ -61,7 +46,7 @@
     <div id="main-content">
         <div id="filter-column">
             <div id="filter-column-header">
-                <h3 class="text default">░▒▓ filters ▓▒░</h3>
+                <h3 class="text default">Filters</h3>
                 <button type="button" id="clear-filters-button">clear</button>
                 <!-- mobile only (hidden by CSS on desktop): the filter column is secondary
                      on a phone and would otherwise push results off the bottom -->
@@ -91,9 +76,9 @@
                     </div>
                     <div id="search-limit-container">
                         <h3 class="text default">Limit:</h3>
-                        <button type="button" id="limit-decrease" class="text default limit-button glow">▽</button>
-                        <span id="limit-value" class="text default glow">50</span>
-                        <button type="button" id="limit-increase" class="text default limit-button glow">△</button>
+                        <button type="button" id="limit-decrease" class="text default limit-button" aria-label="decrease limit">−</button>
+                        <span id="limit-value" class="text default">50</span>
+                        <button type="button" id="limit-increase" class="text default limit-button" aria-label="increase limit">+</button>
                     </div>
                     <button type="button" id="search-input-button">Search</button>
                 </div>
@@ -114,10 +99,16 @@
     <!-- the library view, rendered by the Preact bundle. Sibling of #main-content so the
          two panes swap cleanly; see the [data-tab] rules in main.css. -->
     <div id="library-root"></div>
+    <!--
+      The settings tab, also from the Preact bundle. It replaced the "download profile"
+      dropdown that used to sit in #top-bar-actions: that held a format radio, an auto-grab
+      checkbox and a read-only library path, and there was nowhere to put the other dozen
+      settings that matter. Same swap mechanism as the library pane.
+    --><div id="settings-root"></div>
     <div id="candidates-window">
         <div id="candidates-panel">
             <div id="candidates-header">
-                <h3 class="text default">░ ▒ ▓ soulseek candidates ▓ ▒ ░</h3>
+                <h3 class="text default">Soulseek candidates</h3>
                 <button type="button" id="candidates-close-button">✕</button>
             </div>
             <hr>

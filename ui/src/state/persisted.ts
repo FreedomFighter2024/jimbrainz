@@ -14,6 +14,14 @@ export const STORAGE_KEYS = {
   downloadDefaults: 'jimbrainz-download-defaults',
   releaseColumns: 'jimbrainz-release-columns',
   logOpen: 'jimbrainz-log-open',
+  /**
+   * Preferences owned by the settings tab that aren't download defaults.
+   *
+   * A NEW key rather than more fields on jimbrainz-download-defaults, because that blob is
+   * read and rewritten wholesale by the vanilla app too - anything it doesn't know about
+   * would survive only until the next time main.js saved. New key, one writer.
+   */
+  preferences: 'jimbrainz-preferences',
 } as const
 
 /*
@@ -135,4 +143,105 @@ export function readReleaseColumnState(): ReleaseColumnState | null {
 
 export function writeReleaseColumnState(state: ReleaseColumnState): void {
   writeRaw(STORAGE_KEYS.releaseColumns, JSON.stringify(state))
+}
+
+/* ===== jimbrainz-preferences ===== */
+
+/**
+ * Everything the settings tab owns that the server doesn't.
+ *
+ * These are all genuinely wired to behaviour - nothing here is a switch that does nothing.
+ * Where a preference sets the STARTING value of a control (the search limit, the candidate
+ * filters), it is applied when that control initialises and the control stays free to be
+ * changed for one search without changing the default. A default you can't temporarily
+ * override is an annoyance, not a preference.
+ */
+export interface Preferences {
+  /* --- search --- */
+  /** Initial value of the limit stepper. MusicBrainz caps a page at 100. */
+  searchLimit: number
+  /** Start every search with the "studio only" release-type filter applied. */
+  searchStudioOnly: boolean
+
+  /* --- soulseek candidates --- */
+  /** Starting position of the min-score slider in the candidates panel, 0-100. */
+  candidateMinScore: number
+  /** Start with "free slot only" ticked. */
+  candidateFreeSlotOnly: boolean
+  /** Start with "complete albums only" ticked. */
+  candidateCompleteOnly: boolean
+
+  /* --- interface --- */
+  /** Open the log panel on load. Mirrors the existing jimbrainz-log-open key's job. */
+  logOpenOnStart: boolean
+  /** Confirm before cancelling an in-flight download. */
+  confirmCancel: boolean
+}
+
+export const PREFERENCE_FALLBACK: Preferences = {
+  searchLimit: 50,
+  searchStudioOnly: false,
+  candidateMinScore: 0,
+  candidateFreeSlotOnly: false,
+  candidateCompleteOnly: false,
+  logOpenOnStart: false,
+  confirmCancel: true,
+}
+
+/**
+ * Read preferences without a hook, for the vanilla half.
+ *
+ * main.js needs these at module scope to seed the limit stepper and the candidate filters,
+ * and it cannot call a Preact hook. Exported through window.jimbrainz - see bridge.ts.
+ *
+ * Every field is validated rather than trusted: this is JSON from localStorage, which a user
+ * can edit, an older version may have written, and a newer version may not recognise. A
+ * string where searchLimit should be a number would otherwise reach the query builder.
+ */
+export function readPreferences(): Preferences {
+  const stored = readJson<Partial<Preferences>>(STORAGE_KEYS.preferences) ?? {}
+
+  const num = (value: unknown, fallback: number, min: number, max: number): number => {
+    const n = typeof value === 'number' ? value : Number(value)
+    if (!Number.isFinite(n)) return fallback
+    return Math.min(max, Math.max(min, Math.round(n)))
+  }
+
+  const bool = (value: unknown, fallback: boolean): boolean =>
+    typeof value === 'boolean' ? value : fallback
+
+  return {
+    searchLimit: num(stored.searchLimit, PREFERENCE_FALLBACK.searchLimit, 1, 100),
+    searchStudioOnly: bool(stored.searchStudioOnly, PREFERENCE_FALLBACK.searchStudioOnly),
+    candidateMinScore: num(stored.candidateMinScore, PREFERENCE_FALLBACK.candidateMinScore, 0, 100),
+    candidateFreeSlotOnly: bool(
+      stored.candidateFreeSlotOnly,
+      PREFERENCE_FALLBACK.candidateFreeSlotOnly,
+    ),
+    candidateCompleteOnly: bool(
+      stored.candidateCompleteOnly,
+      PREFERENCE_FALLBACK.candidateCompleteOnly,
+    ),
+    logOpenOnStart: bool(stored.logOpenOnStart, PREFERENCE_FALLBACK.logOpenOnStart),
+    confirmCancel: bool(stored.confirmCancel, PREFERENCE_FALLBACK.confirmCancel),
+  }
+}
+
+export function usePreferences(): [Preferences, (partial: Partial<Preferences>) => void, () => void] {
+  const [value, setValue] = useState<Preferences>(readPreferences)
+
+  const update = useCallback((partial: Partial<Preferences>) => {
+    setValue((current) => {
+      const next = { ...current, ...partial }
+      writeRaw(STORAGE_KEYS.preferences, JSON.stringify(next))
+      return next
+    })
+  }, [])
+
+  const reset = useCallback(() => {
+    writeRaw(STORAGE_KEYS.preferences, JSON.stringify(PREFERENCE_FALLBACK))
+    setValue(PREFERENCE_FALLBACK)
+  }, [])
+
+  return [value, update, reset]
 }

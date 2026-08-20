@@ -270,9 +270,21 @@ interface Props {
  * under it are the editions. Listing every edition as a top-level row made three pressings
  * of one record look like three different albums.
  *
- * The nesting is skipped when there's only one edition: expanding goes straight to the
- * tracks rather than through a single pointless "Standard" row, which is the overwhelmingly
- * common case in a real library.
+ * THE EDITIONS ARE ALWAYS VISIBLE. They used to sit behind the album's own disclosure
+ * triangle, which meant the one fact this view exists to show you - that you are holding
+ * three pressings of this record - was hidden behind a click, on a row that looked identical
+ * to every single-edition album until you opened it. Holding multiple versions is the
+ * feature, so it is shown, not disclosed.
+ *
+ * What stays behind a toggle is each edition's TRACK LIST, one per edition. That is the part
+ * worth deferring: track lists are large, most are never looked at, and building them all up
+ * front is the measured 711ms freeze from the search view (see CLAUDE.md). Edition headers
+ * are a handful of elements each and cost nothing to render.
+ *
+ * The nesting is still skipped when there's only one edition: the album row IS the release
+ * row in that case, so its toggle opens the tracks directly rather than going through a
+ * single pointless "Standard" row. That remains the overwhelmingly common case in a real
+ * library, and it keeps the rule simple - one disclosure per release, always for tracks.
  */
 export function LibraryAlbumRow(
   { group, issueTypes, onSearchArtist, onSearchAlbum, onEdit, onDelete, onArtFetched }: Props,
@@ -298,15 +310,26 @@ export function LibraryAlbumRow(
       }`}
     >
       <div class="library-album-head">
-        <button
-          type="button"
-          class="library-expand"
-          aria-expanded={expanded}
-          title={expanded ? 'collapse' : multiple ? 'show editions' : 'show tracks'}
-          onClick={() => setExpanded((open) => !open)}
-        >
-          {expanded ? '▽' : '▷'}
-        </button>
+        {/*
+          Multi-edition albums have nothing left for this control to disclose - their
+          editions are always rendered below, and each one owns its own track toggle. A
+          spacer keeps the artwork and titles on the same left edge as single-edition rows,
+          which sit in the same list; without it every multi-edition album would step 20px
+          out of alignment with its neighbours.
+        */}
+        {multiple ? (
+          <span class="library-expand library-expand-spacer" aria-hidden="true">▷</span>
+        ) : (
+          <button
+            type="button"
+            class="library-expand"
+            aria-expanded={expanded}
+            title={expanded ? 'hide tracks' : 'show tracks'}
+            onClick={() => setExpanded((open) => !open)}
+          >
+            {expanded ? '▽' : '▷'}
+          </button>
+        )}
 
         {group.artFrom && <AlbumArt album={group.artFrom} />}
 
@@ -409,11 +432,11 @@ export function LibraryAlbumRow(
       </div>
 
       {/*
-        Not rendered while collapsed, on purpose. Building every album's track list up front
-        is the measured 711ms freeze in the search view (see CLAUDE.md); this view would hit
-        it harder, since a library has far more albums than one search returns.
+        Always rendered - see the note on this component. Only the HEADER of each edition
+        appears here; its track list stays behind that edition's own toggle, which is what
+        keeps the 711ms eager-track-building problem from reaching this view.
       */}
-      {expanded && multiple && (
+      {multiple && (
         <div class="library-editions">
           {group.editions.map((album) => (
             <EditionRow
@@ -428,6 +451,10 @@ export function LibraryAlbumRow(
         </div>
       )}
 
+      {/*
+        The single-edition case, where the album row is the release row. Still deferred:
+        this IS a track list, and it is the thing that must not be built up front.
+      */}
       {expanded && !multiple && only && <TrackList album={only} />}
     </div>
   )

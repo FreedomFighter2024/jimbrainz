@@ -106,7 +106,7 @@ function addConnectionToInterface(
         console.log(`Connection ${connectionName} already exists, updating status`)
         const existingConnection = document.querySelector(`.connection-item:has(.connection-info):has(.connection-info-name.${connectionName})`);
         existingConnection.querySelector('.connection-info').className = `connection-info ${connectionStatus}`;
-        existingConnection.querySelector('.connection-info-code').textContent = `--${connectionStatusCode}--`;
+        existingConnection.querySelector('.connection-info-code').textContent = connectionStatusCode;
         return;
     }
 
@@ -121,9 +121,14 @@ function addConnectionToInterface(
     connectionItem.innerHTML = `
 
         <div class="connection-info ${connectionStatus}">
-            <h4 class="connection-info-name text white ${connectionName}">⠀</h4>
-            <h4 class="connection-info-line text white">&nbsp;[${connectionName}]&nbsp;</h4>
-            <h4 class="connection-info-code text">--${connectionStatusCode}--</h4>
+            <!--
+              The status dot. This used to be an <h4> holding a BRAILLE BLANK (U+2800) with a
+              background colour, because it needed to be a coloured box and a blank glyph was
+              a way to get one. It is an empty span with a width now. The class is unchanged
+              because the update path above finds an existing row by .connection-info-name.
+            --><span class="connection-info-name ${connectionName}" aria-hidden="true"></span>
+            <h4 class="connection-info-line text white">${connectionName}</h4>
+            <h4 class="connection-info-code text">${connectionStatusCode}</h4>
         </div>
     `
     connectionElement.appendChild(connectionItem);

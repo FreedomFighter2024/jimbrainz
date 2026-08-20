@@ -1,84 +1,338 @@
-@font-face {font-family: 'main-font';src: url('./font/font-Retina.otf') format('opentype');font-weight: 300;font-style: normal;}
-@font-face {font-family: 'main-font';src: url('./font/font-Retina-Oblique.otf') format('opentype');font-weight: 300;font-style: italic;}
-@font-face {font-family: 'main-font';src: url('./font/font-Regular.otf') format('opentype');font-weight: 400;font-style: normal;}
-@font-face {font-family: 'main-font';src: url('./font/font-Oblique.otf') format('opentype');font-weight: 400;font-style: italic;}
-@font-face {font-family: 'main-font';src: url('./font/font-Medium.otf') format('opentype');font-weight: 500;font-style: normal;}
-@font-face {font-family: 'main-font';src: url('./font/font-Medium-Oblique.otf') format('opentype');font-weight: 500;font-style: italic;}
-@font-face {font-family: 'main-font';src: url('./font/font-Bold.otf') format('opentype');font-weight: 700;font-style: normal;}
-@font-face {font-family: 'main-font';src: url('./font/font-Bold-Oblique.otf') format('opentype');font-weight: 700;font-style: italic;}
-@font-face {font-family: 'main-font';src: url('./font/font-ExtraBold.otf') format('opentype');font-weight: 800;font-style: normal;}
-@font-face {font-family: 'main-font';src: url('./font/font-ExtraBold-Oblique.otf') format('opentype');font-weight: 800;font-style: italic;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-Retina-SemiCondensed.otf') format('opentype');font-weight: 300;font-style: normal;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-Retina-SemiCondensed-Oblique.otf') format('opentype');font-weight: 300;font-style: italic;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-SemiCondensed.otf') format('opentype');font-weight: 400;font-style: normal;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-SemiCondensed-Oblique.otf') format('opentype');font-weight: 400;font-style: italic;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-Medium-SemiCondensed.otf') format('opentype');font-weight: 500;font-style: normal;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-Medium-SemiCondensed-Oblique.otf') format('opentype');font-weight: 500;font-style: italic;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-Bold-SemiCondensed.otf') format('opentype');font-weight: 700;font-style: normal;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-Bold-SemiCondensed-Oblique.otf') format('opentype');font-weight: 700;font-style: italic;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-ExtraBold-SemiCondensed.otf') format('opentype');font-weight: 800;font-style: normal;}
-@font-face {font-family: 'main-font-semi';src: url('./font/font-ExtraBold-SemiCondensed-Oblique.otf') format('opentype');font-weight: 800;font-style: italic;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Retina-Condensed.otf') format('opentype');font-weight: 300;font-style: normal;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Retina-Condensed-Oblique.otf') format('opentype');font-weight: 300;font-style: italic;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Condensed.otf') format('opentype');font-weight: 400;font-style: normal;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Condensed-Oblique.otf') format('opentype');font-weight: 400;font-style: italic;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Medium-Condensed.otf') format('opentype');font-weight: 500;font-style: normal;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Medium-Condensed-Oblique.otf') format('opentype');font-weight: 500;font-style: italic;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Bold-Condensed.otf') format('opentype');font-weight: 700;font-style: normal;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-Bold-Condensed-Oblique.otf') format('opentype');font-weight: 700;font-style: italic;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-ExtraBold-Condensed.otf') format('opentype');font-weight: 800;font-style: normal;}
-@font-face {font-family: 'main-font-condensed';src: url('./font/font-ExtraBold-Condensed-Oblique.otf') format('opentype');font-weight: 800;font-style: italic;}
+/*
+  ============================================================================
+  jimbrainz design tokens
+  ============================================================================
+
+  This file is the ONLY place raw values are allowed to live. main.css and the
+  Preact components in ui/ both consume these names, so changing a value here
+  restyles the whole application at once - which is exactly what makes a shared
+  token layer worth having while the frontend is still half vanilla and half
+  Preact. A colour typed literally into a rule is a bug in this codebase.
+
+  NOTE: this file is @import-ed from main.css, so the browser caches it
+  SEPARATELY. Editing the palette and reloading will show the OLD colours until
+  you bust it explicitly (or hard-refresh). This has cost time before.
+
+  ---------------------------------------------------------------------------
+  What changed in the v0.5 overhaul, and why
+  ---------------------------------------------------------------------------
+
+  * The 30 bundled OTF faces are gone. Only 7 of them ever loaded, and the other
+    23 were ~1.2MB of declarations no rule referenced. The whole family has been
+    replaced by the platform's own UI and monospace stacks: nothing to download,
+    nothing to FOUT, and it renders in the face the user's OS already draws every
+    other application in. The .otf files are still on disk and still in git if
+    the scene font is ever wanted back - only the @font-face rules were removed.
+
+  * The wordmark is figlet-style ASCII art, so it now sets --font-mono. It used
+    to inherit a PROPORTIONAL face, which is the wrong tool for art whose whole
+    construction assumes every glyph is the same width.
+
+  * Glow is off by default. The --*-glow-* tokens still exist and are still
+    referenced by ~23 text-shadow rules across main.css; they now resolve to
+    `transparent`, which switches every one of those off without editing them.
+    Set them back to a colour to bring the CRT look back wholesale.
+
+  * Sizes, spaces, radii, shadows and motion are scales now, not opinions. The
+    old sheet had ~15 unrelated `em` font sizes, 10 button heights and 10
+    paddings. Scales are below; use a step, never a fresh number.
+*/
+
+
+/* ==========================================================================
+   1. TYPEFACES
+   ========================================================================== */
 
 :root {
-    --font-family: 'main-font', "segoe ui";
-    --font-family-semi: 'main-font-semi', "segoe ui";
-    --font-family-condensed: 'main-font-condensed', "segoe ui";
-    
+    /*
+      System stacks. `ui-sans-serif`/`system-ui` resolve to SF Pro on macOS and
+      iOS, Segoe UI Variable on Windows 11, Roboto on Android, and the desktop
+      environment's choice on Linux - so the interface is drawn in a face the
+      user's platform has already loaded and rendered a thousand times today.
+
+      This app is self-hosted and frequently runs on a box with no internet
+      access at all, so a webfont CDN is not an option here even if we wanted
+      one. Local stacks are the only honest choice.
+    */
+    --font-family:
+        ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    /*
+      Data face. Track numbers, durations, byte counts, MBIDs, paths, queue
+      positions and transfer rates all read in columns, and columns only line up
+      in a monospace. This is the "monospace data" half of the visual identity.
+    */
+    --font-mono:
+        ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+
+    /*
+      Legacy aliases. main.css references these ~85 times and the Preact
+      components inherit from them; pointing all three at the UI stack restyles
+      every one of those rules at once. Prefer --font-family / --font-mono in
+      anything new - these exist so the overhaul didn't need to be an 85-line
+      find-and-replace with 85 chances to typo.
+    */
+    --font-family-semi: var(--font-family);
+    --font-family-condensed: var(--font-family);
+
     --font-retina: 300;
     --font-regular: 400;
     --font-medium: 500;
-    --font-bold: 700;
-    --font-extrabold: 800;
-    
-    /* backgrounds carry a purple tint rather than neutral grey, so the accents sit in the
-       same family instead of floating on top of grey */
-    --background-color: #0e0b16;
-    --background-color-input: #08060e;
-    --background-color-light: #171227;
-    --background-color-decor: #a874ff33;
-
-    --muted-text: #a48fd155;
-
-    --green-text: #2ee6a8;
-    --green-secondary-text: #1aa87a;
-    --green-glow-text: #2ee6a880;
-
-    --red-text: #ff5f7e;
-    --red-secondary-text: #ff7d97;
-    --red-glow-text: #ff5f7e5e;
-
-    --yellow-text: #ffd45e;
-    --yellow-secondary-text: #d9ab35;
-    --yellow-glow-text: #ffd45e5c;
-
-    --main-text: #c9a3ff;
-    --main-glow-text: #a05cff70;
-
-    --main-secondary-text: #ab80ee;
-    --main-secondary-glow-text: #9a6cf085;
-
-    --main-muted-text: #8a6ec2c4;
-    --main-hover-text: #e4ccff;
-
-    /* "white" here is a warm off-white pulled slightly lavender so it reads as part of the
-       same palette instead of a separate greyscale one */
-    --white-text: #e6dcf5;
-    --white-secondary-text: #a396bd;
-    --white-tertiary-text: #8d7fae;
-    --white-glow-text: rgba(230, 220, 245, 0.55);
-
-    --crt-red: rgba(218, 49, 49);
-    --crt-green: rgb(112, 159, 115);
-    --crt-blue: rgb(40, 129, 206);
+    --font-bold: 600;      /* 700 was heavy-handed at these sizes; 600 reads as emphasis */
+    --font-extrabold: 700;
 }
 
+
+/* ==========================================================================
+   2. TYPE SCALE
+   ========================================================================== */
+
+:root {
+    /*
+      Six steps, in REM rather than EM. The old sheet was all `em`, which meant
+      sizes COMPOUNDED through nesting and the whole thing could not be rescaled
+      from one place - setting a base size on body shrank the headings with it.
+      rem is measured from the root, so a step means the same thing wherever it
+      is used and the entire interface can be scaled by one declaration.
+
+      The values are small because this is a dense data tool, not a landing page:
+      the job is fitting a release grid on screen, not making an impression.
+    */
+    --text-2xs:  0.6875rem;  /* 11px - chips, counts, column heads */
+    --text-xs:   0.75rem;    /* 12px - secondary metadata */
+    --text-sm:   0.8125rem;  /* 13px - table and list body, the workhorse */
+    --text-base: 0.875rem;   /* 14px - primary UI text, buttons, inputs */
+    --text-lg:   1rem;       /* 16px - panel and section headings */
+    --text-xl:   1.25rem;    /* 20px - view titles */
+
+    /* Line heights: tight for tabular rows, relaxed for prose. */
+    --leading-tight:  1.25;
+    --leading-normal: 1.45;
+    --leading-relaxed: 1.6;
+
+    /*
+      Small text in a UI face needs a little tracking to stay legible; large text
+      needs a little negative tracking to stop looking loose. Both are subtle on
+      purpose.
+    */
+    --tracking-wide: 0.04em;
+    --tracking-tight: -0.01em;
+}
+
+
+/* ==========================================================================
+   3. SPACING
+   ========================================================================== */
+
+:root {
+    /*
+      8pt grid with 4px half-steps at the small end, where dense UI actually
+      lives. Ten distinct paddings were measured in the old sheet; these seven
+      steps cover every one of those cases.
+    */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+
+    /* Control heights. There were TEN button heights; there are three. */
+    --control-sm: 24px;
+    --control-md: 30px;
+    --control-lg: 36px;
+}
+
+
+/* ==========================================================================
+   4. RADII
+   ========================================================================== */
+
+:root {
+    --radius-sm:   4px;   /* chips, badges, inline controls */
+    --radius-md:   6px;   /* buttons, inputs, table rows */
+    --radius-lg:   10px;  /* cards, result boxes */
+    --radius-xl:   14px;  /* dropdowns, dialogs, overlay panels */
+    --radius-full: 999px; /* pills and circular badges */
+}
+
+
+/* ==========================================================================
+   5. COLOUR
+   ========================================================================== */
+
+:root {
+    /*
+      The backgrounds keep a faint violet cast so the purple accent reads as
+      part of the same family rather than something floating on neutral grey -
+      that idea from the original palette was right and is kept. What changed is
+      the SATURATION: the old #0e0b16 was purple enough to tint white text, and
+      every surface above it had to fight that. These are near-neutral with just
+      enough violet to feel intentional.
+    */
+    --background-color:       #0d0d12;  /* the page */
+    --background-color-light: #16161d;  /* panels, cards, raised surfaces */
+    --background-color-input: #0a0a0e;  /* inset: inputs, wells, scroll areas */
+    --surface-raised:         #1c1c25;  /* hover state for a surface, menus */
+    --surface-overlay:        #1a1a22;  /* dropdowns and dialogs */
+
+    /*
+      Borders do the work glow used to do. A 1px hairline separates surfaces
+      far more clearly than a blur, costs nothing to composite, and does not
+      smear at small text sizes.
+    */
+    --border-subtle:    #23232e;  /* default hairline between surfaces */
+    --border-default:   #2e2e3c;  /* a control's own edge */
+    --border-strong:    #3d3d4e;  /* hover / emphasis */
+    --border-accent:    #a855f755; /* focused or selected */
+    --background-color-decor: var(--border-subtle);  /* legacy alias */
+
+    /* --- accent ------------------------------------------------------- */
+    --accent:        #a855f7;
+    --accent-hover:  #c084fc;
+    --accent-muted:  #a855f71f;  /* tinted fills: selected rows, active chips */
+    --accent-ring:   #a855f766;  /* focus rings */
+
+    /* --- text --------------------------------------------------------- */
+    --white-text:           #e8e6ef;  /* primary */
+    --white-secondary-text: #8b8798;  /* secondary / body default */
+    --white-tertiary-text:  #6b6878;  /* de-emphasised metadata */
+    --muted-text:           #4e4b5c;  /* disabled, placeholder, dividers */
+
+    /*
+      The "main" family was the purple text colour used for labels, headings and
+      chrome throughout. Keeping the names means every existing rule keeps
+      working; the values are pulled back so purple marks what MATTERS instead
+      of colouring most of the page.
+    */
+    --main-text:           #b794f6;
+    --main-secondary-text: #9a7fd1;
+    --main-muted-text:     #6f6489;
+    --main-hover-text:     #d6bcfa;
+
+    /* --- status ------------------------------------------------------- */
+    /* Modern, slightly desaturated so they sit on a dark surface without
+       vibrating. Green = done/connected, yellow = pending, red = failed. */
+    --green-text:           #34d399;
+    --green-secondary-text: #10b981;
+    --red-text:             #f87171;
+    --red-secondary-text:   #ef4444;
+    --yellow-text:          #fbbf24;
+    --yellow-secondary-text: #d97706;
+
+    /*
+      Glow tokens, retained and neutralised.
+
+      ~23 text-shadow rules and the .glow box-shadow reference these. Resolving
+      them to `transparent` turns the CRT bloom off everywhere WITHOUT touching
+      those rules, so the effect is one edit to restore and one edit to remove.
+      That is the whole reason they weren't deleted.
+    */
+    --main-glow-text:           transparent;
+    --main-secondary-glow-text: transparent;
+    --green-glow-text:          transparent;
+    --red-glow-text:            transparent;
+    --yellow-glow-text:         transparent;
+    --white-glow-text:          transparent;
+
+    /* Kept: used by the connection indicators, not by the removed CRT layer. */
+    --crt-red:   #f87171;
+    --crt-green: #34d399;
+    --crt-blue:  #60a5fa;
+}
+
+
+/* ==========================================================================
+   6. ELEVATION
+   ========================================================================== */
+
+:root {
+    /*
+      Shadows on a near-black background have to be nearly opaque to register at
+      all - a 10%-black shadow over #0d0d12 is invisible. These are heavy on
+      purpose, and each pairs a tight contact shadow with a wider ambient one,
+      which is what makes a panel read as floating rather than as a grey box.
+    */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.45), 0 12px 32px rgba(0, 0, 0, 0.45);
+    --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.5), 0 24px 56px rgba(0, 0, 0, 0.5);
+}
+
+
+/* ==========================================================================
+   7. MOTION
+   ========================================================================== */
+
+:root {
+    /*
+      One motion system, so nothing has to invent a duration. The rule of thumb
+      the durations encode: the closer a change is to the pointer, the faster it
+      must be. A button reacting to hover at 200ms feels laggy; a panel sliding
+      in at 80ms feels like a glitch.
+    */
+    --duration-instant: 80ms;   /* hover/active on something under the cursor */
+    --duration-fast:    140ms;  /* toggles, chips, focus rings */
+    --duration-base:    200ms;  /* dropdowns, expanding rows */
+    --duration-slow:    280ms;  /* overlays and dialogs entering */
+
+    /*
+      Decelerating easing. Motion that starts fast and settles reads as
+      responsive because the first frame moves the furthest - the eye reads the
+      change as already done. `ease-in-out` on UI does the opposite and is why
+      so much of it feels sluggish.
+    */
+    --ease-out:   cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);  /* slight overshoot */
+
+    /* Composite shorthands for the two most common cases. */
+    --transition-colors:
+        color var(--duration-fast) var(--ease-out),
+        background-color var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+    --transition-transform: transform var(--duration-fast) var(--ease-out);
+}
+
+/*
+  Honour the OS setting. Anyone who has asked for less motion gets none of the
+  above - durations collapse to ~0 rather than the animations being redefined,
+  so this single block covers every transition in both halves of the app,
+  including ones written after this comment.
+*/
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-instant: 1ms;
+        --duration-fast:    1ms;
+        --duration-base:    1ms;
+        --duration-slow:    1ms;
+    }
+
+    *, *::before, *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+
+/* ==========================================================================
+   8. Z-INDEX
+   ========================================================================== */
+
+:root {
+    /*
+      Named so a new overlay doesn't get a hopeful 9999. The old sheet had
+      z-indexes scattered from -2 to 1000 with no stated order.
+    */
+    --z-base:     0;
+    --z-sticky:   10;
+    --z-dropdown: 100;
+    --z-overlay:  200;
+    --z-dialog:   300;
+    --z-toast:    400;
+}

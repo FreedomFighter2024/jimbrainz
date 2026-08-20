@@ -328,7 +328,7 @@ export function LibraryView({ active, onNavigate }: Props) {
       <div id="library-filter-column" class={filtersCollapsed ? 'collapsed' : undefined}>
         <div id="library-filter-header">
           {/* tightened spacing so it can't wrap in a 220px column — see main.css */}
-          <h3 class="text default">░▒▓ artists ▓▒░</h3>
+          <h3 class="text default">Artists</h3>
           <button
             type="button"
             id="library-clear-filters"
@@ -366,7 +366,7 @@ export function LibraryView({ active, onNavigate }: Props) {
         */}
         {loaded && (queue.total > 0 || queue.new_imports > 0) && (
           <div id="library-queue-facets">
-            <h3 class="text default">░▒▓ metadata ▓▒░</h3>
+            <h3 class="text default">Metadata</h3>
 
             {/*
               The tab badge counts these, so there has to be a way to see WHICH albums it

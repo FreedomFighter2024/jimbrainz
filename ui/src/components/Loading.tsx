@@ -1,13 +1,19 @@
 /**
- * The loading indicator.
+ * The loading indicator: a sweeping bar.
  *
- * Deliberately not a spinning arc: the interface is built out of ░▒▓ and terminal glyphs, so
- * a smooth rotating circle would read as borrowed from somewhere else. The animation itself
- * lives in main.css (`.loading-blocks` / `.loading-panel`) alongside everything else that
- * owns the look — see the note there about why `content` is animated on steps.
+ * Still deliberately not a spinning arc — a rotating circle would read as borrowed from
+ * somewhere else. A horizontal sweep suits an interface built out of rows and tables.
+ *
+ * It used to be ░▒▓ block glyphs, on the reasoning that they matched the filter headings.
+ * Those headings are plain words now, so that reasoning expired; the animation is also
+ * cheaper, because the old one swapped the `content` property twelve times a second and
+ * each swap was a layout plus a paint.
+ *
+ * The animation lives in main.css (`.loading-blocks` / `.loading-panel`) alongside
+ * everything else that owns the look. The class names are unchanged.
  */
 
-/** Inline, next to a label: "searching ▒█▒". Use when there's already something on screen. */
+/** Inline, next to a label. Use when there's already something on screen. */
 export function Loading({ label }: { label?: string }) {
   return (
     <span class="loading-blocks text default-muted" role="status" aria-live="polite">

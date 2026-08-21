@@ -758,6 +758,37 @@ Each of these cost real time. Don't rediscover them.
   nothing. Covered by tests including a symlink pointing out of the library. **If you add
   another endpoint taking a path, copy this pattern.**
 
+### Capturing screenshots
+
+The README's images are captured from the running app; `interface/_shot.html` and a CDP driver
+do it. Both are temporary and neither is committed — **the harness must not ship**, it is
+same-origin with the app by design.
+
+- **`--screenshot` and `--virtual-time-budget` cannot do this, and two attempts hung proving
+  it.** The flag fires once load settles, which is before any driving has happened. Virtual
+  time is the usual answer and it does not work here either: jimbrainz polls continuously, so
+  the network never goes idle and virtual time never drains. What works is driving over CDP
+  and waiting on a REAL condition — the harness sets `document.title` to `READY` when it has
+  finished, and the driver polls for that.
+- **The harness must assert its own success.** It first set READY unconditionally, so a search
+  that had not returned was captured as a spinner reading "Asking MusicBrainz…" and reported
+  as a pass. It now collects reasons and sets `FAILED: …`, which the driver raises. A picture
+  of a loading state is worse than no picture, and far worse when nothing complains.
+- **Check for spinners by VISIBILITY, not by selector.** The tab panes are `display: none`
+  rather than unmounted, so a search left mid-request is still in the DOM while you look at
+  settings — which failed the settings capture, a view that touches MusicBrainz not at all.
+  `offsetParent !== null` is the test.
+- **MusicBrainz can take 30–60s a request on a bad day**, and this session had one: a ping
+  took 57s. Timeouts of 15–30s gave up on requests that were perfectly in flight. 90s per wait
+  and a pause between views.
+- **slskd is stubbed for the capture** (`scratchpad/slskd_stub.py`, one endpoint). Without it
+  the pill reads UNKNOWN_ERROR, which is true of the laptop and a lie about the product —
+  a reader would conclude the app errors. Nothing else is faked: the MusicBrainz data and the
+  library scan are real, and no screenshot claims a download happened.
+- **No third-party packages were available** — there is no network here to install from, so
+  the driver hand-rolls the WebSocket client CDP needs. Only what is required: masked text
+  frames out, unmasked in, with 64-bit lengths because a screenshot's base64 is megabytes.
+
 ### Tooling and environment
 
 - **The browser preview pane is not a reliable witness.** Two distinct failure modes, both

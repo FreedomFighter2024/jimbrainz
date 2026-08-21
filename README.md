@@ -13,23 +13,19 @@ A one-page interface for finding music on MusicBrainz, pulling it down through s
 
 Pick the release you actually want, and jimbrainz searches Soulseek, ranks what comes back against that release's real tracklist, and shows you why each candidate scored what it did. One click queues it; when it finishes it gets tagged from the MusicBrainz data and filed into your library. Then the **library tab** shows you what you've actually got — including when you're holding three different pressings of the same record — and lets you correct anything that landed wrong.
 
+![jimbrainz — twenty pressings of one album, with the tracklist of the one you picked](assets/images/search.png)
+
+<sub>Twenty pressings of *Dummy* — vinyl, CD, cassette, SHM-CD, across seven countries — with the tracklist of the one you picked. The filter column builds itself from whatever is on screen.</sub>
+
 <!--
-  SCREENSHOT / DEMO GOES HERE.
+  These are captured from the running app against the live MusicBrainz API, at 2x. The one
+  thing that is not real is slskd: nothing was downloading when they were taken, so the
+  connection pill would otherwise read UNKNOWN_ERROR - which is a truthful report of the
+  laptop and a completely misleading one about the app. A stub answered its status check so
+  the pills show the ordinary working state. No screenshot claims a download happened.
 
-  The previous demo GIF was removed rather than left in place: it was recorded before the
-  Lidarr removal, so it showed the LidBrainz wordmark, a log line reading "fetching system
-  info from Lidarr", and the metadata-profile / quality-profile / folder-select panels that
-  this fork does not have. It advertised the wrong application on the README of the fork that
-  exists specifically to not be that application. It was also 21MB, which GitHub serves
-  slowly on every page view.
-
-  To replace it, record the search -> candidates -> download -> library flow and drop it in
-  as assets/videos/demo.gif, then restore an embed here. A still of the search view works
-  just as well and costs a fraction of the bytes:
-
-      ![jimbrainz search view](assets/images/search.png)
-
-  ffmpeg, to get a README-sized GIF out of a screen recording (roughly 2-4MB rather than 21):
+  A moving demo would still be worth having for the search -> candidates -> download flow.
+  ffmpeg, for a README-sized GIF out of a screen recording (2-4MB rather than 21):
 
       ffmpeg -i recording.mov -vf "fps=12,scale=1200:-1:flags=lanczos,split[a][b];\
       [a]palettegen[p];[b][p]paletteuse" -loop 0 assets/videos/demo.gif
@@ -115,6 +111,10 @@ Click an artist's name in any result and you get everything they've released, ol
 This is a <em>browse</em>, not a search, and the distinction is the whole point. MusicBrainz answers a search in relevance order and spends the limit on whatever matched — so sorting fifty search results by year gives you the oldest of the fifty most <em>relevant</em>, which for most artists is bootlegs with the actual albums scattered among them. Asking for everything credited to one artist is the only way "oldest first" means what it says.
 <br><br>
 Live albums and compilations are filtered out by default and one toggle away. Very prolific credits (Various Artists and the like) are capped, and it says so rather than pretending the list is complete.
+<br><br>
+
+![Dance Gavin Dance's eleven studio albums, oldest first](assets/images/discography.png)
+
 </details>
 
 ### Sorting the results
@@ -159,6 +159,10 @@ Those editions are <em>always on screen</em>, not hidden behind a disclosure tri
 Identity comes from tags rather than folder names, so renaming a folder by hand doesn't split an album in two. Folders with no MusicBrainz id at all — i.e. anything that predates jimbrainz — are left as their own albums rather than being guessed at and merged.
 <br><br>
 Cover art comes from a file beside the tracks, then from art embedded in the audio, then from the Cover Art Archive. Clicking an artist or album name takes you to a search for it.
+<br><br>
+
+![The library tab, with an album's three editions listed under it](assets/images/library.png)
+
 </details>
 
 ### Fixing things that landed wrong
@@ -189,6 +193,10 @@ The bottom is the container's configuration, and most of it is <strong>editable<
 It still reports, which is half the point. For every setting: the value this container <em>actually received</em>, <strong>which file supplied it</strong> (your compose <code>environment:</code> block or <code>.env</code> — indistinguishable from the value alone, and always the first question when something's wrong), and what is broken about it if anything.
 <br><br>
 It resolves the paths rather than trusting them, which is the point. <code>SLSKD_DOWNLOAD_PATH</code> pointing at a path that exists on the <em>host</em> but not inside the container is the most common first-run failure by a wide margin, and it is invisible from the value — the string looks perfectly correct. It also answers "why did nothing get filed" once, in a sentence, with every reason listed, rather than leaving you to infer it from four separate rows. The API key is never sent to the browser at all.
+<br><br>
+
+![The settings tab, reporting where each setting came from](assets/images/settings.png)
+
 </details>
 
 ### It works on a phone now
@@ -199,6 +207,10 @@ On a 375px screen the original layout laid out 1131px wide, with the entire top 
 The header is one row rather than four — the wordmark is set as text on a phone instead of drawn as ASCII art, and the connection pills only appear when something is actually wrong. The search form puts its three small controls on one row. Result cards lead with the album title and fit five to a screen instead of one and a half. The columns stack, the filter list collapses behind a toggle, and the dropdowns become bottom sheets.
 
 Measured at 375px: the header went from 161px to 47px, the search form from 450px to 146px, and a result card from 280px to 99px.
+<br><br>
+
+![jimbrainz on a phone](assets/images/mobile.png)
+
 </details>
 
 ## (more importantly) Non-features (and how they dont work)

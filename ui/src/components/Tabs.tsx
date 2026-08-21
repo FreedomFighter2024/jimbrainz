@@ -11,9 +11,9 @@ interface Tab {
  * main.css. No structural change was needed.
  */
 const TABS: readonly Tab[] = [
-  { id: 'search', label: 'search' },
-  { id: 'library', label: 'library' },
-  { id: 'settings', label: 'settings' },
+  { id: 'search', label: 'Search' },
+  { id: 'library', label: 'Library' },
+  { id: 'settings', label: 'Settings' },
 ]
 
 interface Props {

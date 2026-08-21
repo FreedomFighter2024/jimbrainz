@@ -12,7 +12,15 @@
 <div id="main-container">
     <div id="top-bar">
         <div id="brand">
-<pre class="text default">
+<!--
+  Two wordmarks, one shown at a time. The ASCII art is 350x31px, which on a 375px phone is a
+  whole row of the viewport spent on decoration before any content - so a phone gets the name
+  set as text instead, small enough to share the row with the status and the actions. The
+  <pre> is aria-hidden because figlet art read aloud is gibberish; #brand-compact carries the
+  accessible name at every size and is only visually hidden on desktop.
+-->
+<span id="brand-compact">jimbrainz</span>
+<pre class="text default" aria-hidden="true">
      _ _           ____            _
     | (_)_ __ ___ | __ ) _ __ __ _(_)_ __  ____
  _  | | | '_ ` _ \|  _ \| '__/ _` | | '_ \|_  /

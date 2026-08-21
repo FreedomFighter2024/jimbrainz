@@ -265,6 +265,40 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   and `jimbrainz` are lowercase brand names** — never sentence-case them, rephrase so they are
   not sentence-initial instead.
 
+### The mobile layout
+
+Rebuilt in v0.5.3. It fitted on a phone since v0.3.x, which is not the same as being usable
+on one — the whole thing was the desktop layout with `flex-wrap` turned on.
+
+- **The header is one row, and that is where most of the win came from.** It wrapped to four
+  — wordmark, connection pills, actions — for **161px of every screen** on a 375px phone,
+  before the tab bar. It is ~47px now. Three changes did it, and each is worth keeping:
+  the wordmark is set as TEXT on mobile rather than drawn as 350px of ASCII art (`#brand
+  -compact`, which is also the accessible name at every size — figlet art read aloud is
+  gibberish, so the `<pre>` is `aria-hidden`); **the connection pills only render when
+  something is WRONG**; and the actions no longer claim a row.
+- **A status that says "everything is fine" is not worth 71px of a phone.** The `ok` pills
+  are hidden on mobile and the raw error code goes too — truncated to `UNKNOWN_…` it tells
+  you nothing the red dot and the service name have not, and the log is one tap away with an
+  unread badge on it. Which connection is down is the part that fits and the part that
+  matters.
+- **The search form was 450px, on top of that 161px header.** Between them they filled the
+  viewport, so a result was never visible without scrolling past everything you had just
+  typed. Type, Limit and Search share one row now; the two text fields keep full width
+  because they hold the longest values. ~146px.
+- **The release-group card header is a GRID on mobile, not a wrapping flex row.** As flex,
+  the title wants 100% of `.shrinkable`, which makes it claim the whole row and pushes the
+  match chip and Find onto a line of their own — ~55px per card for two small controls.
+  Flex-basis percentages can force it back but only by guessing a ratio that breaks with a
+  longer label. `grid-template-columns: minmax(0, 1fr) auto` states it directly. Cards went
+  from ~280px to ~99px, which is five on screen instead of one and a half.
+- **The title is `order: -1`** because the markup lists artist before album, and the album is
+  the only part you read while scanning. Two lines then clip — a live bootleg's title is a
+  date and a venue and will otherwise take four.
+- **Measured, at 375px:** header 161→47px, search form 450→146px, result cards 280→99px,
+  first result 770→343px from the top. No horizontal overflow anywhere, no control off-screen
+  in any view, and desktop is untouched (checked at 1280px after the cascade move above).
+
 ### The downloads panel's optimistic overlays
 
 - **Cancel and "clear finished" update the screen BEFORE the server answers, not after.**
@@ -452,6 +486,15 @@ Each of these cost real time. Don't rediscover them.
   children, `#main-content` put a fixed 220px filter column beside the content leaving 155px,
   and the dropdown panels were 440–460px wide. **Anything new with a fixed px width needs a
   mobile rule**, and the responsive block at the bottom of `main.css` is where it goes.
+- **THE RESPONSIVE BLOCKS MUST BE THE LAST THING IN `main.css`, and they had stopped being.**
+  About 460 lines of unmediated rules were appended after them across several changes, and
+  any of those with equal specificity beats the mobile rule *at mobile widths*. The failure
+  is horrible to spot because it is completely silent: the mobile rule is present, it reads
+  correctly, and it simply never applies. It cost real time in v0.5.3 — one-field-per-row in
+  the metadata editor was written, confirmed present in the sheet, and did nothing, because
+  `.metadata-fields > .metadata-field { flex: 1 1 45% }` sat a hundred lines below it. Both
+  blocks now live at the end under a comment saying so. **New rules go above that comment.**
+  The 420px block also has to stay after the 768px one, since a 375px screen matches both.
 - **Right-align the library toolbar from the SUMMARY, not from each button.** Every trailing
   control used to carry its own `margin-left: auto` plus a rule cancelling the one before it,
   so adding a third button meant adding another override — and two live auto margins split the

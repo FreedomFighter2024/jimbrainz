@@ -176,7 +176,11 @@ It resolves the paths rather than trusting them, which is the point. <code>SLSKD
 ### It works on a phone now
 <details>
 <summary style="font-style:italic">It really, really did not before</summary>
-On a 375px screen the old layout laid out 1131px wide, with the entire top bar of buttons simply off the right-hand edge. The top bar wraps, the columns stack, the filter list collapses behind a toggle, and the dropdowns become bottom sheets. The pop-up windows are resizable on desktop too.
+On a 375px screen the original layout laid out 1131px wide, with the entire top bar of buttons simply off the right-hand edge. That got fixed first; then it got made usable, which is a different job.
+
+The header is one row rather than four — the wordmark is set as text on a phone instead of drawn as ASCII art, and the connection pills only appear when something is actually wrong. The search form puts its three small controls on one row. Result cards lead with the album title and fit five to a screen instead of one and a half. The columns stack, the filter list collapses behind a toggle, and the dropdowns become bottom sheets.
+
+Measured at 375px: the header went from 161px to 47px, the search form from 450px to 146px, and a result card from 280px to 99px.
 </details>
 
 ## (more importantly) Non-features (and how they dont work)

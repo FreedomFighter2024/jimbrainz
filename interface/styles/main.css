@@ -1599,6 +1599,23 @@ h3.glow.green{
 }
 
 /*
+  The text wordmark. Visible only on a phone (see the responsive block); on desktop it stays
+  in the accessibility tree but out of the layout, so the app has a readable name at every
+  size while the ASCII art does the visual work where there is room for it.
+*/
+#brand-compact {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/*
   The wordmark is figlet-style ASCII art: its construction assumes every glyph occupies
   the same width. It used to inherit a proportional face, which is why the letterforms
   never quite lined up. A real monospace draws it as it was designed.
@@ -4292,312 +4309,7 @@ span.red { color: var(--red-text); }
  *   - the dropdown panels are 440-460px wide, which is simply wider than the screen
  * ==========================================================================*/
 
-@media (max-width: 768px) {
-
-    /* ---- top bar: let it become as many rows as it needs ---- */
-
-    #top-bar {
-        flex-wrap: wrap;
-        gap: 8px 12px;
-        padding: 6px 12px;
-    }
-
-    /* the ASCII logo is the one thing here with a genuinely fixed size (it's art, not text
-       that can reflow), so it keeps its row and everything else wraps around it */
-    #brand {
-        flex: 0 1 auto;
-        max-width: 100%;
-        overflow: hidden;
-    }
-
-    #general-connection-status {
-        width: 100%;
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 4px 12px;
-    }
-
-    /* was margin-left:auto, which only makes sense when it shares a row with the brand */
-    #top-bar-actions {
-        margin-left: 0;
-        width: 100%;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    .filter-collapse-toggle {
-        display: inline-flex;
-        align-items: center;
-        min-height: 32px;
-    }
-
-    /*
-     * Collapsed, the column is just its own header row. Everything else in it is hidden
-     * rather than height-animated, so it costs nothing and can't be half-scrolled into.
-     */
-    #filter-column.collapsed > *:not(#filter-column-header),
-    #library-filter-column.collapsed > *:not(#library-filter-header) {
-        display: none;
-    }
-
-    #filter-column.collapsed,
-    #library-filter-column.collapsed {
-        max-height: none;
-        gap: 0;
-        padding-bottom: 4px;
-    }
-
-    /*
-     * The three dropdown triggers need 373px at desktop padding against 351px of usable
-     * width, so they wrapped onto two rows. Trimming the horizontal padding and the row gap
-     * brings them to ~337px - enough slack that a slightly different font rendering won't
-     * push them apart again, which a 2px margin would have.
-     */
-    #top-bar-actions {
-        gap: 6px;
-    }
-
-    #downloads-toggle-button,
-    #log-toggle-button,
-    #profile-toggle-button {
-        padding: 7px 6px;
-        gap: 5px;
-    }
-
-    #view-tabs {
-        padding: 0 12px;
-    }
-
-    .view-tab {
-        flex: 1 1 auto;
-        text-align: center;
-        padding: 8px 12px;
-    }
-
-    /* ---- stack the filter column above the content instead of beside it ---- */
-
-    #main-content,
-    #library-content {
-        flex-direction: column;
-    }
-
-    #filter-column,
-    #library-filter-column {
-        flex: 0 0 auto;
-        width: 100%;
-        /* capped and independently scrollable: filters are secondary on a phone and should
-           never push the actual results off the bottom of the screen */
-        max-height: 30vh;
-        padding: 8px 12px;
-    }
-
-    #middle-content,
-    #library-middle {
-        padding: 8px 12px;
-        flex: 1 1 auto;
-    }
-
-    /* ---- search bar: one control per row ---- */
-
-    .input-box {
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .search-input-cursor-holder,
-    #release-search-input,
-    #artist-search-input {
-        width: 100%;
-    }
-
-    /* that 10px was the gap between two side-by-side inputs; stacked it reads as the second
-       one being indented under the first. `.input-box` now has a gap instead. */
-    .search-input-cursor-holder:has(#artist-search-input) {
-        margin-left: 0;
-    }
-
-    #search-limit-container {
-        margin-left: 0;
-        justify-content: flex-start;
-    }
-
-    #search-input-button {
-        width: 100%;
-    }
-
-    #results-toolbar,
-    #library-toolbar {
-        flex-wrap: wrap;
-    }
-
-    #library-filter-input {
-        flex: 1 1 100%;
-    }
-
-    #library-toolbar > .columns-toggle-button {
-        margin-left: 0;
-    }
-
-    /*
-     * The toolbar wraps on a phone, so the auto margin that right-aligns the controls on the
-     * desktop would instead strand them one per line. The row is already wrapping; let them
-     * sit together.
-     */
-    #library-summary { margin-right: 0; }
-
-    /*
-     * The album and edition heads are nowrap flex rows whose buttons refuse to shrink, so
-     * anything added to them pushes the controls off the right edge rather than reflowing.
-     * Measured on a 375px screen: a row carrying both an edition label and an issue chip put
-     * its edit button at 399px and its delete at 428px - i.e. unreachable, with no horizontal
-     * scroll to go and find them, which is the same failure the top bar had before v0.3.x.
-     *
-     * Wrapping rather than hiding: everything in these rows is either the album's identity or
-     * a control for it, and there is nothing here it would be safe to drop.
-     */
-    .library-album-head,
-    .library-edition-head {
-        flex-wrap: wrap;
-    }
-
-    /*
-     * The chips are still the least important thing in the row - so a phone gets the worst one
-     * and a count of the rest.
-     */
-    .library-issues { flex-wrap: wrap; }
-    .library-issues > .library-issue-chip:nth-child(n + 2) { display: none; }
-
-    /*
-     * And the album's name outranks all of it. The chips don't shrink, the titles do, so
-     * adding a chip took "Selected Ambient Works 85-92" from 84px to 9px - an ellipsis and one
-     * letter. Claiming most of the first line makes the row wrap under the title instead of
-     * eating it, which is the behaviour the wrap rule above exists to allow.
-     */
-    .library-album-titles {
-        min-width: 60%;
-    }
-
-    /* the queue facets need no collapse rule of their own - they are a direct child of the
-       filter column, so the `.collapsed > *:not(header)` rule above already covers them */
-
-    /* the hints are the point of this panel; give them more room where the panel is taller */
-    #metadata-issues { max-height: 7em; }
-
-    .metadata-queue-nav { flex: 1 1 100%; }
-
-    /* ---- dropdown panels become bottom sheets ---- */
-
-    /*
-     * They were absolutely positioned against their trigger with right:0 and a fixed
-     * 440-460px width, which cannot fit a phone at any position. Anchoring them to the
-     * bottom of the viewport instead sidesteps the whole problem - it needs no knowledge of
-     * where the trigger ended up after the top bar wrapped, which is the part that would
-     * otherwise keep breaking as the header reflows.
-     */
-    #downloads-window,
-    #log-window,
-    #profile-window {
-        position: fixed;
-        top: auto;
-        right: 12px;
-        left: 12px;
-        bottom: 12px;
-        width: auto;
-        height: auto;
-        max-height: 70vh;
-    }
-
-    #log-window {
-        height: 70vh;
-    }
-
-    /* ---- the releases grid is a real table; let it scroll rather than overflow ---- */
-
-    .releases-grid-wrapper {
-        overflow-x: auto;
-    }
-
-    .releases-table {
-        min-width: 560px;
-    }
-
-    /* ---- overlays ---- */
-
-    #candidates-window {
-        width: calc(100vw - 16px);
-        height: min(80vh, 640px);
-    }
-
-    #metadata-window {
-        width: calc(100vw - 12px);
-        height: calc(100vh - 12px);
-    }
-
-    #delete-window { width: calc(100vw - 16px); }
-
-    /* resizing is a mouse gesture and these already fill the screen. The JS in resize.js
-       ignores touch pointers for the same reason; this just clears the corner artwork the
-       old CSS grip left behind. */
-    #metadata-window,
-    #candidates-window,
-    #downloads-window,
-    #log-window {
-        background-image: none;
-    }
-
-    /* side by side needs width this doesn't have; releases above the diff instead */
-    #metadata-body { flex-direction: column; }
-
-    .metadata-releases {
-        flex: 0 0 40%;
-        border-right: 0;
-        border-bottom: 1px solid var(--muted-text);
-        padding-right: 0;
-        padding-bottom: 6px;
-    }
-
-    #metadata-footer { flex-wrap: wrap; }
-    .metadata-summary, .metadata-result { flex: 1 1 100%; }
-    .metadata-tag { flex: 0 0 7em; }
-
-    /* ---- touch targets ---- */
-
-    /*
-     * Facets and edition rows are 20-21px tall on desktop, which is fine for a mouse and
-     * awkward for a fingertip. 32px is still compact but reliably tappable.
-     */
-    .facet-option,
-    .library-facet {
-        min-height: 32px;
-        padding: 4px 0;
-    }
-
-    .library-expand,
-    .download-cancel-button {
-        min-width: 32px;
-        min-height: 32px;
-    }
-}
-
 /* Narrow phones: the ASCII logo stops fitting even at its own size. */
-@media (max-width: 420px) {
-    #brand pre {
-        /* scales the art down rather than hiding it - it is most of the app's identity, and
-           a clipped logo looks broken in a way a small one does not */
-        font-size: 6px;
-    }
-
-    .library-album-meta,
-    .library-edition-head {
-        flex-wrap: wrap;
-    }
-
-    /* the folder path is the least useful thing on a narrow screen and the longest */
-    .library-path {
-        display: none;
-    }
-}
-
 .metadata-checkbox {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -5060,4 +4772,667 @@ span.red { color: var(--red-text); }
     border: 0;
     border-top: 1px solid var(--muted-text);
     margin: 4px 0;
+}
+
+
+/* ============================================================================
+ * ? RESPONSIVE  --  KEEP THIS LAST IN THE FILE
+ *
+ * These blocks MUST stay at the end, and that is not a tidiness preference.
+ *
+ * They were merrily overtaken: about 460 lines of unmediated rules had been appended after
+ * them over several changes, and any of those with equal specificity beat the mobile rule at
+ * mobile widths. The symptom is nasty because it is silent - the mobile rule is right there
+ * in the file, it reads correctly, and it simply never applies. It cost real time here:
+ * one-field-per-row in the metadata editor was written, verified as present, and had no
+ * effect at all, because `.metadata-fields > .metadata-field { flex: 1 1 45% }` sat 100 lines
+ * below it.
+ *
+ * So: new rules go ABOVE this comment. If you find yourself adding one below it, you are
+ * adding it in the wrong place.
+ *
+ * The 420px block must also stay after the 768px one - a 375px screen matches both, and the
+ * narrower one is meant to refine the wider one.
+ * ==========================================================================*/
+
+@media (max-width: 768px) {
+
+    /* ---- top bar: ONE row, not four ----
+     *
+     * This used to wrap into as many rows as it needed, which on a 375px phone meant four:
+     * the ASCII wordmark, then the connection pills full-width, then the action buttons.
+     * 161px of header before the tab bar, on an 812px screen, on every single view - and
+     * the search view then spent another 450px on the form, so a result was essentially
+     * never visible without scrolling.
+     *
+     * Three changes get it to one row of ~44px:
+     *   - the wordmark is set as text rather than drawn as 350px of ASCII art
+     *   - the connection pills only appear when something is WRONG (see below)
+     *   - the actions no longer claim a row of their own
+     */
+
+    #top-bar {
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+    }
+
+    #brand {
+        flex: 0 0 auto;
+        min-width: 0;
+    }
+
+    /* the art goes; the name stays */
+    #brand > pre {
+        display: none;
+    }
+
+    #brand-compact {
+        position: static;
+        width: auto;
+        height: auto;
+        margin: 0;
+        clip-path: none;
+        overflow: visible;
+        font-size: var(--text-base);
+        font-weight: var(--font-bold);
+        letter-spacing: var(--tracking-tight);
+        color: var(--accent);
+    }
+
+    /*
+     * STATUS THAT ONLY SPEAKS WHEN IT HAS SOMETHING TO SAY.
+     *
+     * Two full-width pills reading "musicbrainz connected" and "slskd connected" is 71px of
+     * a phone screen telling you that nothing is wrong - which is the answer 99% of the time
+     * and never the reason anyone looks. A connection that IS broken still gets its pill,
+     * because that is the case worth interrupting for.
+     *
+     * Same principle as the desktop palette: only the failure state is decorated.
+     */
+    #general-connection-status {
+        width: auto;
+        flex: 0 1 auto;
+        flex-direction: row;
+        gap: var(--space-1);
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .connection-item:has(.connection-info.ok) {
+        display: none;
+    }
+
+    /* a pending check is a dot, no words - it resolves in a second either way */
+    .connection-info.pending .connection-info-line,
+    .connection-info.pending .connection-info-code {
+        display: none;
+    }
+
+    .connection-info {
+        padding: var(--space-1) var(--space-2);
+        gap: var(--space-2);
+    }
+
+    /*
+     * Allowed to shrink and ellipsize. It was being sliced mid-word by the Downloads button
+     * next to it, which reads as a rendering bug rather than as a long error code - the
+     * container clipped it but nothing told the text it had less room than it wanted.
+     */
+    .connection-item,
+    .connection-info,
+    .connection-info-line,
+    .connection-info-code {
+        min-width: 0;
+    }
+
+    /*
+     * Every flex ancestor needs this, not just the text. A flex item defaults to
+     * `min-width: auto` and refuses to go below its content, so the pill kept its full
+     * intrinsic width and the container simply clipped it - the text was never told it had
+     * less room than it wanted, which is why it sheared mid-word instead of ellipsizing.
+     */
+    .connection-item {
+        flex: 0 1 auto;
+        overflow: hidden;
+    }
+
+    /*
+     * The raw code is dropped on a phone. Truncated to "UNKNOWN_…" it tells you nothing the
+     * red dot and the service name have not already said, and it cost ~100px of the header
+     * to say it. What matters here is WHICH connection is down; the log, one tap away and
+     * already carrying an unread badge, is where the reason lives.
+     */
+    .connection-info-code {
+        display: none;
+    }
+
+    #top-bar-actions {
+        margin-left: auto;
+        width: auto;
+        flex-wrap: nowrap;
+        gap: var(--space-1);
+        flex-shrink: 0;
+    }
+
+    /*
+     * The filter column's header row was ~60px of heading, a Clear button and a collapse
+     * caret - on the search view that is spent before you have run a search and there is
+     * nothing to filter. Compacted to a single 36px strip, with the heading demoted to a
+     * label: you already know where you are, and the caret says what it does.
+     */
+    #filter-column-header,
+    #library-filter-header {
+        min-height: 36px;
+        gap: var(--space-2);
+    }
+
+    #filter-column-header h3,
+    #library-filter-header h3 {
+        font-size: var(--text-2xs);
+        text-transform: uppercase;
+        letter-spacing: var(--tracking-wide);
+        color: var(--white-tertiary-text);
+    }
+
+    #clear-filters-button,
+    #library-clear-filters-button {
+        min-height: 32px;
+    }
+
+    .filter-collapse-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 40px;
+        min-height: 36px;
+        margin-left: auto;
+    }
+
+    /*
+     * Collapsed, the column is just its own header row. Everything else in it is hidden
+     * rather than height-animated, so it costs nothing and can't be half-scrolled into.
+     */
+    #filter-column.collapsed > *:not(#filter-column-header),
+    #library-filter-column.collapsed > *:not(#library-filter-header) {
+        display: none;
+    }
+
+    #filter-column.collapsed,
+    #library-filter-column.collapsed {
+        max-height: none;
+        gap: 0;
+        padding-bottom: 4px;
+    }
+
+    /*
+     * The two dropdown triggers now share the header row with the wordmark and any failed
+     * connection pill, so they are trimmed to what the labels actually need. (The third,
+     * #profile-toggle-button, is gone - the settings tab replaced it.)
+     */
+    #downloads-toggle-button,
+    #log-toggle-button {
+        padding: 0 var(--space-2);
+        gap: var(--space-1);
+        font-size: var(--text-2xs);
+    }
+
+    #view-tabs {
+        padding: 0 12px;
+    }
+
+    .view-tab {
+        flex: 1 1 auto;
+        text-align: center;
+        padding: 8px 12px;
+    }
+
+    /* ---- stack the filter column above the content instead of beside it ---- */
+
+    #main-content,
+    #library-content {
+        flex-direction: column;
+    }
+
+    #filter-column,
+    #library-filter-column {
+        flex: 0 0 auto;
+        width: 100%;
+        /* capped and independently scrollable: filters are secondary on a phone and should
+           never push the actual results off the bottom of the screen */
+        max-height: 30vh;
+        padding: 8px 12px;
+    }
+
+    #middle-content,
+    #library-middle {
+        padding: 8px 12px;
+        flex: 1 1 auto;
+    }
+
+    /* ---- search bar: two rows of input, one row of controls ----
+     *
+     * One control per row cost ~450px, which on top of the old 161px header meant the form
+     * plus the header filled the entire viewport and no result was ever visible without
+     * scrolling past everything you had just typed.
+     *
+     * The two text fields keep full width - they hold the longest values and are what you
+     * actually type into. Type, Limit and Search share the third row, because they are all
+     * short and none of them needs to be 351px wide to be tappable.
+     */
+
+    .input-box {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2);
+    }
+
+    .search-input-cursor-holder {
+        flex: 1 1 100%;
+    }
+
+    .search-input-cursor-holder,
+    #release-search-input,
+    #artist-search-input {
+        width: 100%;
+    }
+
+    /* that 10px was the gap between two side-by-side inputs; stacked it reads as the second
+       one being indented under the first. `.input-box` now has a gap instead. */
+    .search-input-cursor-holder:has(#artist-search-input) {
+        margin-left: 0;
+    }
+
+    #type-filter-control {
+        flex: 0 0 auto;
+    }
+
+    #search-limit-container {
+        flex: 0 0 auto;
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+
+    /* takes whatever the other two leave, so it stays the biggest target on the row */
+    #search-input-button {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 88px;
+    }
+
+    /*
+     * The type filter's dropdown is anchored right:0 to a control that now sits mid-row, so
+     * on a phone it would open half off-screen. Pinned to the field group instead.
+     */
+    #type-filter-dropdown {
+        right: auto;
+        left: 0;
+        max-width: calc(100vw - 48px);
+    }
+
+    #results-toolbar,
+    #library-toolbar {
+        flex-wrap: wrap;
+    }
+
+    #library-filter-input {
+        flex: 1 1 100%;
+    }
+
+    #library-toolbar > .columns-toggle-button {
+        margin-left: 0;
+    }
+
+    /*
+     * The toolbar wraps on a phone, so the auto margin that right-aligns the controls on the
+     * desktop would instead strand them one per line. The row is already wrapping; let them
+     * sit together.
+     */
+    #library-summary { margin-right: 0; }
+
+    /*
+     * The album and edition heads are nowrap flex rows whose buttons refuse to shrink, so
+     * anything added to them pushes the controls off the right edge rather than reflowing.
+     * Measured on a 375px screen: a row carrying both an edition label and an issue chip put
+     * its edit button at 399px and its delete at 428px - i.e. unreachable, with no horizontal
+     * scroll to go and find them, which is the same failure the top bar had before v0.3.x.
+     *
+     * Wrapping rather than hiding: everything in these rows is either the album's identity or
+     * a control for it, and there is nothing here it would be safe to drop.
+     */
+    .library-album-head,
+    .library-edition-head {
+        flex-wrap: wrap;
+    }
+
+    /*
+     * The chips are still the least important thing in the row - so a phone gets the worst one
+     * and a count of the rest.
+     */
+    .library-issues { flex-wrap: wrap; }
+    .library-issues > .library-issue-chip:nth-child(n + 2) { display: none; }
+
+    /*
+     * And the album's name outranks all of it. The chips don't shrink, the titles do, so
+     * adding a chip took "Selected Ambient Works 85-92" from 84px to 9px - an ellipsis and one
+     * letter. Claiming most of the first line makes the row wrap under the title instead of
+     * eating it, which is the behaviour the wrap rule above exists to allow.
+     */
+    .library-album-titles {
+        min-width: 60%;
+    }
+
+    /* the queue facets need no collapse rule of their own - they are a direct child of the
+       filter column, so the `.collapsed > *:not(header)` rule above already covers them */
+
+    /* the hints are the point of this panel; give them more room where the panel is taller */
+    #metadata-issues { max-height: 7em; }
+
+    .metadata-queue-nav { flex: 1 1 100%; }
+
+    /* ---- dropdown panels become bottom sheets ---- */
+
+    /*
+     * They were absolutely positioned against their trigger with right:0 and a fixed
+     * 440-460px width, which cannot fit a phone at any position. Anchoring them to the
+     * bottom of the viewport instead sidesteps the whole problem - it needs no knowledge of
+     * where the trigger ended up after the top bar wrapped, which is the part that would
+     * otherwise keep breaking as the header reflows.
+     */
+    #downloads-window,
+    #log-window,
+    #profile-window {
+        position: fixed;
+        top: auto;
+        right: 12px;
+        left: 12px;
+        bottom: 12px;
+        width: auto;
+        height: auto;
+        max-height: 70vh;
+    }
+
+    #log-window {
+        height: 70vh;
+    }
+
+    /* ---- release group cards: the title first, everything else after ----
+     *
+     * The header is a nowrap flex row of artist / title / type plus a match chip and a Find
+     * button. On a phone all three of those <h3>s wrapped independently, so one live-album
+     * result ran to 280px - about a third of the screen for a row you are scanning past.
+     *
+     * Stacked deliberately rather than shrunk: the title is the only part you read while
+     * scanning, so it gets its own line at full width and the rest becomes one muted line
+     * underneath it.
+     */
+
+    .results-box {
+        padding: var(--space-2) var(--space-3);
+    }
+
+    /*
+     * The release-group cover is ~195px wide on desktop, which on a 375px phone leaves the
+     * title about 130px and breaks it across four lines. A thumbnail is enough to recognise
+     * a sleeve you already know; the words are what you are reading.
+     */
+    .results-box-image,
+    .results-box-image img {
+        max-width: 72px;
+        width: 72px;
+        height: auto;
+    }
+
+    /*
+     * A two-column GRID, not a wrapping flex row.
+     *
+     * As flex, the title inside .shrinkable wants 100% of its parent, which makes .shrinkable
+     * claim the whole row and pushes the match chip and Find onto a line of their own -
+     * another ~55px per card for two small controls. Flex-basis percentages could force it
+     * back but only by guessing at a ratio that breaks with a longer button label.
+     *
+     * A grid states the intent directly: text in column one, actions in column two, and the
+     * text column takes whatever is left.
+     */
+    .results-box .release-group-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: var(--space-1) var(--space-2);
+    }
+
+    .release-group-header > .shrinkable {
+        grid-column: 1;
+        min-width: 0;
+        gap: 0 var(--space-2);
+        align-items: baseline;
+    }
+
+    /*
+     * The album goes FIRST, which needs `order` because the markup lists artist before title.
+     * Two lines then clip: a live bootleg's title is a date and a venue and will otherwise
+     * take four.
+     */
+    .releaseGrpName {
+        order: -1;
+        flex: 1 1 100%;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* artist and type share the line under it, quietly - the "-" in the markup separates them */
+    .releaseGrpArtist,
+    .releaseGrpType {
+        font-size: var(--text-xs);
+        color: var(--white-tertiary-text);
+    }
+
+    /*
+     * The match chip and Find join the END of that same line rather than claiming one of
+     * their own, which was another ~55px per card for two small controls.
+     */
+    .release-group-header > .non-shrinkable {
+        grid-column: 2;
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .matchScore {
+        height: var(--control-sm);
+        line-height: var(--control-sm);
+    }
+
+    /*
+     * "Fetch releases" / "Specific releases" was a full-width 60px band under every card.
+     * It is the card's own disclosure control, so it reads as part of the card rather than
+     * as a separate row.
+     */
+    .releases-toggle-button {
+        padding: var(--space-1) 0;
+        min-height: 32px;
+    }
+
+    /* ---- library rows ---- */
+
+    /*
+     * These rows wrap to three lines on a phone - title, then chips and controls, then the
+     * stats - and that is the right trade: everything in them is either the album's identity
+     * or a control for it, and there is nothing safe to drop (see the note on the wrap rule
+     * above). So the saving comes from the space BETWEEN the lines rather than from removing
+     * one: tighter padding and gaps take an album row from 129px to about 105px, which is
+     * roughly one extra album per screen.
+     *
+     * The art is already 44px and stays - it is the fastest way to recognise a record you
+     * own, and it is what keeps the left edge of the list straight.
+     */
+    .library-album {
+        padding: var(--space-2);
+    }
+
+    .library-album-head,
+    .library-edition-head {
+        gap: var(--space-1) var(--space-2);
+    }
+
+    .library-album-meta,
+    .library-edition-meta {
+        font-size: var(--text-2xs);
+        line-height: var(--leading-tight);
+    }
+
+    .library-edition-row {
+        padding: var(--space-1) var(--space-2);
+    }
+
+    .library-editions {
+        margin-top: var(--space-1);
+        padding-top: var(--space-1);
+        gap: var(--space-1);
+    }
+
+    /* ---- tap targets ----
+     *
+     * Anything you are meant to hit with a thumb gets a 40px minimum. These are 24-30px on
+     * desktop, which is right for a mouse and not for a finger.
+     */
+    .library-edit-button,
+    .library-delete-button,
+    .releaseAddButton,
+    .columns-toggle-button,
+    #library-review-button,
+    #library-bulk-art-button,
+    .settings-reset-button,
+    .settings-savebar-save,
+    .settings-savebar-discard {
+        min-height: 40px;
+    }
+
+    .facet-option {
+        min-height: 36px;
+    }
+
+    /* ---- the releases grid is a real table; let it scroll rather than overflow ---- */
+
+    .releases-grid-wrapper {
+        overflow-x: auto;
+    }
+
+    .releases-table {
+        min-width: 560px;
+    }
+
+    /* ---- overlays ---- */
+
+    #candidates-window {
+        width: calc(100vw - 16px);
+        height: min(80vh, 640px);
+    }
+
+    #metadata-window {
+        width: calc(100vw - 12px);
+        height: calc(100vh - 12px);
+    }
+
+    #delete-window { width: calc(100vw - 16px); }
+
+    /* resizing is a mouse gesture and these already fill the screen. The JS in resize.js
+       ignores touch pointers for the same reason; this just clears the corner artwork the
+       old CSS grip left behind. */
+    #metadata-window,
+    #candidates-window,
+    #downloads-window,
+    #log-window {
+        background-image: none;
+    }
+
+    /* ---- the metadata editor ----
+     *
+     * Three things overflowed their own dialog on a phone: the MusicBrainz query, the album
+     * field and the edition field. All three for the same reason - a flex item defaults to
+     * `min-width: auto` and refuses to shrink below its content, so a long value pushed the
+     * input past the dialog's edge instead of scrolling inside it.
+     */
+
+    /* the query and its button stack: a fielded query is long and the button is not */
+    #metadata-search {
+        flex-wrap: wrap;
+    }
+
+    #metadata-search > input {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    /*
+     * One field per row. At 45% each on a 363px dialog these were ~155px, which is narrower
+     * than most album titles and every fielded query - so every one of them ellipsized to
+     * uselessness. Full width is the only honest option at this size.
+     */
+    .metadata-fields > .metadata-field {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    /* the year and original-year are genuinely short, so they can still share a row */
+    .metadata-fields > .metadata-field-short {
+        flex: 0 1 auto;
+        min-width: 5.5em;
+    }
+
+    /* side by side needs width this doesn't have; releases above the diff instead */
+    #metadata-body { flex-direction: column; }
+
+    .metadata-releases {
+        flex: 0 0 40%;
+        border-right: 0;
+        border-bottom: 1px solid var(--muted-text);
+        padding-right: 0;
+        padding-bottom: 6px;
+    }
+
+    #metadata-footer { flex-wrap: wrap; }
+    .metadata-summary, .metadata-result { flex: 1 1 100%; }
+    .metadata-tag { flex: 0 0 7em; }
+
+    /* ---- touch targets ---- */
+
+    /*
+     * Facets and edition rows are 20-21px tall on desktop, which is fine for a mouse and
+     * awkward for a fingertip. 32px is still compact but reliably tappable.
+     */
+    .facet-option,
+    .library-facet {
+        min-height: 32px;
+        padding: 4px 0;
+    }
+
+    .library-expand,
+    .download-cancel-button {
+        min-width: 32px;
+        min-height: 32px;
+    }
+}
+
+@media (max-width: 420px) {
+    #brand pre {
+        /* scales the art down rather than hiding it - it is most of the app's identity, and
+           a clipped logo looks broken in a way a small one does not */
+        font-size: 6px;
+    }
+
+    .library-album-meta,
+    .library-edition-head {
+        flex-wrap: wrap;
+    }
+
+    /* the folder path is the least useful thing on a narrow screen and the longest */
+    .library-path {
+        display: none;
+    }
 }

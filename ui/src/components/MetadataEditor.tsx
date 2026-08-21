@@ -669,7 +669,7 @@ export function MetadataEditor(
             onKeyDown={(event) => { if (event.key === 'Enter') void search() }}
           />
           <button type="button" class="columns-toggle-button" disabled={searching} onClick={() => void search()}>
-            {searching ? <Loading label="Searching" /> : 'find releases'}
+            {searching ? <Loading label="Searching" /> : 'Find releases'}
           </button>
         </div>
 
@@ -905,7 +905,7 @@ export function MetadataEditor(
           )}
 
           <button type="button" class="columns-toggle-button" onClick={onClose}>
-            {applied ? 'close' : 'cancel'}
+            {applied ? 'Close' : 'Cancel'}
           </button>
 
           {/*
@@ -915,7 +915,7 @@ export function MetadataEditor(
           */}
           {applied && queue && queue.position < queue.total ? (
             <button type="button" id="metadata-apply-button" onClick={queue.onNext}>
-              next album ▷
+              Next album ▷
             </button>
           ) : (
             <button
@@ -924,7 +924,7 @@ export function MetadataEditor(
               disabled={!plan || plan.empty || planning || applying || loadingRelease}
               onClick={() => void apply()}
             >
-              {applying ? <Loading label="Applying" /> : 'apply'}
+              {applying ? <Loading label="Applying" /> : 'Apply'}
             </button>
           )}
         </div>

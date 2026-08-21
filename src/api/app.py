@@ -12,6 +12,7 @@ from src.store import JobStore
 
 from src.api.musicbrainz_endpoint import MusicBrainzClient
 from src.api.slskd_endpoint import SlskdClient
+from src.config import Config
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,6 +22,12 @@ async def lifespan(app: FastAPI):
 
     app.state.store = JobStore()
     app.state.store.init()
+
+    #? Overrides from the settings tab, laid over the environment BEFORE anything serves a
+    #? request or the poller starts. Order matters: the store has to be open to read them,
+    #? and Config has to be reconciled before the first read of any setting - otherwise the
+    #? first request in gets the environment's value and the one after it gets the override.
+    Config.apply_overrides(app.state.store.stored_settings())
 
     poller_task = asyncio.create_task(
         run_download_poller(app.state.slskd_client, app.state.store)

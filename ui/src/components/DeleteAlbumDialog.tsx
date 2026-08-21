@@ -82,7 +82,7 @@ export function DeleteAlbumDialog({ album, onCancel, onDeleted }: Props) {
 
         <div class="text white-tertiary delete-path">{album.path}</div>
 
-        {loading && <LoadingPanel label="checking what's in there..." />}
+        {loading && <LoadingPanel label="Checking what's in there…" />}
 
         {error && <h5 class="text red delete-problem">{error}</h5>}
 
@@ -115,7 +115,7 @@ export function DeleteAlbumDialog({ album, onCancel, onDeleted }: Props) {
 
         <div id="delete-actions">
           <button type="button" class="columns-toggle-button" disabled={deleting} onClick={onCancel}>
-            cancel
+            Cancel
           </button>
           <button
             type="button"
@@ -123,7 +123,7 @@ export function DeleteAlbumDialog({ album, onCancel, onDeleted }: Props) {
             disabled={loading || deleting || !summary}
             onClick={() => void confirm()}
           >
-            {deleting ? <Loading label="deleting" /> : 'delete permanently'}
+            {deleting ? <Loading label="Deleting" /> : 'delete permanently'}
           </button>
         </div>
       </div>

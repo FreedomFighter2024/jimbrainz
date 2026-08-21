@@ -105,6 +105,88 @@ class Config:
     #? have done rather than acting on a possibly mis-mapped volume.
     ORGANIZE_MODE = _env("ORGANIZE_MODE", "dry_run")
 
+    #? ===== which settings the settings tab may write ==========================
+    #?
+    #? Editability is a property of the setting, not a policy choice, and the split is real:
+    #?
+    #?   DB_PATH is where the overrides themselves are stored. Overriding it from the table
+    #?   it lives in is a chicken-and-egg problem with no sensible answer - point it
+    #?   somewhere new and the row telling you to do so is in the old file.
+    #?
+    #?   PUID/PGID are consumed by docker-entrypoint.sh, which has already dropped privileges
+    #?   before Python starts. Nothing this process writes can change who it is running as.
+    #?
+    #? Everything else is genuinely changeable at runtime, because Config is read as a class
+    #? attribute at the point of use rather than captured at import. The two cached clients
+    #? are the exception, and `invalidates` names the one to rebuild - see the settings route.
+    EDITABLE = {
+        "SLSKD_URL": "slskd",
+        "SLSKD_APIKEY": "slskd",
+        "MUSICBRAINZ_USERAGENT": "musicbrainz",
+        "ORGANIZE_MODE": None,
+        "SLSKD_DOWNLOAD_PATH": None,
+        "SLSKD_INCOMPLETE_PATH": None,
+        "LIBRARY_PATH": "library",
+    }
+
+    #? Why each of these cannot be edited here, in words the settings tab renders verbatim.
+    NOT_EDITABLE = {
+        "DB_PATH": (
+            "This is the database the overrides are stored in, so changing it here would "
+            "move the file out from under the setting that changed it. Set it in your "
+            "compose file."
+        ),
+    }
+
+    #? Keys whose stored value came from the settings tab rather than the environment.
+    #? Populated by apply_overrides(); read by the settings route so the tab can say which
+    #? values are overriding the environment and offer to revert them.
+    OVERRIDDEN: set[str] = set()
+
+    #? What the environment said, before any override was laid over it. Kept so "revert to
+    #? the environment value" can show what it would revert TO.
+    ENV_VALUES: dict[str, str | None] = {}
+
+    @classmethod
+    def apply_overrides(cls, stored: dict[str, str]) -> None:
+        """
+        Lay the stored overrides over the environment's values.
+
+        Called once at startup, after the store opens and before anything serves a request.
+        Unknown and non-editable keys are ignored rather than trusted: this reads rows out of
+        a database that a user can edit by hand, and setting arbitrary Config attributes from
+        it would be a much larger surface than intended.
+        """
+        #? Captured ONCE, and only once. This method mutates the class attributes, so a
+        #? second capture would read back the values a previous call had already overridden -
+        #? and the real environment value would be gone for good. That bug is not theoretical:
+        #? it made "revert to the environment" delete the row and then leave the overridden
+        #? value in place, because there was nothing left to restore.
+        if not cls.ENV_VALUES:
+            cls.ENV_VALUES = {name: getattr(cls, name, None) for name in cls.EDITABLE}
+
+        #? Reset to the environment before laying anything over it, so a key whose override
+        #? has just been deleted actually goes back to what the environment said. Applying
+        #? only the stored keys would leave the previous value stuck.
+        for name, env_value in cls.ENV_VALUES.items():
+            setattr(cls, name, env_value)
+
+        cls.OVERRIDDEN = set()
+
+        for key, value in stored.items():
+            if key not in cls.EDITABLE:
+                logger.warning(f"ignoring stored setting {key!r}, which is not editable")
+                continue
+
+            setattr(cls, key, value)
+            cls.OVERRIDDEN.add(key)
+
+        if cls.OVERRIDDEN:
+            logger.info(
+                f"applied {len(cls.OVERRIDDEN)} setting(s) from the settings tab: "
+                f"{', '.join(sorted(cls.OVERRIDDEN))}"
+            )
+
     @classmethod
     def exists(cls, env_var: str):
         value = os.getenv(env_var)

@@ -1,4 +1,4 @@
-import { get } from './http'
+import { get, put } from './http'
 
 /**
  * The server's configuration, as this process actually received it.
@@ -34,6 +34,22 @@ export interface ServerSetting {
    * into a screenshot somebody pastes into an issue.
    */
   secret: boolean
+  /** Whether this can be changed here at all. False for DB_PATH - see `locked_reason`. */
+  editable: boolean
+  /**
+   * Why it can't be, in words, when it can't. Rendered verbatim: a disabled control with no
+   * explanation reads as a bug rather than as a decision.
+   */
+  locked_reason: string | null
+  /**
+   * True when this value came from the settings tab rather than from the environment. A
+   * stored override WINS over the environment, which is the only honest precedence - the
+   * alternative is edits silently reverting on restart. But an override nobody can see is
+   * invisible state, so the tab says so and offers to revert.
+   */
+  overridden: boolean
+  /** What reverting would restore. Always null for secrets. */
+  env_value: string | null
 }
 
 export interface SettingGroup {
@@ -62,4 +78,23 @@ export interface ServerSettings {
 
 export function getServerSettings(): Promise<ServerSettings> {
   return get<ServerSettings>('/settings')
+}
+
+/** One setting to change. A null value means "revert to the environment's value". */
+export interface SettingUpdate {
+  key: string
+  value: string | null
+}
+
+/**
+ * Save a batch of settings and get the re-read state back.
+ *
+ * A batch, not one call per setting, because the tab saves with one button and a
+ * half-applied save is the worst outcome available - some settings changed, some not, and no
+ * way to tell which by looking. The server validates the whole batch before writing any of
+ * it, and answers with the full settings payload so the tab renders what actually landed
+ * rather than what it hoped for.
+ */
+export function saveServerSettings(updates: SettingUpdate[]): Promise<ServerSettings> {
+  return put<ServerSettings>('/settings', updates)
 }

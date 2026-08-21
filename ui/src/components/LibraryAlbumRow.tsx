@@ -159,8 +159,8 @@ function EditionRow(
         <span class="text default-muted library-edition-meta">{meta.join(' · ')}</span>
 
         {isNewImport(album) && (
-          <span class="library-new-chip" title="jimbrainz just filed this - you haven't looked at it yet">
-            new
+          <span class="library-new-chip" title="Jimbrainz just filed this - you haven't looked at it yet">
+            New
           </span>
         )}
 
@@ -175,16 +175,16 @@ function EditionRow(
         <button
           type="button"
           class="library-edit-button"
-          title="correct this edition's metadata"
+          title="Correct this edition's metadata"
           onClick={() => onEdit(album)}
         >
-          edit
+          Edit
         </button>
 
         <button
           type="button"
           class="library-delete-button"
-          title="delete this edition from disk"
+          title="Delete this edition from disk"
           onClick={() => onDelete(album)}
         >
           ✕
@@ -390,8 +390,8 @@ export function LibraryAlbumRow(
 
         {/* what the tab badge is counting, said where you can actually see it */}
         {group.editions.some(isNewImport) && (
-          <span class="library-new-chip" title="jimbrainz just filed this - you haven't looked at it yet">
-            new
+          <span class="library-new-chip" title="Jimbrainz just filed this - you haven't looked at it yet">
+            New
           </span>
         )}
 
@@ -405,10 +405,10 @@ export function LibraryAlbumRow(
           <button
             type="button"
             class="library-edit-button"
-            title="correct this album's metadata"
+            title="Correct this album's metadata"
             onClick={() => onEdit(only)}
           >
-            edit
+            Edit
           </button>
         )}
 
@@ -416,7 +416,7 @@ export function LibraryAlbumRow(
           <button
             type="button"
             class="library-delete-button"
-            title="delete this album from disk"
+            title="Delete this album from disk"
             onClick={() => onDelete(only)}
           >
             ✕

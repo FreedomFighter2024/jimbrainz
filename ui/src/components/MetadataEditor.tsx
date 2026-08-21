@@ -113,18 +113,18 @@ function ArtComparison(
   return (
     <div class="metadata-art">
       <div class="metadata-art-slot">
-        <span class="text white-tertiary">current</span>
+        <span class="text white-tertiary">Current</span>
         {current && !currentFailed ? (
           <img src={current} alt="" onError={() => setCurrentFailed(true)} />
         ) : (
-          <div class="metadata-art-empty">none</div>
+          <div class="metadata-art-empty">None</div>
         )}
       </div>
 
       <span class="metadata-art-arrow text default-secondary">→</span>
 
       <div class="metadata-art-slot">
-        <span class="text white-tertiary">from this release</span>
+        <span class="text white-tertiary">From this release</span>
         {incoming && !incomingFailed ? (
           <img
             src={incoming}
@@ -603,7 +603,7 @@ export function MetadataEditor(
             </span>
           )}
 
-          <button type="button" id="metadata-close-button" title="close" onClick={onClose}>✕</button>
+          <button type="button" id="metadata-close-button" title="Close" onClick={onClose}>✕</button>
         </div>
 
         {/*
@@ -628,7 +628,7 @@ export function MetadataEditor(
                 <button
                   type="button"
                   class="metadata-issue-undo"
-                  title="put this album back in the queue"
+                  title="Put this album back in the queue"
                   onClick={() => void onUnignore(album)}
                 >
                   un-ignore
@@ -664,12 +664,12 @@ export function MetadataEditor(
             class="releases-filter-input"
             value={query}
             placeholder={`releasegroup:"${fields.album}" AND artist:"${fields.artist}"`}
-            title="leave blank to search on the artist and album fields below"
+            title="Leave blank to search on the artist and album fields below"
             onInput={(event) => setQuery((event.target as HTMLInputElement).value)}
             onKeyDown={(event) => { if (event.key === 'Enter') void search() }}
           />
           <button type="button" class="columns-toggle-button" disabled={searching} onClick={() => void search()}>
-            {searching ? <Loading label="searching" /> : 'find releases'}
+            {searching ? <Loading label="Searching" /> : 'find releases'}
           </button>
         </div>
 
@@ -677,10 +677,10 @@ export function MetadataEditor(
           <div class="scrollable metadata-releases">
             {searchError && <h4 class="text yellow metadata-status">{searchError}</h4>}
 
-            {searching && !releases.length && <LoadingPanel label="asking MusicBrainz..." />}
+            {searching && !releases.length && <LoadingPanel label="Asking MusicBrainz…" />}
 
             {!searchError && searched && !releases.length && !searching && (
-              <h4 class="text default-muted metadata-status">no releases found for that search</h4>
+              <h4 class="text default-muted metadata-status">No releases found for that search</h4>
             )}
 
             {!searched && !searching && (
@@ -708,7 +708,7 @@ export function MetadataEditor(
                   class={`metadata-release${selectedId === release.id ? ' active' : ''}${current ? ' current' : ''}`}
                   onClick={() => chooseRelease(release)}
                 >
-                  {current && <span class="metadata-current-badge" title="this album is tagged with this release">current</span>}
+                  {current && <span class="metadata-current-badge" title="This album is tagged with this release">Current</span>}
                   <span class="metadata-release-title">{release.title}</span>
                   <span class="metadata-release-detail text default-muted">
                     {[release.date?.substring(0, 4), describeRelease(release)].filter(Boolean).join(' · ')}
@@ -724,36 +724,36 @@ export function MetadataEditor(
           <div class="scrollable metadata-plan">
             <div class="metadata-fields">
               <label class="metadata-field">
-                <span class="text default-secondary">artist</span>
+                <span class="text default-secondary">Artist</span>
                 <input class="releases-filter-input" value={fields.artist}
                        onInput={(e) => setField('artist', (e.target as HTMLInputElement).value)} />
               </label>
 
               <label class="metadata-field">
-                <span class="text default-secondary">album</span>
+                <span class="text default-secondary">Album</span>
                 <input class="releases-filter-input" value={fields.album}
                        onInput={(e) => setField('album', (e.target as HTMLInputElement).value)} />
               </label>
 
               <label class="metadata-field metadata-field-short">
-                <span class="text default-secondary">year</span>
+                <span class="text default-secondary">Year</span>
                 <input class="releases-filter-input" value={fields.year}
-                       title="this pressing's year, written to the date tag"
+                       title="This pressing's year, written to the date tag"
                        onInput={(e) => setField('year', (e.target as HTMLInputElement).value)} />
               </label>
 
               {/* the album's year rather than this pressing's - it names the folder, so a
                   2011 remaster of a 1975 record still files under 1975 */}
               <label class="metadata-field metadata-field-short">
-                <span class="text default-secondary">original</span>
+                <span class="text default-secondary">Original</span>
                 <input class="releases-filter-input" value={fields.originalYear}
                        placeholder={fields.year || 'year'}
-                       title="the album's first release year — this is what names the folder"
+                       title="The album's first release year — this is what names the folder"
                        onInput={(e) => setField('originalYear', (e.target as HTMLInputElement).value)} />
               </label>
 
               <label class="metadata-field">
-                <span class="text default-secondary">edition</span>
+                <span class="text default-secondary">Edition</span>
                 <input class="releases-filter-input" value={fields.editionLabel}
                        placeholder={plan?.edition_label || 'worked out from the release'}
                        onInput={(e) => setField('editionLabel', (e.target as HTMLInputElement).value)} />
@@ -786,7 +786,7 @@ export function MetadataEditor(
                   onClick={() => void saveArtOnly()}
                 >
                   {savingArt
-                    ? <Loading label="saving" />
+                    ? <Loading label="Saving" />
                     : album.art ? 'replace cover only' : 'save cover only'}
                 </button>
 
@@ -823,14 +823,14 @@ export function MetadataEditor(
 
                 {plan.moves && (
                   <div class="metadata-move">
-                    <span class="text default-secondary">folder</span>
+                    <span class="text default-secondary">Folder</span>
                     <span class="text white-tertiary">{plan.album_path}</span>
                     <span class="text default">→ {plan.target_path}</span>
                   </div>
                 )}
 
                 {plan.empty && (
-                  <h5 class="text default-muted metadata-status">nothing to change</h5>
+                  <h5 class="text default-muted metadata-status">Nothing to change</h5>
                 )}
 
                 {plan.files.filter((file) => Object.keys(file.changes).length).map((file) => (
@@ -877,7 +877,7 @@ export function MetadataEditor(
               title={`stop asking about: ${issues.map((c) => issueLabel(c, issueTypes)).join(', ')}`}
               onClick={() => void ignore()}
             >
-              {ignoring ? <Loading label="ignoring" /> : "it's fine as it is"}
+              {ignoring ? <Loading label="Ignoring" /> : "It's fine as it is"}
             </button>
           )}
 
@@ -887,7 +887,7 @@ export function MetadataEditor(
                 type="button"
                 class="columns-toggle-button"
                 disabled={queue.position <= 1}
-                title="the previous album in the queue"
+                title="The previous album in the queue"
                 onClick={queue.onPrevious}
               >
                 ◁
@@ -896,7 +896,7 @@ export function MetadataEditor(
                 type="button"
                 class="columns-toggle-button"
                 disabled={queue.position >= queue.total}
-                title="leave this one for now and move on"
+                title="Leave this one for now and move on"
                 onClick={queue.onNext}
               >
                 skip ▷
@@ -924,7 +924,7 @@ export function MetadataEditor(
               disabled={!plan || plan.empty || planning || applying || loadingRelease}
               onClick={() => void apply()}
             >
-              {applying ? <Loading label="applying" /> : 'apply'}
+              {applying ? <Loading label="Applying" /> : 'apply'}
             </button>
           )}
         </div>

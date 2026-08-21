@@ -72,7 +72,7 @@ export function DownloadJobRow({ job, liveSpeed, onCancel }: Props) {
           <button
             type="button"
             class="download-cancel-button"
-            title="cancel this download"
+            title="Cancel this download"
             disabled={cancelling}
             onClick={cancel}
           >

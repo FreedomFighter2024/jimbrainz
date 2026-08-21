@@ -29,7 +29,7 @@
             --><div id="downloads-root"></div>
             <div id="log-control">
                 <button type="button" id="log-toggle-button">
-                    <span>log ▾</span>
+                    <span>Log ▾</span>
                     <span id="log-unread-badge" class="log-unread-badge" hidden>0</span>
                 </button>
                 <div id="log-window">
@@ -47,24 +47,24 @@
         <div id="filter-column">
             <div id="filter-column-header">
                 <h3 class="text default">Filters</h3>
-                <button type="button" id="clear-filters-button">clear</button>
+                <button type="button" id="clear-filters-button">Clear</button>
                 <!-- mobile only (hidden by CSS on desktop): the filter column is secondary
                      on a phone and would otherwise push results off the bottom -->
                 <button type="button" class="filter-collapse-toggle" aria-expanded="false"
-                        aria-controls="filter-column" title="show or hide filters">▾</button>
+                        aria-controls="filter-column" title="Show or hide filters">▾</button>
             </div>
             <hr>
-            <input type="text" id="global-filter-input" class="releases-filter-input" placeholder="Filter releases...">
+            <input type="text" id="global-filter-input" class="releases-filter-input" placeholder="Filter releases…">
             <div class="scrollable" id="facets"></div>
         </div>
         <div id="middle-content">
             <div id="search-section">
                 <div class="input-box">
                     <div id="release-input-cursor-holder" class="text default search-input-cursor-holder">
-                        <input type="text" id="release-search-input" class="text default search-input" name="release-search-input" placeholder="ReleaseTitle">
+                        <input type="text" id="release-search-input" class="text default search-input" name="release-search-input" placeholder="Release title">
                     </div>
                     <div class="text default search-input-cursor-holder" >
-                        <input type="text" id="artist-search-input" class="text default search-input" name="artist-search-input" placeholder="ArtistName">
+                        <input type="text" id="artist-search-input" class="text default search-input" name="artist-search-input" placeholder="Artist name">
                     </div>
                     <!-- Release-group type filter. Narrows the SEARCH rather than the results:
                          MusicBrainz spends the limit on whatever matches, and for a prolific
@@ -85,7 +85,7 @@
             </div>
             <div id="results-section">
                 <div id="results-toolbar">
-                    <span id="results-summary" class="text default-muted">no search yet</span>
+                    <span id="results-summary" class="text default-muted">No search yet</span>
                     <div class="releases-columns-control" id="global-columns-control">
                         <button type="button" id="columns-toggle-button" class="columns-toggle-button">Columns ▾</button>
                         <div class="columns-dropdown" id="columns-dropdown"></div>
@@ -115,21 +115,21 @@
             <div id="candidates-subject">
                 <h4 class="text white" id="candidates-release-label">—</h4>
                 <div id="candidates-query-row">
-                    <span class="text default-muted candidates-query-label">query</span>
+                    <span class="text default-muted candidates-query-label">Query</span>
                     <input type="text" id="candidates-query-input" class="releases-filter-input">
                     <button type="button" id="candidates-requery-button" class="columns-toggle-button">Re-search</button>
                 </div>
                 <div id="candidate-filters">
                     <label class="candidate-filter-toggle">
                         <input type="checkbox" id="candidate-free-slot-only">
-                        <span class="text default-secondary">free slot only</span>
+                        <span class="text default-secondary">Free slot only</span>
                     </label>
                     <label class="candidate-filter-toggle">
                         <input type="checkbox" id="candidate-complete-only">
-                        <span class="text default-secondary">complete albums only</span>
+                        <span class="text default-secondary">Complete albums only</span>
                     </label>
                     <label class="candidate-filter-range">
-                        <span class="text default-secondary">min score</span>
+                        <span class="text default-secondary">Min score</span>
                         <input type="range" id="candidate-min-score" min="0" max="100" step="5" value="0">
                         <span class="text default" id="candidate-min-score-value">0</span>
                     </label>
@@ -146,6 +146,11 @@
         </div>
     </div>
 </div>
+<!--
+  Edge/corner resizing for the floating panels, replacing CSS `resize: both`. Separate
+  module because it is delegated from the document and therefore serves the Preact
+  panels (downloads, metadata) as well as the vanilla ones, with no coupling either way.
+--><script type="module" src="scripts/resize.js"></script>
 <script type="module" src="scripts/main.js"></script>
 <!--
   Built from ui/ by `npm run build`. Unhashed on purpose so this static file can name it,

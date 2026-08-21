@@ -1,37 +1,40 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useMemo, useState } from 'preact/hooks'
 
-import { getServerSettings, type ServerSetting, type ServerSettings } from '../api/settings'
+import {
+  getServerSettings, saveServerSettings,
+  type ServerSetting, type ServerSettings, type SettingUpdate,
+} from '../api/settings'
 import type { FormatPreference } from '../api/types'
 import { LoadingPanel } from './Loading'
-import { useDownloadDefaults, usePreferences } from '../state/persisted'
+import {
+  useDownloadDefaults, usePreferences,
+  type DownloadDefaults, type Preferences,
+} from '../state/persisted'
 
 /**
  * The settings tab.
  *
- * It has TWO halves with genuinely different natures, and the whole design follows from
- * keeping them apart rather than blending them into one list of controls:
+ * EVERYTHING HERE IS A DRAFT UNTIL YOU PRESS SAVE.
  *
- *   PREFERENCES are yours, live in localStorage, and are editable here. They save on change -
- *   there is no save button, because there is nothing to fail and nothing to lose.
+ * The two halves still have different natures - preferences live in this browser, server
+ * settings live in the database and are laid over the environment - but they are edited
+ * through one model and committed by one button. That is deliberate. Two halves with two
+ * different save semantics on one screen is how you end up unsure whether the thing you just
+ * changed took, which was the actual complaint about the previous version: preferences saved
+ * instantly and silently, so there was no evidence anything had happened.
  *
- *   SERVER CONFIGURATION arrives as environment variables read once at container start. It is
- *   READ-ONLY and can only be read-only: nothing this app writes could change a variable the
- *   process already booted with. Rendering it as disabled inputs would imply otherwise, so it
- *   renders as a diagnostic report instead - the value received, which file supplied it, and
- *   what is wrong with it if anything.
- *
- * That second half is the reason this tab is worth having at all. "The path is set, looks
- * right, and points somewhere the container can't see" is the most common first-run failure
- * in this project, and it is invisible from the value alone.
- *
- * This replaces the old "download profile" dropdown in the top bar, which held a format
- * radio, an auto-grab checkbox and a read-only library path.
+ * SERVER SETTINGS ARE EDITABLE, with two exceptions that are shown and explained rather than
+ * hidden - DB_PATH is the database the overrides live in, and PUID/PGID are consumed by the
+ * entrypoint before Python starts. Saving one stores an OVERRIDE that wins over the
+ * environment, applies live without a restart, and is announced as an override with a revert
+ * control. See the long note at the top of src/routes/settings.py for why the override has to
+ * win rather than the environment.
  */
 
 const FORMAT_PREFERENCES: { id: FormatPreference; name: string; note: string }[] = [
-  { id: 'any', name: 'Any format', note: 'rank on everything else; format is not considered' },
+  { id: 'any', name: 'Any format', note: 'Rank on everything else; format is not considered' },
   { id: 'prefer_lossless', name: 'Prefer lossless', note: 'FLAC scores higher, MP3 still eligible' },
-  { id: 'lossless_only', name: 'Lossless only', note: 'lossy candidates are excluded outright' },
+  { id: 'lossless_only', name: 'Lossless only', note: 'Lossy candidates are excluded outright' },
 ]
 
 /* ============================================================================
@@ -44,7 +47,7 @@ function Section({
   children,
 }: {
   title: string
-  note?: string
+  note?: preact.ComponentChildren
   children: preact.ComponentChildren
 }) {
   return (
@@ -56,7 +59,7 @@ function Section({
   )
 }
 
-/** A labelled preference row. The label is the hit target, so the whole row is clickable. */
+/** A labelled row. The label is the hit target, so the whole row is clickable. */
 function Row({
   label,
   hint,
@@ -102,40 +105,106 @@ function Toggle({
 }
 
 /* ============================================================================
- * Server configuration - the diagnostic half
+ * Server configuration - now editable
  * ==========================================================================*/
 
-function SettingRow({ setting }: { setting: ServerSetting }) {
+function SettingRow({
+  setting,
+  modes,
+  draft,
+  onEdit,
+  onRevert,
+}: {
+  setting: ServerSetting
+  modes: Record<string, string>
+  /** The pending edit: a string, `null` for "revert", or undefined when untouched. */
+  draft: string | null | undefined
+  onEdit: (key: string, value: string) => void
+  onRevert: (key: string) => void
+}) {
+  const edited = draft !== undefined
+  const reverting = draft === null
+
   /*
-   * An unset OPTIONAL setting is not a problem and must not look like one. Only `error` gets
-   * a colour - if every row is decorated, the one that actually needs attention doesn't
-   * stand out, which is the entire job of this list.
+   * A secret is never sent to the browser, so there is no current value to put in the field.
+   * The placeholder carries whether one exists, and typing replaces it wholesale - which is
+   * the only thing you can do with a value you cannot read.
    */
-  const shown =
-    setting.value === null
-      ? setting.required
-        ? 'not set'
-        : 'not set (optional)'
-      : setting.secret
-        ? '•••••••• (set)'
-        : setting.value
+  const value = typeof draft === 'string' ? draft : setting.secret ? '' : (setting.value ?? '')
+
+  const control = !setting.editable ? (
+    <span class="settings-env-locked" title={setting.locked_reason ?? undefined}>Locked</span>
+  ) : setting.key === 'ORGANIZE_MODE' ? (
+    <select
+      class="settings-env-input"
+      value={value}
+      onChange={(e) => onEdit(setting.key, (e.currentTarget as HTMLSelectElement).value)}
+    >
+      {Object.keys(modes).map((mode) => (
+        <option key={mode} value={mode}>{mode}</option>
+      ))}
+    </select>
+  ) : (
+    <input
+      class="settings-env-input"
+      type={setting.secret ? 'password' : 'text'}
+      value={value}
+      spellcheck={false}
+      autocomplete="off"
+      placeholder={setting.secret ? (setting.value ? '•••••••• (set)' : 'not set') : 'not set'}
+      onInput={(e) => onEdit(setting.key, (e.currentTarget as HTMLInputElement).value)}
+    />
+  )
 
   return (
-    <div class={`settings-env settings-env-${setting.status}`}>
+    <div
+      class={`settings-env settings-env-${setting.status}${edited ? ' is-edited' : ''}`}
+    >
       <div class="settings-env-head">
         <code class="settings-env-key">{setting.key}</code>
-        {setting.source ? (
-          <span class="settings-env-source" title="which file supplied this value">
-            from {setting.source}
+
+        {setting.overridden && !edited ? (
+          <span class="settings-env-source is-override" title="Set here, overriding the environment">
+            Set here
+          </span>
+        ) : setting.source ? (
+          <span class="settings-env-source" title="Which file supplied this value">
+            From {setting.source}
           </span>
         ) : null}
-        {setting.status === 'error' ? <span class="settings-env-badge">needs attention</span> : null}
+
+        {edited ? <span class="settings-env-badge is-edited">Unsaved</span> : null}
+        {setting.status === 'error' && !edited ? (
+          <span class="settings-env-badge">Needs attention</span>
+        ) : null}
       </div>
 
-      <div class="settings-env-value">{shown}</div>
+      <div class="settings-env-control">{control}</div>
+
       <div class="settings-env-effect">{setting.effect}</div>
 
-      {setting.detail ? <div class="settings-env-detail">{setting.detail}</div> : null}
+      {/*
+        A locked setting explains itself. A disabled control with no reason attached reads as
+        a bug rather than as a decision, and this one has a good reason.
+      */}
+      {!setting.editable && setting.locked_reason ? (
+        <div class="settings-env-effect">{setting.locked_reason}</div>
+      ) : null}
+
+      {/*
+        An override that cannot be undone becomes state nobody remembers setting. Reverting
+        deletes the stored row rather than writing the environment's value back, so the
+        setting follows the compose file again from then on.
+      */}
+      {setting.overridden && !reverting ? (
+        <button type="button" class="settings-env-revert" onClick={() => onRevert(setting.key)}>
+          Revert to the environment{setting.env_value ? ` (${setting.env_value})` : ''}
+        </button>
+      ) : null}
+
+      {reverting ? <div class="settings-env-effect">Will revert to the environment on save.</div> : null}
+
+      {setting.detail && !edited ? <div class="settings-env-detail">{setting.detail}</div> : null}
     </div>
   )
 }
@@ -145,18 +214,47 @@ function SettingRow({ setting }: { setting: ServerSetting }) {
  * ==========================================================================*/
 
 export function SettingsView({ active }: { active: boolean }) {
-  const [defaults, saveDefaults] = useDownloadDefaults()
-  const [prefs, savePrefs, resetPrefs] = usePreferences()
+  const [defaults, commitDefaults] = useDownloadDefaults()
+  const [prefs, commitPrefs, resetPrefs] = usePreferences()
 
   const [server, setServer] = useState<ServerSettings | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   /*
-   * Fetched when the tab is first opened, not on mount. The settings tab is the least-visited
-   * of the three and this walks the filesystem to check every configured path - no reason to
-   * pay for that on every page load. Refetched on each open so a fixed volume mapping shows
-   * as fixed without a reload.
+   * The drafts. Held separately from the committed values rather than as a copy of them, so
+   * "has anything changed" is a comparison rather than a flag somebody has to remember to
+   * set - a dirty flag maintained by hand is a dirty flag that eventually lies.
+   */
+  const [draftPrefs, setDraftPrefs] = useState<Partial<Preferences>>({})
+  const [draftDefaults, setDraftDefaults] = useState<Partial<DownloadDefaults>>({})
+  const [draftEnv, setDraftEnv] = useState<Record<string, string | null>>({})
+
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [justSaved, setJustSaved] = useState(false)
+
+  //? What the controls should show: the draft where there is one, the committed value where
+  //? there isn't. One expression, so a control can never render a value the draft disagrees
+  //? with.
+  const shownPrefs = { ...prefs, ...draftPrefs }
+  const shownDefaults = { ...defaults, ...draftDefaults }
+
+  const dirtyCount =
+    Object.keys(draftPrefs).length + Object.keys(draftDefaults).length + Object.keys(draftEnv).length
+
+  const settingsByKey = useMemo(() => {
+    const map = new Map<string, ServerSetting>()
+    for (const group of server?.groups ?? []) {
+      for (const setting of group.settings) map.set(setting.key, setting)
+    }
+    return map
+  }, [server])
+
+  /*
+   * Fetched when the tab is opened, not on mount: this walks the filesystem to check every
+   * configured path, and the settings tab is the least-visited of the three. Refetched on
+   * each open so a volume you just fixed shows as fixed without a reload.
    */
   useEffect(() => {
     if (!active) return
@@ -166,13 +264,12 @@ export function SettingsView({ active }: { active: boolean }) {
 
     getServerSettings()
       .then((data) => {
-        if (!cancelled) {
-          setServer(data)
-          setError(null)
-        }
+        if (cancelled) return
+        setServer(data)
+        setError(null)
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'could not read settings')
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not read settings')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -183,29 +280,104 @@ export function SettingsView({ active }: { active: boolean }) {
     }
   }, [active])
 
+  /** Record a preference edit, dropping it from the draft if it matches the committed value. */
+  function editPref<K extends keyof Preferences>(key: K, value: Preferences[K]) {
+    setJustSaved(false)
+    setDraftPrefs((current) => {
+      const next = { ...current, [key]: value }
+      //? Setting something back to what it already was is not a change. Without this, undoing
+      //? an edit by hand leaves the save button lit with nothing to save.
+      if (prefs[key] === value) delete next[key]
+      return next
+    })
+  }
+
+  function editDefault<K extends keyof DownloadDefaults>(key: K, value: DownloadDefaults[K]) {
+    setJustSaved(false)
+    setDraftDefaults((current) => {
+      const next = { ...current, [key]: value }
+      if (defaults[key] === value) delete next[key]
+      return next
+    })
+  }
+
+  function editEnv(key: string, value: string) {
+    setJustSaved(false)
+    setDraftEnv((current) => {
+      const next = { ...current, [key]: value }
+      const committed = settingsByKey.get(key)
+      //? Secrets have no readable current value, so any typing is a change by definition.
+      if (committed && !committed.secret && (committed.value ?? '') === value) delete next[key]
+      return next
+    })
+  }
+
+  function revertEnv(key: string) {
+    setJustSaved(false)
+    setDraftEnv((current) => ({ ...current, [key]: null }))
+  }
+
+  function discard() {
+    setDraftPrefs({})
+    setDraftDefaults({})
+    setDraftEnv({})
+    setSaveError(null)
+  }
+
+  async function save() {
+    setSaving(true)
+    setSaveError(null)
+
+    try {
+      /*
+       * Server settings first, and only commit the local half if they succeed. The server can
+       * refuse the batch (an invalid URL, an unwritable database); committing preferences
+       * anyway would leave the screen showing a save that half happened.
+       */
+      const updates: SettingUpdate[] = Object.entries(draftEnv).map(([key, value]) => ({ key, value }))
+
+      if (updates.length) {
+        const fresh = await saveServerSettings(updates)
+        setServer(fresh)
+      }
+
+      if (Object.keys(draftPrefs).length) commitPrefs(draftPrefs)
+      if (Object.keys(draftDefaults).length) commitDefaults(draftDefaults)
+
+      setDraftPrefs({})
+      setDraftDefaults({})
+      setDraftEnv({})
+      setJustSaved(true)
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Could not save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!active) return null
 
   return (
     <div id="settings-content">
       <div class="settings-scroll scrollable">
-        {/* ===== preferences: yours, editable, saved as you change them ===== */}
-
         <Section
           title="Downloads"
           note="Applied when jimbrainz ranks Soulseek candidates and when you grab one."
         >
-          <div class="settings-radio-group" role="radiogroup" aria-label="format preference">
+          <div class="settings-radio-group" role="radiogroup" aria-label="Format preference">
             {FORMAT_PREFERENCES.map((format) => (
               <label
                 key={format.id}
-                class={`settings-radio${defaults.formatPreference === format.id ? ' active' : ''}`}
+                class={`settings-radio${
+                  shownDefaults.formatPreference === format.id ? ' active' : ''
+                }`}
               >
                 <input
                   type="radio"
                   name="format-preference"
                   value={format.id}
-                  checked={defaults.formatPreference === format.id}
-                  onChange={() => saveDefaults({ formatPreference: format.id })}
+                  checked={shownDefaults.formatPreference === format.id}
+                  onChange={() => editDefault('formatPreference', format.id)}
                 />
                 <span class="settings-radio-name">{format.name}</span>
                 <span class="settings-radio-note">{format.note}</span>
@@ -215,26 +387,26 @@ export function SettingsView({ active }: { active: boolean }) {
 
           <Row
             label="Auto-grab best match"
-            hint="queue the top-ranked candidate immediately instead of opening the panel to choose"
+            hint="Queue the top-ranked candidate immediately instead of opening the panel to choose"
             htmlFor="pref-auto-grab"
             control={
               <Toggle
                 id="pref-auto-grab"
-                checked={defaults.autoGrab}
-                onChange={(autoGrab) => saveDefaults({ autoGrab })}
+                checked={shownDefaults.autoGrab}
+                onChange={(v) => editDefault('autoGrab', v)}
               />
             }
           />
 
           <Row
             label="Confirm before cancelling"
-            hint="ask first when cancelling a transfer that's already running"
+            hint="Ask first when cancelling a transfer that's already running"
             htmlFor="pref-confirm-cancel"
             control={
               <Toggle
                 id="pref-confirm-cancel"
-                checked={prefs.confirmCancel}
-                onChange={(confirmCancel) => savePrefs({ confirmCancel })}
+                checked={shownPrefs.confirmCancel}
+                onChange={(v) => editPref('confirmCancel', v)}
               />
             }
           />
@@ -246,7 +418,7 @@ export function SettingsView({ active }: { active: boolean }) {
         >
           <Row
             label="Results per search"
-            hint="how many release groups MusicBrainz is asked for. It caps a page at 100."
+            hint="How many release groups MusicBrainz is asked for. It caps a page at 100."
             htmlFor="pref-search-limit"
             control={
               <div class="settings-number">
@@ -255,9 +427,9 @@ export function SettingsView({ active }: { active: boolean }) {
                   type="number"
                   min={1}
                   max={100}
-                  value={prefs.searchLimit}
-                  onChange={(e) =>
-                    savePrefs({ searchLimit: Number((e.currentTarget as HTMLInputElement).value) })
+                  value={shownPrefs.searchLimit}
+                  onInput={(e) =>
+                    editPref('searchLimit', Number((e.currentTarget as HTMLInputElement).value))
                   }
                 />
               </div>
@@ -266,13 +438,13 @@ export function SettingsView({ active }: { active: boolean }) {
 
           <Row
             label="Studio albums only, by default"
-            hint="excludes live albums, compilations, interviews and demos from the QUERY - which is what makes it worth doing, since MusicBrainz spends the limit on whatever matches"
+            hint="Excludes live albums, compilations, interviews and demos from the query — which is what makes it worth doing, since MusicBrainz spends the limit on whatever matches"
             htmlFor="pref-studio-only"
             control={
               <Toggle
                 id="pref-studio-only"
-                checked={prefs.searchStudioOnly}
-                onChange={(searchStudioOnly) => savePrefs({ searchStudioOnly })}
+                checked={shownPrefs.searchStudioOnly}
+                onChange={(v) => editPref('searchStudioOnly', v)}
               />
             }
           />
@@ -284,7 +456,7 @@ export function SettingsView({ active }: { active: boolean }) {
         >
           <Row
             label="Minimum score"
-            hint="hide candidates ranking below this, 0 shows everything"
+            hint="Hide candidates ranking below this. Zero shows everything."
             htmlFor="pref-min-score"
             control={
               <div class="settings-slider">
@@ -294,40 +466,41 @@ export function SettingsView({ active }: { active: boolean }) {
                   min={0}
                   max={100}
                   step={5}
-                  value={prefs.candidateMinScore}
+                  value={shownPrefs.candidateMinScore}
                   onInput={(e) =>
-                    savePrefs({
-                      candidateMinScore: Number((e.currentTarget as HTMLInputElement).value),
-                    })
+                    editPref(
+                      'candidateMinScore',
+                      Number((e.currentTarget as HTMLInputElement).value),
+                    )
                   }
                 />
-                <span class="settings-slider-value">{prefs.candidateMinScore}</span>
+                <span class="settings-slider-value">{shownPrefs.candidateMinScore}</span>
               </div>
             }
           />
 
           <Row
             label="Free slot only"
-            hint="only peers who can start sending now, rather than queueing you"
+            hint="Only peers who can start sending now, rather than queueing you"
             htmlFor="pref-free-slot"
             control={
               <Toggle
                 id="pref-free-slot"
-                checked={prefs.candidateFreeSlotOnly}
-                onChange={(candidateFreeSlotOnly) => savePrefs({ candidateFreeSlotOnly })}
+                checked={shownPrefs.candidateFreeSlotOnly}
+                onChange={(v) => editPref('candidateFreeSlotOnly', v)}
               />
             }
           />
 
           <Row
             label="Complete albums only"
-            hint="candidates holding at least as many tracks as the release you picked"
+            hint="Candidates holding at least as many tracks as the release you picked"
             htmlFor="pref-complete-only"
             control={
               <Toggle
                 id="pref-complete-only"
-                checked={prefs.candidateCompleteOnly}
-                onChange={(candidateCompleteOnly) => savePrefs({ candidateCompleteOnly })}
+                checked={shownPrefs.candidateCompleteOnly}
+                onChange={(v) => editPref('candidateCompleteOnly', v)}
               />
             }
           />
@@ -336,60 +509,59 @@ export function SettingsView({ active }: { active: boolean }) {
         <Section title="Interface">
           <Row
             label="Open the log on start"
-            hint="useful while you're still confirming a new install is behaving"
+            hint="Useful while you're still confirming a new install is behaving"
             htmlFor="pref-log-open"
             control={
               <Toggle
                 id="pref-log-open"
-                checked={prefs.logOpenOnStart}
-                onChange={(logOpenOnStart) => savePrefs({ logOpenOnStart })}
+                checked={shownPrefs.logOpenOnStart}
+                onChange={(v) => editPref('logOpenOnStart', v)}
               />
             }
           />
 
           <Row
             label="Reset preferences"
-            hint="puts everything above back to its default. Does not touch server configuration."
+            hint="Puts everything above back to its default. Applies immediately, and does not touch server configuration."
             control={
-              <button type="button" class="settings-reset-button" onClick={resetPrefs}>
-                reset
+              <button
+                type="button"
+                class="settings-reset-button"
+                onClick={() => {
+                  resetPrefs()
+                  setDraftPrefs({})
+                }}
+              >
+                Reset
               </button>
             }
           />
         </Section>
 
-        {/* ===== server configuration: read-only, diagnostic ===== */}
+        {/* ===== server configuration ===== */}
 
         <div class="settings-divider">
           <h3 class="settings-section-title">Server configuration</h3>
           <p class="settings-section-note">
-            Set by environment variables, read once when the container started — so these are
-            read-only here, and editing them means editing your compose file or{' '}
-            <code>.env</code> and restarting. What this shows is the value the container{' '}
-            <em>actually received</em>, and which of those two files supplied it.
+            These come from your compose file or <code>.env</code>. Changing one here stores an
+            override that wins over the environment and applies without a restart — the row
+            says so, and can be reverted. Two of them can't be changed here at all, and say
+            why.
           </p>
         </div>
 
-        {loading && !server ? <LoadingPanel label="reading configuration" /> : null}
+        {loading && !server ? <LoadingPanel label="Reading configuration" /> : null}
 
         {error ? (
           <div class="settings-error">
-            <h4 class="text red">could not read the server configuration</h4>
+            <h4 class="text red">Could not read the server configuration</h4>
             <p class="text default-muted">{error}</p>
           </div>
         ) : null}
 
         {server ? (
           <>
-            {/*
-              The organizing verdict goes FIRST and is stated as a single sentence, because
-              "why did nothing get filed" has four possible causes spread across two groups
-              below. Answering it once beats making someone infer it from four rows.
-            */}
-            <div
-              class={`settings-verdict${server.organizing.enabled ? ' ok' : ''}`}
-              role="status"
-            >
+            <div class={`settings-verdict${server.organizing.enabled ? ' ok' : ''}`} role="status">
               <span class="settings-verdict-title">
                 {server.organizing.enabled
                   ? 'Organizing is active — finished downloads will be tagged and filed.'
@@ -409,7 +581,14 @@ export function SettingsView({ active }: { active: boolean }) {
               <Section key={group.id} title={group.label} note={group.note}>
                 <div class="settings-env-list">
                   {group.settings.map((setting) => (
-                    <SettingRow key={setting.key} setting={setting} />
+                    <SettingRow
+                      key={setting.key}
+                      setting={setting}
+                      modes={server.organize_modes}
+                      draft={draftEnv[setting.key]}
+                      onEdit={editEnv}
+                      onRevert={revertEnv}
+                    />
                   ))}
                 </div>
               </Section>
@@ -429,17 +608,51 @@ export function SettingsView({ active }: { active: boolean }) {
               </div>
             </Section>
 
-            {/*
-              The running version. Worth a permanent spot: "what version are you running" is
-              the first question on any bug report, and the honest answer was previously
-              "whichever image tag you happened to pull", which nobody remembers.
-            */}
             <div class="settings-version">
               jimbrainz <code>v{server.version}</code>
             </div>
           </>
         ) : null}
       </div>
+
+      {/*
+        The save bar, docked outside the scroller so it cannot scroll away from you while
+        there are unsaved changes. It appears only when there is something to save: a save
+        button that is permanently present and permanently disabled is furniture, and gives no
+        signal at the moment it actually matters.
+      */}
+      {(dirtyCount > 0 || saveError || justSaved) && (
+        <div class={`settings-savebar${saveError ? ' has-error' : ''}`} role="status">
+          <span class="settings-savebar-text">
+            {saveError
+              ? saveError
+              : justSaved
+                ? 'Saved.'
+                : `${dirtyCount} unsaved change${dirtyCount === 1 ? '' : 's'}`}
+          </span>
+
+          {dirtyCount > 0 && (
+            <>
+              <button
+                type="button"
+                class="settings-savebar-discard"
+                onClick={discard}
+                disabled={saving}
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                class="settings-savebar-save"
+                onClick={save}
+                disabled={saving}
+              >
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

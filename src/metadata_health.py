@@ -45,54 +45,54 @@ BLOCKING, WRONG, COSMETIC = 3, 2, 1
 #? stays server-side and travels with the data.
 ISSUE_TYPES: dict[str, dict] = {
     "no_release": {
-        "label": "no release id",
+        "label": "No release id",
         "hint": "these files were never matched to a MusicBrainz release, so nothing else "
                 "about them can be checked against anything. Pick a release in the editor.",
         "severity": BLOCKING,
     },
     "no_artist_tag": {
-        "label": "no artist tag",
+        "label": "No artist tag",
         "hint": "not one file names an artist, so the name shown here came from the folder. "
                 "Renaming the folder would rename the album.",
         "severity": BLOCKING,
     },
     "mixed_tags": {
-        "label": "mixed tags",
+        "label": "Mixed tags",
         "hint": "the files in this folder disagree about which album they belong to, which "
                 "usually means two albums are sharing a folder.",
         "severity": BLOCKING,
     },
     "misfiled": {
-        "label": "folder off-convention",
+        "label": "Folder off-convention",
         "hint": "the folder is not named the way these tags say it should be, so its name "
                 "and its contents tell different stories. Applying a release re-files it.",
         "severity": WRONG,
     },
     "no_original_year": {
-        "label": "no original year",
+        "label": "No original year",
         "hint": "no originaldate tag, so there is nothing recording the album's own year as "
                 "distinct from this pressing's - which is what the folder is named after.",
         "severity": WRONG,
     },
     "no_year": {
-        "label": "no year",
+        "label": "No year",
         "hint": "no date tag on any file, so this album has no year at all.",
         "severity": WRONG,
     },
     "untitled_tracks": {
-        "label": "untitled tracks",
+        "label": "Untitled tracks",
         "hint": "some files carry no title tag, so the titles shown are their filenames. "
                 "Applying a release writes the real ones.",
         "severity": WRONG,
     },
     "unnumbered_tracks": {
-        "label": "unnumbered tracks",
+        "label": "Unnumbered tracks",
         "hint": "some files carry no track number, so the running order here is alphabetical "
                 "rather than the album's.",
         "severity": COSMETIC,
     },
     "no_art": {
-        "label": "no cover art",
+        "label": "No cover art",
         "hint": "no cover beside the tracks and none embedded in them. The editor can fetch "
                 "one from the Cover Art Archive.",
         "severity": COSMETIC,

@@ -391,6 +391,17 @@ def read_album_dir(directory: Path, library_root: Path) -> dict | None:
     }
 
 
+def clear_scan_cache() -> None:
+    """
+    Drop the whole scan cache.
+
+    Used when LIBRARY_PATH itself changes. Every entry is keyed on a directory under the OLD
+    root and validated against that folder's mtime, so after a root change the cache is not
+    merely stale - its keys refer to paths that are no longer part of the library at all.
+    """
+    _album_cache.clear()
+
+
 def forget_cached_album(directory: str) -> None:
     """
     Drop a folder from the scan cache so the next scan re-reads it.

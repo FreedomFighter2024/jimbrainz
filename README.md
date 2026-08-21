@@ -80,7 +80,7 @@ _Note: if you're an **UnRaid** user like me, ive added a template that can be ma
 | tag | what it is |
 | --- | --- |
 | `:latest` | **the current release** — slskd direct, no Lidarr. 0.5.x, and what the settings above describe. |
-| `:0.5.0` etc | pinned releases of that same line |
+| `:0.5.1` etc | pinned releases of that same line |
 | `:experimental` | the `experimental/*` branch, rebuilt on every push. Ahead of `:latest`, and moves under you. |
 | `:0.2.1` and older | the original Lidarr-based line, still on `main`. Does **not** understand the settings above. |
 
@@ -164,7 +164,9 @@ It's permanent, there's no undo, and it says so. It refuses anything that isn't 
 <summary style="font-style:italic">Your preferences, and a straight answer about the container's configuration</summary>
 Two halves, deliberately kept apart. The top is <em>yours</em> - format preference, auto-grab, how a new search starts, where the Soulseek candidate filters begin - stored in your browser and saved as you change them.
 <br><br>
-The bottom is the container's configuration, and it is <strong>read-only because it can only be read-only</strong>: those are environment variables read once when the container started, so nothing the app writes could change them. Instead of pretending otherwise with disabled inputs, it reports. For every setting: the value this container <em>actually received</em>, <strong>which file supplied it</strong> (your compose <code>environment:</code> block or <code>.env</code> — indistinguishable from the value alone, and always the first question when something's wrong), and what is broken about it if anything.
+The bottom is the container's configuration, and most of it is <strong>editable</strong>. Changing a setting stores an override in jimbrainz's own database and applies it <em>without a restart</em> — it does not write to your <code>.env</code>, because editing that from inside the container wouldn't affect the running process anyway. An override wins over the environment (the alternative would mean your edit silently reverting on the next restart), the row says so, and one click reverts it. Two settings can't be changed here and say why: <code>DB_PATH</code> is the database the overrides live in, and <code>PUID</code>/<code>PGID</code> are applied before Python even starts.
+<br><br>
+It still reports, which is half the point. For every setting: the value this container <em>actually received</em>, <strong>which file supplied it</strong> (your compose <code>environment:</code> block or <code>.env</code> — indistinguishable from the value alone, and always the first question when something's wrong), and what is broken about it if anything.
 <br><br>
 It resolves the paths rather than trusting them, which is the point. <code>SLSKD_DOWNLOAD_PATH</code> pointing at a path that exists on the <em>host</em> but not inside the container is the most common first-run failure by a wide margin, and it is invisible from the value — the string looks perfectly correct. It also answers "why did nothing get filed" once, in a sentence, with every reason listed, rather than leaving you to infer it from four separate rows. The API key is never sent to the browser at all.
 </details>

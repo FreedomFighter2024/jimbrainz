@@ -381,7 +381,7 @@ function setSearchLoading(on) {
     if (!results) return;
 
     if (on) {
-        results.innerHTML = '<div class="loading-panel">asking MusicBrainz...</div>';
+        results.innerHTML = '<div class="loading-panel">Asking MusicBrainz…</div>';
     }
 
     else {
@@ -811,7 +811,7 @@ async function openCandidatesPanel(expected, label) {
 
 async function runCandidateSearch(expected) {
     candidatesScrollable.innerHTML =
-        `<div class="loading-panel">searching soulseek for this release...</div>`;
+        `<div class="loading-panel">Searching Soulseek for this release…</div>`;
 
     try {
         const result = await findCandidates(expected);
@@ -975,7 +975,7 @@ function renderCandidateSignalSliders() {
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'signals-reset-button';
-    reset.textContent = 'reset';
+    reset.textContent = 'Reset';
     reset.addEventListener('click', (e) => {
         e.stopPropagation();
         for (const input of container.querySelectorAll('input[type="range"]')) {
@@ -1116,17 +1116,17 @@ function renderCandidates() {
         const button = box.querySelector('.candidate-download-button');
         button.addEventListener('click', async () => {
             button.disabled = true;
-            button.textContent = 'queueing…';
+            button.textContent = 'Queueing…';
 
             try {
                 await enqueueCandidate(candidate);
-                button.textContent = 'queued ✓';
+                button.textContent = 'Queued ✓';
                 box.classList.add('queued');
             }
 
             catch (error) {
                 console.error(`Enqueue error: ${error.message}`);
-                button.textContent = 'failed';
+                button.textContent = 'Failed';
                 button.disabled = false;
             }
         });
@@ -1536,7 +1536,7 @@ function renderFacets() {
             const option = document.createElement('button');
             option.type = 'button';
             option.className = `facet-option ${state}`;
-            option.title = 'click to include, again to exclude, again to reset';
+            option.title = 'Click to include, again to exclude, again to reset';
 
             const marker = document.createElement('span');
             marker.className = 'facet-marker';

@@ -1,26 +1,42 @@
 """
 The settings tab's backend.
 
-WHY THIS IS READ-ONLY, and should stay that way:
+MOST SETTINGS ARE EDITABLE HERE. The ones that aren't, aren't for a stated reason.
 
-Every server-side setting here arrives as an environment variable, from a compose
-`environment:` block or from `.env`. Both are read once, at process start. There is nothing
-this application could write that would change them - editing `.env` from inside the
-container would not affect the running process, and would be silently discarded on the next
-`docker compose up` for anyone configuring through compose (which is most people, and all
-Unraid users). A settings page with a save button that does nothing until you restart, and
-sometimes not even then, is worse than no save button.
+Server settings arrive as environment variables from a compose `environment:` block or from
+`.env`, read once at process start. Editing that file from inside the container would not
+affect the running process, so the writable path does NOT touch it. Overrides are stored in
+the sqlite database instead (see the `settings` table in store.py) and laid over the
+environment's values at startup by Config.apply_overrides().
 
-So this endpoint's job is DIAGNOSIS, not mutation. It answers the three questions someone
-actually has when something isn't working:
+The precedence question is the one that matters, and there is only one honest answer:
+
+  A STORED OVERRIDE WINS over the environment.
+
+The alternative - environment wins - would mean an edit made in this tab silently reverted on
+the next restart for anybody configuring through compose, which is most people. So the
+override wins, and the tab says plainly when a value is overriding what the environment
+supplied, and offers to revert it. Reverting DELETES the row rather than writing the
+environment's value back, so a setting that has been reverted follows the compose file again
+instead of pinning whatever it happened to say that day.
+
+Two settings genuinely cannot be edited here, and the tab renders the reason rather than
+hiding them: DB_PATH (it is the database the overrides live in) and PUID/PGID (consumed by
+docker-entrypoint.sh, which has already dropped privileges before Python starts).
+
+Editing applies LIVE, without a restart, because Config is read as a class attribute at the
+point of use rather than captured at import. The two cached clients are the exception, so a
+change to their settings drops the cached client and the next call rebuilds it.
+
+Diagnosis is still half the job. For every setting the tab answers:
 
   1. what value did the container actually receive?
-  2. which file do I go and edit to change it?
+  2. which file do I go and edit to change it - or is it overridden here?
   3. is it usable, and if not, precisely what is wrong with it?
 
-Question 2 is the one that is genuinely hard to answer from outside: once load_dotenv() has
-run, a value from compose and a value from .env are indistinguishable in os.environ. config.py
-captures the difference at import time; this endpoint is what surfaces it.
+Question 2 is genuinely hard to answer from outside: once load_dotenv() has run, a value from
+compose and a value from .env are indistinguishable in os.environ. config.py captures the
+difference at import time; this endpoint is what surfaces it.
 
 Client-side preferences (format preference, auto-grab, candidate defaults) are a separate
 thing entirely - they live in localStorage, they ARE editable, and the backend never sees
@@ -30,7 +46,8 @@ them. See ui/src/state/persisted.ts.
 import os
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from src import __version__
 from src.config import Config, describe_slskd_url, setting_source, shadowed_by_empty_env
@@ -42,10 +59,10 @@ router = APIRouter()
 #? Modes the organizer understands, with what each one actually does to your filesystem.
 #? Ordered least to most destructive, which is the order the tab renders them in.
 ORGANIZE_MODES = {
-    "off": "never organize - downloads stay where slskd put them",
-    "dry_run": "log what would happen, write nothing",
-    "copy": "copy into the library, leave slskd's copy alone",
-    "move": "move into the library",
+    "off": "Never organize - downloads stay where slskd put them",
+    "dry_run": "Log what would happen, write nothing",
+    "copy": "Copy into the library, leave slskd's copy alone",
+    "move": "Move into the library",
 }
 
 
@@ -131,6 +148,17 @@ def _setting(
         "effect": effect,
         "required": required,
         "secret": secret,
+        #? Whether the tab may render an input for this, and why not when it may not.
+        "editable": key in Config.EDITABLE,
+        "locked_reason": Config.NOT_EDITABLE.get(key),
+        #? True when this value came from the settings tab rather than the environment. The
+        #? tab uses it to say so and to offer "revert to the environment value", which is the
+        #? thing that stops an override becoming invisible state nobody remembers setting.
+        "overridden": key in Config.OVERRIDDEN,
+        #? What reverting would restore. Never sent for secrets.
+        "env_value": (
+            None if secret else (Config.ENV_VALUES.get(key) if key in Config.OVERRIDDEN else None)
+        ),
     }
 
 
@@ -187,7 +215,7 @@ async def settings():
                         "SLSKD_URL",
                         Config.SLSKD_URL,
                         required=True,
-                        effect="the slskd instance searches and downloads go through",
+                        effect="The slskd instance searches and downloads go through",
                         status="error" if url_problem else "ok",
                         detail=(
                             f"unusable: {url_problem}. It has to be reachable from inside "
@@ -203,14 +231,14 @@ async def settings():
                         Config.SLSKD_APIKEY,
                         required=True,
                         secret=True,
-                        effect="authenticates against slskd; downloads fail without it",
+                        effect="Authenticates against slskd; downloads fail without it",
                     ),
                     _setting(
                         "MUSICBRAINZ_USERAGENT",
                         Config.MUSICBRAINZ_USERAGENT,
                         required=True,
                         effect=(
-                            "identifies this app to MusicBrainz. A malformed one gets you "
+                            "Identifies this app to MusicBrainz. A malformed one gets you "
                             "rate limited no matter how politely you ask"
                         ),
                     ),
@@ -227,14 +255,14 @@ async def settings():
                     _setting(
                         "SLSKD_DOWNLOAD_PATH",
                         Config.SLSKD_DOWNLOAD_PATH,
-                        effect="where slskd writes finished downloads, so jimbrainz can find them",
+                        effect="Where slskd writes finished downloads, so jimbrainz can find them",
                         status=download_status,
                         detail=download_detail,
                     ),
                     _setting(
                         "LIBRARY_PATH",
                         Config.LIBRARY_PATH,
-                        effect="where organized music is filed, and what the library tab reads",
+                        effect="Where organized music is filed, and what the library tab reads",
                         status=library_status,
                         detail=library_detail,
                     ),
@@ -242,7 +270,7 @@ async def settings():
                         "SLSKD_INCOMPLETE_PATH",
                         Config.SLSKD_INCOMPLETE_PATH,
                         effect=(
-                            "slskd's partial-download folder. Optional: set it and cancelling "
+                            "The slskd partial-download folder. Optional: set it and cancelling "
                             "a download also deletes its half-finished file, leave it unset "
                             "and slskd keeps the partial so a retry can resume from it"
                         ),
@@ -253,7 +281,7 @@ async def settings():
                         "DB_PATH",
                         Config.DB_PATH,
                         effect=(
-                            "the sqlite file holding job state and the metadata queue. Needs "
+                            "The sqlite file holding job state and the metadata queue. Needs "
                             "to be on a persistent volume or you lose it on every restart"
                         ),
                     ),
@@ -289,3 +317,128 @@ async def settings():
             "blockers": organizing_blockers,
         },
     }
+
+
+# ==============================================================================
+# Writing
+# ==============================================================================
+
+
+class SettingUpdate(BaseModel):
+    """One setting to change. `value` of null means 'revert to the environment'."""
+    key: str
+    value: str | None = None
+
+
+def _validate(key: str, value: str) -> str | None:
+    """
+    Why this value cannot be stored, or None if it can.
+
+    The line drawn here is between DEFINITIONALLY wrong and ENVIRONMENTALLY wrong, and it
+    matters:
+
+      Definitionally wrong is rejected. An ORGANIZE_MODE of "sideways" or a URL with no
+      scheme can never work, whatever else changes, so storing it would only produce a
+      confusing failure later somewhere less informative.
+
+      Environmentally wrong is STORED and reported. A path that doesn't resolve today may be
+      a volume the user is about to mount, and refusing it would mean the only way to fix a
+      broken setup is to edit the compose file - which is exactly what this tab exists to
+      avoid. The row renders its own validation state, so nothing is hidden by allowing it.
+    """
+    if key == "ORGANIZE_MODE" and value not in ORGANIZE_MODES:
+        return f"expected one of {', '.join(ORGANIZE_MODES)}"
+
+    if key == "SLSKD_URL":
+        problem = describe_slskd_url(value)
+        if problem:
+            return problem
+
+    return None
+
+
+@router.put("")
+@router.put("/")
+async def update_settings(updates: list[SettingUpdate], request: Request):
+    """
+    Save a batch of settings, apply them live, and report the result.
+
+    A BATCH rather than one call per setting, because the tab has a single save button and a
+    half-applied save is the worst outcome available: some settings changed, some not, and no
+    way to tell which from looking. Everything is validated first and the whole batch is
+    refused if anything in it is invalid.
+    """
+    store = request.app.state.store
+
+    if not store.available:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "the database isn't available, so settings can't be saved. Check DB_PATH "
+                "points at a writable volume."
+            ),
+        )
+
+    #? Validate the whole batch before writing any of it.
+    problems = {}
+    for update in updates:
+        if update.key in Config.NOT_EDITABLE:
+            problems[update.key] = Config.NOT_EDITABLE[update.key]
+        elif update.key not in Config.EDITABLE:
+            problems[update.key] = "not a setting that can be changed here"
+        elif update.value is not None:
+            problem = _validate(update.key, update.value)
+            if problem:
+                problems[update.key] = problem
+
+    if problems:
+        raise HTTPException(
+            status_code=400,
+            detail="; ".join(f"{key}: {reason}" for key, reason in problems.items()),
+        )
+
+    #? Which cached clients this batch invalidates. Collected as a set so changing both the
+    #? slskd URL and its API key rebuilds that client once rather than twice.
+    invalidate = set()
+    changed = []
+
+    for update in updates:
+        if update.value is None:
+            await store.clear_setting(update.key)
+        else:
+            await store.set_setting(update.key, update.value)
+
+        changed.append(update.key)
+        target = Config.EDITABLE.get(update.key)
+        if target:
+            invalidate.add(target)
+
+    #? Re-read everything from the store rather than mutating Config per key, so the in-memory
+    #? state is exactly what the next restart would produce. A "saved" that leaves the process
+    #? in a state the database wouldn't reproduce is a lie that only shows up on restart.
+    Config.apply_overrides(store.stored_settings())
+
+    #? Config is read at the point of use, so most settings are already live. These two are
+    #? the exception: their clients are built once and cached, so drop them and let the next
+    #? call rebuild against the new values.
+    if "slskd" in invalidate:
+        await request.app.state.slskd_client.close_client()
+        logger.info("slskd client dropped, it will rebuild with the new settings")
+
+    if "musicbrainz" in invalidate:
+        await request.app.state.musicbrainz_client.close_client()
+        logger.info("musicbrainz client dropped, it will rebuild with the new user agent")
+
+    if "library" in invalidate:
+        #? The scan cache keys on folder mtime under the OLD root, so it is meaningless now.
+        from src.library import clear_scan_cache
+
+        clear_scan_cache()
+        logger.info("library scan cache cleared, the new path will be read fresh")
+
+    logger.info(
+        f"settings updated from the interface: {', '.join(changed)}",
+        extra={"frontend": True},
+    )
+
+    return await settings()

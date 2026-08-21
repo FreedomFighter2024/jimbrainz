@@ -335,13 +335,13 @@ export function LibraryView({ active, onNavigate }: Props) {
             disabled={!artistFilter && !multiOnly && !queueOnly && !newOnly && !issueFilter}
             onClick={clearFilters}
           >
-            clear
+            Clear
           </button>
           <button
             type="button"
             class="filter-collapse-toggle"
             aria-expanded={!filtersCollapsed}
-            title="show or hide artists"
+            title="Show or hide artists"
             onClick={() => setFiltersCollapsed((on) => !on)}
           >
             {filtersCollapsed ? '▾' : '▴'}
@@ -355,7 +355,7 @@ export function LibraryView({ active, onNavigate }: Props) {
             class={`library-facet${multiOnly ? ' active' : ''}`}
             onClick={() => setMultiOnly((on) => !on)}
           >
-            multiple editions <span class="library-facet-count">{multiEditionCount}</span>
+            Multiple editions <span class="library-facet-count">{multiEditionCount}</span>
           </button>
         )}
 
@@ -379,7 +379,7 @@ export function LibraryView({ active, onNavigate }: Props) {
               <button
                 type="button"
                 class={`library-facet newly-added${newOnly ? ' active' : ''}`}
-                title="albums jimbrainz just filed that you haven't looked at yet"
+                title="Albums jimbrainz just filed that you haven't looked at yet"
                 onClick={() => setNewOnly((on) => !on)}
               >
                 newly added <span class="library-facet-count">{queue.new_imports}</span>
@@ -390,10 +390,10 @@ export function LibraryView({ active, onNavigate }: Props) {
               <button
                 type="button"
                 class={`library-facet needs-attention${queueOnly ? ' active' : ''}`}
-                title="albums with something missing or off-convention"
+                title="Albums with something missing or off-convention"
                 onClick={() => setQueueOnly((on) => !on)}
               >
-                needs attention <span class="library-facet-count">{queue.total}</span>
+                Needs attention <span class="library-facet-count">{queue.total}</span>
               </button>
             )}
 
@@ -436,7 +436,7 @@ export function LibraryView({ active, onNavigate }: Props) {
           ))}
 
           {loaded && !artists.length && (
-            <p class="text default-muted library-empty">nothing here yet</p>
+            <p class="text default-muted library-empty">Nothing here yet</p>
           )}
         </div>
       </div>
@@ -447,14 +447,14 @@ export function LibraryView({ active, onNavigate }: Props) {
             type="text"
             id="library-filter-input"
             class="releases-filter-input"
-            placeholder="Filter library..."
+            placeholder="Filter library…"
             value={filter}
             onInput={(event) => setFilter((event.target as HTMLInputElement).value)}
           />
 
           <span id="library-summary" class="text default-muted">
             {!loaded ? (
-              <Loading label="reading your library" />
+              <Loading label="Reading your library" />
             ) : loading ? (
               //? a rescan keeps the previous list on screen, so this says work is happening
               //? without the count vanishing out from under you
@@ -484,7 +484,7 @@ export function LibraryView({ active, onNavigate }: Props) {
               }
               onClick={startReview}
             >
-              review {waiting.length}
+              Review {waiting.length}
               {issueFilter ? ` · ${issueLabel(issueFilter, issueTypes)}` : ''}
               {!issueFilter && queue.new_imports > 0 ? ` · ${queue.new_imports} new` : ''}
             </button>
@@ -511,7 +511,7 @@ export function LibraryView({ active, onNavigate }: Props) {
               type="button"
               id="library-bulk-art-button"
               class="is-running"
-              title="stop after the album currently being fetched"
+              title="Stop after the album currently being fetched"
               onClick={() => { stopBulk.current = true }}
             >
               <Loading label={`${bulkArt.done}/${bulkArt.total} · stop`} />
@@ -522,19 +522,19 @@ export function LibraryView({ active, onNavigate }: Props) {
             type="button"
             class="columns-toggle-button"
             disabled={loading}
-            title="re-read every file, ignoring the cache"
+            title="Re-read every file, ignoring the cache"
             onClick={() => reload(true)}
           >
             {/* no label: the button is narrow and the summary beside it already says what
                 is happening */}
-            {loading ? <Loading /> : 'rescan'}
+            {loading ? <Loading /> : 'Rescan'}
           </button>
         </div>
 
         <div class="scrollable" id="library-scrollable">
           {/* the first scan reads tags off every file, so it is worth saying so */}
           {!loaded && !problem && !error && (
-            <LoadingPanel label="reading tags from your library..." />
+            <LoadingPanel label="Reading tags from your library…" />
           )}
 
           {/*
@@ -553,7 +553,7 @@ export function LibraryView({ active, onNavigate }: Props) {
           )}
 
           {!problem && !error && loaded && albums.length > 0 && !visible.length && (
-            <h4 class="text default-muted library-status">nothing matches that filter</h4>
+            <h4 class="text default-muted library-status">Nothing matches that filter</h4>
           )}
 
           {visible.map((group) => (

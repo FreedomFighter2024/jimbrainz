@@ -234,6 +234,37 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   Unreachable slskd → stored jobs still listed, no live progress. Unwritable DB → the metadata
   queue still works, it just stops remembering what you ignored.
 
+### Interface details that cost time
+
+- **`overflow-y: auto` silently promotes `overflow-x` to `auto` too.** A box cannot have
+  `visible` on one axis and `auto` on the other. That is where the metadata editor's unwanted
+  sideways scrollbar came from — nothing ever asked for horizontal scrolling. Declare
+  `overflow-x: hidden` explicitly when you only want vertical.
+- **A flex item defaults to `min-width: auto`, so `text-overflow: ellipsis` never fires.**
+  The item refuses to shrink below its content, so the row grows instead and the container
+  scrolls. `min-width: 0` on the flex child is the missing half of every ellipsis that
+  "doesn't work".
+- **`getBoundingClientRect()` returns the TRANSFORMED box; `offsetWidth`/`offsetHeight` do
+  not.** The panels open with a `scale(0.98)` entrance, so measuring size with the rect during
+  that animation bakes in the scaled value. Use the rect for POSITION (where it is on screen)
+  and the offset properties for SIZE.
+- **`style.left` on an absolutely positioned element is relative to its offsetParent, not the
+  viewport.** Writing a `getBoundingClientRect().left` into it threw the log and downloads
+  panels most of a screen sideways on the first resize. `resize.js` converts explicitly; fixed
+  panels have no offsetParent and need no conversion.
+- **A CSS `resize` grip does not track the cursor on a transformed element.** It drags in the
+  element's own untransformed space, so with `translate(-50%, -50%)` the corner runs away at
+  double speed. That is why resizing is done in JS now — see `interface/scripts/resize.js`.
+- **An animation loop only looks smooth if its end state is pixel-identical to its start.**
+  The loading sweep sets a tile width and travels exactly one tile; anything else pops on
+  every cycle. Percentage `background-position` will not do this — it positions relative to
+  (container − image), not to the image.
+- **Capitalization: sentence case in the markup, and let CSS do any uppercasing.** Several
+  labels are rendered uppercase by `text-transform`, so the source string still has to read
+  correctly when that rule is not applied. Proper nouns keep their own casing, and **`slskd`
+  and `jimbrainz` are lowercase brand names** — never sentence-case them, rephrase so they are
+  not sentence-initial instead.
+
 ### The library view's editions
 
 - **An album's editions are ALWAYS visible; only their track lists are behind a toggle.**
@@ -261,16 +292,31 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
 
 ### The settings tab
 
-- **The server half is READ-ONLY, and that is a property of the deployment, not a shortcut.**
-  Every server setting arrives as an environment variable, read once at process start, from a
-  compose `environment:` block or `.env`. Nothing this app could write would change them:
-  editing `.env` from inside the container would not affect the running process, and would be
-  discarded on the next `docker compose up` for anyone configuring through compose — which is
-  most people and all Unraid users. **Do not add a save button to that half.** A save button
-  that needs a restart to take effect, and sometimes does nothing even then, is worse than a
-  clearly read-only report. If a writable server setting is ever wanted (naming templates are
-  the obvious candidate), it needs a real persistence story first — a settings table in the
-  sqlite DB, with env vars as the fallback — not a form bolted onto this endpoint.
+- **The server half is EDITABLE as of v0.5.1**, via exactly the persistence story the
+  previous version of this note said it would need: a `settings` table in the sqlite DB, with
+  the environment as the fallback. It is NOT written to `.env` — editing that from inside the
+  container would not affect the running process and would be discarded on the next
+  `docker compose up`.
+- **A stored override WINS over the environment, and that is the only honest precedence.**
+  The alternative — environment wins — means an edit made in the tab silently reverts on the
+  next restart for anyone configuring through compose, which is most people and all Unraid
+  users. So the override wins, the row says it is overriding, and it offers to revert.
+- **Reverting DELETES the row rather than writing the environment's value back.** Copying the
+  value back would pin whatever compose said that day, so a later compose change would
+  silently stop taking effect. Absence is the only representation of "follow the environment"
+  that stays true.
+- **`Config.ENV_VALUES` is captured ONCE and must stay that way.** `apply_overrides()` mutates
+  the class attributes, so re-capturing on a later call reads back values a previous call
+  already overwrote — and the real environment value is gone for good. That bug shipped
+  briefly and made "revert" delete the row and then change nothing, because there was nothing
+  left to restore. Both directions are now tested.
+- **What cannot be edited, and why, is rendered rather than hidden.** `DB_PATH` is the
+  database the overrides live in; `PUID`/`PGID` are consumed by `docker-entrypoint.sh` before
+  Python starts. A disabled control with no explanation reads as a bug.
+- **Validation splits DEFINITIONALLY wrong from ENVIRONMENTALLY wrong.** An `ORGANIZE_MODE` of
+  "sideways" is refused because it can never work. A path that doesn't resolve is STORED and
+  reported, because it may be a volume you are about to mount — and refusing it would mean the
+  only way to fix a broken setup is to edit compose, which is what this tab exists to avoid.
 - **So the endpoint's job is DIAGNOSIS.** It answers the three questions someone actually
   has: what value did the container receive, which file do I edit to change it, and what is
   wrong with it. The middle one is the one that is genuinely hard from outside — once

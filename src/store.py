@@ -51,6 +51,25 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 
+CREATE TABLE IF NOT EXISTS settings (
+    -- Server settings edited from the settings tab.
+    --
+    -- Only keys the user has actually CHANGED live here. An unedited setting has no row at
+    -- all, which is what lets the environment stay the source of truth for everything nobody
+    -- has overridden - and lets "revert to the environment value" be a DELETE rather than a
+    -- guess at what the value used to be.
+    --
+    -- A stored value WINS over the environment. The alternative - environment wins - would
+    -- mean an edit made here silently vanished on the next restart for anyone configuring
+    -- through compose, which is most people. Winning is the honest behaviour; the settings
+    -- tab says plainly when a row here is overriding what the environment supplied.
+    --
+    -- DB_PATH is deliberately not storable: it is where this table lives.
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS album_review (
     -- Keyed on the album's path RELATIVE to LIBRARY_PATH, which is what every other library
     -- endpoint already takes. Not the scan's `key`: that is the release MBID when there is
@@ -265,6 +284,76 @@ class JobStore:
     # Everything below backs the metadata queue. None of it records what is *wrong* with an
     # album - metadata_health.py works that out from the scan on every request - so a store
     # that can't be opened costs you the memory of what you ignored and nothing else.
+
+    # ===== settings overrides =================================================
+
+    def stored_settings(self) -> dict[str, str]:
+        """
+        Every stored override, as a plain dict.
+
+        SYNCHRONOUS on purpose, unlike everything else on this class. It runs once during
+        startup, before the event loop exists, so that Config can be reconciled before
+        anything reads it. Making it async would mean the first request could arrive with
+        the environment's values still in place.
+
+        Returns {} on any failure - an unreadable settings table must degrade to "use the
+        environment", never to a crash on boot.
+        """
+        if not self.available:
+            return {}
+
+        try:
+            with self._connect() as connection:
+                rows = connection.execute("SELECT key, value FROM settings").fetchall()
+
+            return {row["key"]: row["value"] for row in rows}
+
+        except Exception as e:
+            logger.error(f"could not read stored settings, using the environment only ({e})")
+            return {}
+
+    async def set_setting(self, key: str, value: str) -> bool:
+        """Store an override. Overwrites any existing one for that key."""
+        if not self.available:
+            return False
+
+        def write():
+            with self._connect() as connection:
+                connection.execute(
+                    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                    "updated_at = excluded.updated_at",
+                    (key, value, _now()),
+                )
+            return True
+
+        try:
+            return await asyncio.to_thread(write)
+        except Exception as e:
+            logger.error(f"could not store the setting {key} ({e})", extra={"frontend": True})
+            return False
+
+    async def clear_setting(self, key: str) -> bool:
+        """
+        Drop an override, so the environment's value applies again.
+
+        Deleting the row rather than writing the environment's value back is what keeps
+        "revert" honest: if the compose file changes later, a reverted setting follows it,
+        where a copied-back value would silently pin the old one forever.
+        """
+        if not self.available:
+            return False
+
+        def write():
+            with self._connect() as connection:
+                connection.execute("DELETE FROM settings WHERE key = ?", (key,))
+            return True
+
+        try:
+            return await asyncio.to_thread(write)
+        except Exception as e:
+            logger.error(f"could not clear the setting {key} ({e})", extra={"frontend": True})
+            return False
 
     async def record_albums_seen(self, albums: list[dict], source: str = "scan") -> int:
         """

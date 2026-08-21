@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import Config  # noqa: E402
-from src.routes.settings import ORGANIZE_MODES, _describe_path, settings  # noqa: E402
+from src.routes.settings import ORGANIZE_MODES, _describe_path, _validate, settings  # noqa: E402
 
 
 def call_settings() -> dict:
@@ -254,3 +254,152 @@ def test_every_setting_row_carries_what_the_tab_needs_to_render_it():
             assert required_fields <= set(setting), f"{setting.get('key')} is missing fields"
             assert setting["status"] in {"ok", "unset", "error"}
             assert setting["effect"], f"{setting['key']} does not say what it does"
+
+
+# ===== the writable half ======================================================
+
+
+def test_only_settings_that_can_change_at_runtime_are_editable():
+    """
+    The split is a property of the settings, not a policy. DB_PATH is where the overrides
+    live, so overriding it from there is a chicken-and-egg with no answer; the rest are read
+    at the point of use and can genuinely change under a running process.
+    """
+    assert "DB_PATH" in Config.NOT_EDITABLE
+    assert "DB_PATH" not in Config.EDITABLE
+
+    for key in ("SLSKD_URL", "SLSKD_APIKEY", "ORGANIZE_MODE", "LIBRARY_PATH"):
+        assert key in Config.EDITABLE
+
+
+def test_the_locked_setting_says_why_rather_than_just_refusing():
+    """A disabled control with no explanation reads as a bug. The reason is rendered."""
+    row = find(call_settings(), "DB_PATH")
+
+    assert row["editable"] is False
+    assert row["locked_reason"]
+    assert "compose" in row["locked_reason"]
+
+
+def test_definitionally_invalid_values_are_rejected():
+    """These can never work whatever else changes, so storing them helps nobody."""
+    assert _validate("ORGANIZE_MODE", "sideways") is not None
+    assert "missing the scheme" in _validate("SLSKD_URL", "slskd:5030")
+
+
+def test_environmentally_invalid_values_are_allowed_through():
+    """
+    A path that doesn't resolve yet may be a volume about to be mounted. Refusing it would
+    mean the only way to fix a broken setup is to edit compose - the exact thing this tab
+    exists to avoid. The row reports its own validation state, so nothing is hidden.
+    """
+    assert _validate("LIBRARY_PATH", "/not/mounted/yet") is None
+    assert _validate("SLSKD_DOWNLOAD_PATH", "/also/not/there") is None
+
+
+def test_valid_values_pass():
+    for mode in ORGANIZE_MODES:
+        assert _validate("ORGANIZE_MODE", mode) is None
+    assert _validate("SLSKD_URL", "http://slskd:5030") is None
+
+
+def test_an_override_replaces_the_environment_and_is_reported_as_such(monkeypatch):
+    """
+    A stored override winning is the whole design - environment-wins would make an edit
+    silently revert on restart. But an override that isn't ANNOUNCED becomes invisible state
+    nobody remembers setting, so the row has to say it is overriding and what it would
+    revert to.
+    """
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "dry_run")
+    monkeypatch.setattr(Config, "OVERRIDDEN", set(), raising=False)
+    monkeypatch.setattr(Config, "ENV_VALUES", {}, raising=False)
+
+    Config.apply_overrides({"ORGANIZE_MODE": "move"})
+
+    assert Config.ORGANIZE_MODE == "move"
+    assert "ORGANIZE_MODE" in Config.OVERRIDDEN
+
+    row = find(call_settings(), "ORGANIZE_MODE")
+    assert row["overridden"] is True
+    assert row["env_value"] == "dry_run"   # what reverting would restore
+
+
+def test_a_stored_row_for_a_non_editable_key_is_ignored(monkeypatch):
+    """
+    This reads rows out of a database a user can edit by hand. Trusting arbitrary keys would
+    let a hand-written row set any Config attribute, which is a far larger surface than
+    intended.
+    """
+    monkeypatch.setattr(Config, "DB_PATH", "/real/db/path")
+    monkeypatch.setattr(Config, "OVERRIDDEN", set(), raising=False)
+
+    Config.apply_overrides({"DB_PATH": "/somewhere/else", "NOT_A_SETTING": "x"})
+
+    assert Config.DB_PATH == "/real/db/path"
+    assert Config.OVERRIDDEN == set()
+
+
+def test_reverting_is_absence_not_a_copied_value(monkeypatch):
+    """
+    Revert deletes the row. Writing the environment's value back instead would pin whatever
+    compose said that day, so a later compose change would silently stop taking effect.
+    """
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "dry_run")
+    monkeypatch.setattr(Config, "OVERRIDDEN", set(), raising=False)
+    monkeypatch.setattr(Config, "ENV_VALUES", {}, raising=False)
+
+    Config.apply_overrides({})   # no rows == nothing overridden
+
+    assert Config.OVERRIDDEN == set()
+    assert find(call_settings(), "ORGANIZE_MODE")["overridden"] is False
+
+
+def test_reverting_actually_restores_the_environment_value(monkeypatch):
+    """
+    Caught in a real browser, not by the suite above: apply_overrides() re-captured
+    ENV_VALUES from the class attributes it had ALREADY overwritten, so after one override
+    the true environment value was gone. Deleting the row then left the overridden value in
+    place - "revert" cleared the row and changed nothing.
+    """
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "dry_run")
+    monkeypatch.setattr(Config, "OVERRIDDEN", set(), raising=False)
+    monkeypatch.setattr(Config, "ENV_VALUES", {}, raising=False)
+
+    Config.apply_overrides({"ORGANIZE_MODE": "copy"})
+    assert Config.ORGANIZE_MODE == "copy"
+
+    #? the revert: the row is gone, so nothing is stored any more
+    Config.apply_overrides({})
+
+    assert Config.ORGANIZE_MODE == "dry_run"
+    assert Config.OVERRIDDEN == set()
+
+
+def test_repeated_applies_do_not_drift(monkeypatch):
+    """Every save calls apply_overrides again; the environment baseline must not move."""
+    monkeypatch.setattr(Config, "ORGANIZE_MODE", "dry_run")
+    monkeypatch.setattr(Config, "OVERRIDDEN", set(), raising=False)
+    monkeypatch.setattr(Config, "ENV_VALUES", {}, raising=False)
+
+    for mode in ("copy", "move", "off", "copy"):
+        Config.apply_overrides({"ORGANIZE_MODE": mode})
+        assert Config.ORGANIZE_MODE == mode
+        assert Config.ENV_VALUES["ORGANIZE_MODE"] == "dry_run"
+
+    Config.apply_overrides({})
+    assert Config.ORGANIZE_MODE == "dry_run"
+
+
+def test_the_api_key_never_reports_an_env_value_even_when_overridden(monkeypatch):
+    """env_value exists so revert can show what it restores - which must not leak the key."""
+    monkeypatch.setattr(Config, "SLSKD_APIKEY", "env-secret")
+    monkeypatch.setattr(Config, "OVERRIDDEN", set(), raising=False)
+
+    Config.apply_overrides({"SLSKD_APIKEY": "stored-secret"})
+
+    payload = call_settings()
+    row = find(payload, "SLSKD_APIKEY")
+
+    assert row["env_value"] is None
+    assert "env-secret" not in str(payload)
+    assert "stored-secret" not in str(payload)

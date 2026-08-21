@@ -91,7 +91,7 @@ export function DownloadsPanel() {
   return (
     <div id="downloads-control" class={open ? 'open' : undefined} ref={rootRef}>
       <button type="button" id="downloads-toggle-button" onClick={toggle}>
-        <span>downloads ▾</span>
+        <span>Downloads ▾</span>
         {/*
           Not rendered at all when idle, rather than rendered with `hidden`. The vanilla
           version set `.hidden = true` and the badge stayed on screen showing "0", because
@@ -153,7 +153,7 @@ function DownloadsList({ jobs, trackingEnabled, speeds, onCancel }: ListProps) {
   }
 
   if (!jobs.length) {
-    return <h4 class="text default-muted candidates-status">nothing downloaded yet</h4>
+    return <h4 class="text default-muted candidates-status">Nothing downloaded yet</h4>
   }
 
   return (

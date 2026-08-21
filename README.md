@@ -117,6 +117,8 @@ Releases show as a table with label, catalog number, barcode, quality, language/
 <details>
 <summary style="font-style:italic">slskd only knows "bob is sending you 12 files"</summary>
 jimbrainz keeps the link between a download and the MusicBrainz release that started it, in a small sqlite database. That's what makes tagging possible later, and it's why the downloads panel can tell you what an in-flight transfer actually is — with live progress, queue position, and a real transfer rate worked out from byte deltas rather than slskd's cumulative average, which only ever creeps upward.
+<br><br>
+Cancelling and clearing respond on the click rather than after the round-trip to slskd and back, so the buttons feel connected to something. The prediction is dropped the moment the server disagrees, and abandoned entirely if it never answers.
 </details>
 
 ### Tagging and filing, with editions kept apart

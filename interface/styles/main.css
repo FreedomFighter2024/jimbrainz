@@ -2495,9 +2495,24 @@ span.red { color: var(--red-text); }
 }
 
 .download-job {
-    border: 1px solid var(--white-secondary-text);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
     background-color: var(--background-color-input);
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-3);
+    transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+/*
+  A cancel that has been asked for but not yet confirmed by the server.
+
+  Cancelling costs two sequential round-trips - one to jimbrainz which calls on to slskd,
+  then a poll to see the result - and for both of them the row used to look exactly as it did
+  before the click. Dimming it, plus the "cancelling…" status the row now renders, is what
+  makes the button feel connected to anything. The progress bar keeps moving underneath
+  because it is still true: the transfer really is still going until slskd stops it.
+*/
+.download-job.is-cancelling {
+    opacity: 0.55;
 }
 
 .download-job-head {

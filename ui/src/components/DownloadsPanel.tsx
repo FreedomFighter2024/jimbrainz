@@ -27,6 +27,7 @@ export function DownloadsPanel() {
     activeCount,
     finishedCount,
     error,
+    cancelling,
     refresh,
     cancel,
     clearFinished,
@@ -117,7 +118,7 @@ export function DownloadsPanel() {
             disabled={finishedCount === 0}
             onClick={onClear}
           >
-            clear finished
+            Clear finished
           </button>
         </div>
 
@@ -126,6 +127,7 @@ export function DownloadsPanel() {
             jobs={jobs}
             trackingEnabled={trackingEnabled}
             speeds={speeds}
+            cancelling={cancelling}
             onCancel={cancel}
           />
         </div>
@@ -138,10 +140,11 @@ interface ListProps {
   jobs: ReturnType<typeof useDownloadJobs>['jobs']
   trackingEnabled: boolean
   speeds: Map<number, number>
+  cancelling: ReadonlySet<number>
   onCancel: (jobId: number) => Promise<void>
 }
 
-function DownloadsList({ jobs, trackingEnabled, speeds, onCancel }: ListProps) {
+function DownloadsList({ jobs, trackingEnabled, speeds, cancelling, onCancel }: ListProps) {
   // an unwritable database is not a broken app - downloads still work, they're just not
   // remembered - so this says which knob to turn rather than reading as a crash
   if (!trackingEnabled) {
@@ -163,6 +166,7 @@ function DownloadsList({ jobs, trackingEnabled, speeds, onCancel }: ListProps) {
           key={job.id}
           job={job}
           liveSpeed={speeds.get(job.id) ?? null}
+          cancelling={cancelling.has(job.id)}
           onCancel={onCancel}
         />
       ))}

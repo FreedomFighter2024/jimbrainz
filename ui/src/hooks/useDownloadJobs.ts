@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import * as api from '../api/download'
 import type { DownloadJob } from '../api/types'
 import { isActive } from '../lib/jobs'
+import {
+  activeCount as countActive, finishedIds, reconcile, visibleJobs, withAdded, withRemoved,
+  type Overlays,
+} from '../lib/downloadOverlay'
 import { sampleSpeeds, type SpeedSamples } from '../lib/speed'
 
 /*
@@ -34,10 +38,29 @@ export interface DownloadJobsState {
   finishedCount: number
   /** Set when the last poll failed. Polling continues regardless. */
   error: string | null
+  /**
+   * Jobs whose cancel has been asked for but not yet confirmed by the server.
+   *
+   * Rendered as "cancelling…" so the click has a visible consequence immediately. Cancelling
+   * costs two sequential round-trips - one to jimbrainz and on to slskd, then a poll to see
+   * the result - and until this existed the row was identical for both of them.
+   */
+  cancelling: ReadonlySet<number>
   refresh: () => void
   cancel: (jobId: number) => Promise<void>
   clearFinished: () => Promise<void>
 }
+
+/**
+ * How long an unconfirmed optimistic state is allowed to stand.
+ *
+ * The reconcile in the poll below clears these as soon as the server agrees, which is the
+ * normal path. This is the safety valve for when it never does: an optimistic state that
+ * outlives the request stops being a prediction and becomes a lie, and a row that says
+ * "cancelling…" forever while the file is still downloading is worse than one that never
+ * said it.
+ */
+const OPTIMISTIC_TTL_MS = 15000
 
 /**
  * Poll /download/jobs and derive everything the panel renders.
@@ -62,6 +85,23 @@ export function useDownloadJobs(open: boolean): DownloadJobsState {
   const [nonce, setNonce] = useState(0)
   const refresh = useCallback(() => setNonce((n) => n + 1), [])
 
+  /*
+   * Optimistic overlays, applied on top of whatever the last poll returned.
+   *
+   * Both actions in this panel used to await a round-trip to jimbrainz - which itself calls
+   * slskd - and THEN a further poll before anything on screen moved. That is the latency:
+   * not that the app was slow, but that it showed nothing at all until the server had
+   * finished agreeing. These make the click land immediately and let the poll confirm it.
+   *
+   * They are overlays rather than edits to `jobs` so the polled data stays authoritative -
+   * nothing here can corrupt it, and the reconcile below simply stops overlaying once the
+   * server's own answer says the same thing.
+   */
+  const [overlays, setOverlays] = useState<Overlays>(() => ({
+    cancelling: new Set<number>(),
+    cleared: new Set<number>(),
+  }))
+
   useEffect(() => {
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -76,6 +116,11 @@ export function useDownloadJobs(open: boolean): DownloadJobsState {
         hasActive = response.jobs.some(isActive)
         setSpeeds(sampleSpeeds(samplesRef.current, response.jobs))
         setJobs(response.jobs)
+
+        //? Drop any overlay the freshly polled data now agrees with. Returns the same
+        //? object when nothing changed, so this cannot cause a pointless re-render.
+        setOverlays((current) => reconcile(response.jobs, current))
+
         setTrackingEnabled(response.tracking_enabled)
         setError(null)
       } catch (caught) {
@@ -98,29 +143,63 @@ export function useDownloadJobs(open: boolean): DownloadJobsState {
     }
   }, [open, nonce])
 
+  /** Stop overlaying ids the server never confirmed. See OPTIMISTIC_TTL_MS. */
+  const expire = useCallback((key: keyof Overlays, ids: number[]) => {
+    setTimeout(() => {
+      setOverlays((current) => ({ ...current, [key]: withRemoved(current[key], ids) }))
+    }, OPTIMISTIC_TTL_MS)
+  }, [])
+
   const cancel = useCallback(
     async (jobId: number) => {
-      await api.cancelJob(jobId)
-      refresh()
+      //? Set BEFORE the request goes out. That ordering is the entire fix.
+      setOverlays((current) => ({ ...current, cancelling: withAdded(current.cancelling, [jobId]) }))
+      expire('cancelling', [jobId])
+
+      try {
+        await api.cancelJob(jobId)
+        refresh()
+      } catch (caught) {
+        //? Roll back, so the row stops claiming something that did not happen.
+        setOverlays((current) => ({
+          ...current,
+          cancelling: withRemoved(current.cancelling, [jobId]),
+        }))
+        throw caught
+      }
     },
-    [refresh],
+    [refresh, expire],
   )
 
   const clearFinished = useCallback(async () => {
-    await api.clearJobs()
-    samplesRef.current.clear()
-    refresh()
-  }, [refresh])
+    const ids = finishedIds(jobs)
+    if (!ids.length) return
 
-  const activeCount = useMemo(() => jobs.filter(isActive).length, [jobs])
+    setOverlays((current) => ({ ...current, cleared: withAdded(current.cleared, ids) }))
+    expire('cleared', ids)
+
+    try {
+      await api.clearJobs()
+      samplesRef.current.clear()
+      refresh()
+    } catch (caught) {
+      setOverlays((current) => ({ ...current, cleared: withRemoved(current.cleared, ids) }))
+      throw caught
+    }
+  }, [jobs, refresh, expire])
+
+  //? What the panel renders: the polled jobs with the overlays applied.
+  const shown = useMemo(() => visibleJobs(jobs, overlays), [jobs, overlays])
+  const active = useMemo(() => countActive(shown, overlays), [shown, overlays])
 
   return {
-    jobs,
+    jobs: shown,
     trackingEnabled,
     speeds,
-    activeCount,
-    finishedCount: jobs.length - activeCount,
+    activeCount: active,
+    finishedCount: shown.length - active,
     error,
+    cancelling: overlays.cancelling,
     refresh,
     cancel,
     clearFinished,

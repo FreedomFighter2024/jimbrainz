@@ -1,5 +1,3 @@
-import { useState } from 'preact/hooks'
-
 import { readPreferences } from '../state/persisted'
 
 import type { DownloadJob } from '../api/types'
@@ -9,6 +7,14 @@ interface Props {
   job: DownloadJob
   /** Derived rate from the byte deltas, or null when it isn't measurable yet. */
   liveSpeed: number | null
+  /**
+   * This job's cancel has been asked for and the server hasn't confirmed it yet.
+   *
+   * Owned by useDownloadJobs rather than by local state here, so one fact drives the row,
+   * the toolbar summary and the toggle badge together. As local state it moved the button
+   * and nothing else, which is why cancelling used to look like nothing had happened.
+   */
+  cancelling: boolean
   onCancel: (jobId: number) => Promise<void>
 }
 
@@ -23,9 +29,7 @@ interface Props {
  * this element when the job was organized. Nothing styles `.download-job.queued` - the only
  * rule is `.candidate-box.queued` - so it was dead.
  */
-export function DownloadJobRow({ job, liveSpeed, onCancel }: Props) {
-  const [cancelling, setCancelling] = useState(false)
-
+export function DownloadJobRow({ job, liveSpeed, cancelling, onCancel }: Props) {
   const statusClass = JOB_STATUS_CLASS[job.status] ?? ''
   const percent = Math.round(job.progress || 0)
 
@@ -46,26 +50,30 @@ export function DownloadJobRow({ job, liveSpeed, onCancel }: Props) {
       if (!confirm(`Cancel ${label}?\n\nYou'll lose your place in this peer's queue.`)) return
     }
 
-    setCancelling(true)
-
     try {
+      //? The optimistic state is set inside this call, before the request goes out, so the
+      //? row changes on the click rather than on the response. Rollback lives there too.
       await onCancel(job.id)
     } catch (error) {
       console.error(`Cancel error: ${error instanceof Error ? error.message : error}`)
-      setCancelling(false)
     }
-    // on success the job leaves the active set and this row stops rendering the button, so
-    // there is nothing to re-enable
   }
 
   return (
-    <div class="download-job">
+    <div class={`download-job${cancelling ? ' is-cancelling' : ''}`}>
       <div class="download-job-head">
         <h4 class="text white download-job-title">
           {job.artist || 'unknown'} — {job.album || 'unknown'}
         </h4>
 
-        <span class={`download-job-status ${statusClass}`}>{job.status}</span>
+        {/*
+          While a cancel is in flight the row says so instead of continuing to report the
+          status it is in the middle of leaving. Showing "downloading" for the two round-trips
+          a cancel takes is what made the button feel like it did nothing.
+        */}
+        <span class={`download-job-status ${cancelling ? 'mid' : statusClass}`}>
+          {cancelling ? 'cancelling…' : job.status}
+        </span>
 
         {/* cancelling only means anything while something is still moving */}
         {isActive(job) && (

@@ -265,6 +265,32 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   and `jimbrainz` are lowercase brand names** — never sentence-case them, rephrase so they are
   not sentence-initial instead.
 
+### The downloads panel's optimistic overlays
+
+- **Cancel and "clear finished" update the screen BEFORE the server answers, not after.**
+  Both actions cost two sequential round-trips — one to jimbrainz, which itself calls on to
+  slskd, and then a poll to see the result — and until v0.5.2 the row was pixel-identical for
+  the whole of both. That is what "the buttons feel laggy" actually was: not slowness, but a
+  UI that showed nothing at all while it waited to be told it was allowed to.
+  Measured after: **3ms** to a visible change on cancel, **1ms** on clear, against ~1.6s and
+  ~2.4s for the server to come back.
+- **The overlay is laid over the polled data, never merged into it.** `jobs` from the poll
+  stays authoritative and is never edited, so the worst case is a prediction that turns out
+  wrong rather than corrupted state. `ui/src/lib/downloadOverlay.ts` is pure and holds all of
+  it; the hook only decides when to call it.
+- **Reconcile against the DATA, not against the request completing.** A cancel request
+  returns before the job's status has necessarily changed, so dropping the overlay on
+  completion flips the row back to "downloading" for one poll before it finally reads
+  "cancelled". Waiting for the server's own answer to agree removes that flicker. The sim
+  pins this case specifically.
+- **A cancelling row stays in the list.** It is dimmed and reads "cancelling…", but it is not
+  removed, because the transfer really is still running until slskd stops it. It does stop
+  counting as active, which is what drops the badge and the toolbar summary on the click.
+- **There is a 15s expiry on every overlay** (`OPTIMISTIC_TTL_MS`). If the server never
+  confirms, the prediction is abandoned and the truth reasserts itself. An optimistic state
+  that outlives its request stops being a prediction and becomes a lie — a row stuck on
+  "cancelling…" while the file is still arriving is worse than never having said it.
+
 ### The library view's editions
 
 - **An album's editions are ALWAYS visible; only their track lists are behind a toggle.**
@@ -845,8 +871,9 @@ npm run dev        # harness on :5173, proxies /jimbrainz + /styles to :8080 (st
 ```
 
 ```bash
-node ui/test/speed.sim.cjs   # the derived download rate, simulated against a known truth
-node ui/test/queue.sim.cjs   # the tab badge and the review queue agreeing on what's outstanding
+node ui/test/speed.sim.cjs      # the derived download rate, simulated against a known truth
+node ui/test/queue.sim.cjs      # the tab badge and the review queue agreeing on what's outstanding
+node ui/test/downloads.sim.cjs  # the downloads panel's optimistic overlays, incl. the wrong-prediction paths
 ```
 
 `npm run dev` serves `ui/index.html`, a harness for working on one component in isolation with

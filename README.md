@@ -107,6 +107,24 @@ Most tools use Artist objects as the "main" form of adding and storing data, i d
 Each peer's files get grouped into (user, folder) candidates and scored on track count, fuzzy title match against the real tracklist, track durations, format/bitrate, peer health, and edition/year. You see a score breakdown per candidate so it's obvious <em>why</em> one ranked above another — and can filter by free slot, complete albums only, format, or minimum score.
 </details>
 
+### An artist's discography, in order
+<details>
+<summary style="font-style:italic">Which a search genuinely cannot give you</summary>
+Click an artist's name in any result and you get everything they've released, oldest first. Portishead: three studio albums. Dance Gavin Dance: eleven, 2007 to 2025.
+<br><br>
+This is a <em>browse</em>, not a search, and the distinction is the whole point. MusicBrainz answers a search in relevance order and spends the limit on whatever matched — so sorting fifty search results by year gives you the oldest of the fifty most <em>relevant</em>, which for most artists is bootlegs with the actual albums scattered among them. Asking for everything credited to one artist is the only way "oldest first" means what it says.
+<br><br>
+Live albums and compilations are filtered out by default and one toggle away. Very prolific credits (Various Artists and the like) are capped, and it says so rather than pretending the list is complete.
+</details>
+
+### Sorting the results
+<details>
+<summary style="font-style:italic">Chronological by default</summary>
+Year (either direction), best match, title or artist. It reorders what's on screen without asking MusicBrainz again.
+<br><br>
+Worth knowing what it can't do: sorting search results by year sorts <em>the results you got</em>, not the whole catalogue. That's what the discography above is for.
+</details>
+
 ### Browsing releases like it's MusicBrainz itself
 <details>
 <summary style="font-style:italic">A proper data grid for digging through every pressing of an album</summary>
@@ -126,7 +144,7 @@ Cancelling and clearing respond on the click rather than after the round-trip to
 <summary style="font-style:italic">Two pressings of one album no longer collide</summary>
 Files land as <code>{artist}/{album} ({year}) [{edition}]/{NN} - {title}.{ext}</code>, tagged from the MusicBrainz release — including MusicBrainz IDs, so the library stays readable by Picard and beets instead of being a jimbrainz-only artifact. Track numbers and titles come from the matched tracklist, so they're right even when the peer named everything "Track 04.mp3". It never overwrites an existing file.
 <br><br>
-The edition suffix is omitted for ordinary albums, and only appears when there's something to say. The name comes from MusicBrainz's own disambiguation where it has one, then detected edition tags, then format or country — and two genuinely different releases that would still collide get separated by catalogue number.
+The edition suffix is omitted for ordinary albums, and only appears when there's something to say. That includes <em>alternate performances</em> — an instrumental or acoustic version has the same track titles and numbers as the album it accompanies, so without a marker it would land in that album's folder, every file would be skipped as already-present, and the import would tell you there was nothing to do. The name comes from MusicBrainz's own disambiguation where it has one, then detected edition tags, then format or country — and two genuinely different releases that would still collide get separated by catalogue number.
 <br><br>
 The year is the <em>album's</em> year, not the pressing's, so a 2011 remaster of a 1975 record files under <code>Wish You Were Here (1975) [Remastered]</code> rather than landing in a different decade from the original. The file still records which pressing it actually is.
 </details>

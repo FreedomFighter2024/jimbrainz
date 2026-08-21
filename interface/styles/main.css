@@ -1080,6 +1080,41 @@ body {
   on hover. Kept quiet (outline, not solid) because there is one on every row and fifty solid
   green buttons would be a wall.
 */
+/*
+  The artist name in a result card, which browses their discography.
+
+  Styled as text rather than as a button because it sits inline in a sentence-shaped header
+  ("Portishead - Dummy (1994) [Album]") and a bordered control there would read as chrome.
+  The underline on hover is what says it does something.
+*/
+.releaseGrpArtistButton {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: var(--transition-colors);
+}
+
+.releaseGrpArtistButton:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+/* the escape hatch to musicbrainz.org, kept but demoted - it used to be the whole name */
+.releaseGrpArtistLink {
+    color: var(--muted-text);
+    text-decoration: none;
+    font-size: 0.85em;
+    padding: 0 0.15em;
+    transition: var(--transition-colors);
+}
+
+.releaseGrpArtistLink:hover {
+    color: var(--accent);
+}
+
 /* ? MATCH SCORE - a banded chip, not a debug print */
 .matchScore {
     display: inline-flex;

@@ -206,3 +206,58 @@ def test_the_pressing_year_is_still_what_the_date_tag_records():
     values = tag_values({**WYWH, "year": "2011", "original_year": "1975"}, None)
     assert values["date"] == "2011"
     assert values["originaldate"] == "1975"
+
+
+# ===== alternate performances ================================================
+#
+# A different KIND of edition from deluxe/remaster, and the reason it matters more:
+#
+#   A deluxe edition is more of the same album, so colliding it with the standard press
+#   loses a few bonus tracks. An instrumental is a different RECORDING of the same album -
+#   identical track titles, identical numbers, identical count - so colliding it means every
+#   file matches one already on disk, all of them are skipped, and the job reports that
+#   nothing needed doing. You asked for an album and got neither.
+#
+# Dance Gavin Dance is the case that surfaced it. Verified against the live API: MusicBrainz
+# holds the instrumental as a RELEASE inside the ordinary album's group, carrying
+# "(instrumental)" in its TITLE with an EMPTY disambiguation - so every source
+# resolve_edition_label() consults returned blank.
+
+
+def test_an_instrumental_release_does_not_share_the_standard_album_folder():
+    """The reported bug, pinned end to end."""
+    standard = {**BASE, "album": "Afterburner", "title": "Afterburner",
+                "disambiguation": "", "edition_tags": []}
+    instrumental = {**BASE, "album": "Afterburner", "title": "Afterburner (instrumental)",
+                    "disambiguation": "", "edition_tags": ["INSTRUMENTAL"],
+                    "release_mbid": "11111111-2222-3333-4444-555555555555"}
+
+    assert resolve_edition_label(standard) == ""
+    assert resolve_edition_label(instrumental) == "Instrumental"
+
+    assert build_album_dirname(standard, "") != build_album_dirname(instrumental, "")
+    assert build_album_dirname(instrumental, "") == "Afterburner (2020) [Instrumental]"
+
+
+@pytest.mark.parametrize(
+    "tag, expected",
+    [
+        (["INSTRUMENTAL"], "Instrumental"),
+        (["ACOUSTIC"], "Acoustic"),
+        (["A CAPPELLA"], "A Cappella"),
+    ],
+)
+def test_every_alternate_performance_marker_produces_a_label(tag, expected):
+    assert resolve_edition_label({**BASE, "edition_tags": tag}) == expected
+
+
+def test_an_instrumental_still_defers_to_musicbrainz_disambiguation():
+    """
+    The precedence order is unchanged. If an editor has said what the release IS, that beats
+    a keyword scraped out of the title - the whole reason disambiguation sits above tags.
+    """
+    release = {**BASE, "title": "Afterburner (instrumental)",
+               "disambiguation": "instrumental version, Japanese pressing",
+               "edition_tags": ["INSTRUMENTAL"]}
+
+    assert resolve_edition_label(release) == "Instrumental version, Japanese pressing"

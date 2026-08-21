@@ -386,6 +386,146 @@ class MusicBrainzClient:
 
     
 
+    #? A hard ceiling on how far a discography browse will page.
+    #?
+    #? MusicBrainz answers 100 groups a request and allows roughly one request a second, so
+    #? this is also a five-second ceiling on how long the user waits. It exists because the
+    #? artist credited on a record is not always a person: "Various Artists" carries tens of
+    #? thousands of release groups, and paging that to completion would hammer a service that
+    #? is rate limited and frequently down, to build a list nobody could read. Truncation is
+    #? REPORTED rather than hidden - see the `truncated` flag below.
+    DISCOGRAPHY_PAGE = 100
+    DISCOGRAPHY_MAX = 500
+
+    #? Secondary types that mean "not an original studio record". The same list the search
+    #? query's "studio only" filter excludes by name - kept in step with it deliberately, so
+    #? the two views of an artist agree about what counts as an album.
+    NOISY_SECONDARY_TYPES = frozenset(
+        {"live", "compilation", "interview", "demo", "remix", "dj-mix", "mixtape/street", "audiobook", "soundtrack"}
+    )
+
+    async def get_artist_release_groups(
+        self,
+        artist_mbid: str,
+        primary_types: list[str] | None = None,
+        studio_only: bool = False,
+    ) -> dict:
+        """
+        Every release group credited to an artist, in full.
+
+        THIS IS A BROWSE, NOT A SEARCH, and that distinction is the entire point of the
+        endpoint. A search answers in relevance order and spends its limit on whatever matches,
+        so "the 50 best matches for Portishead, sorted by year" is the oldest of the fifty most
+        relevant - not the artist's earliest work. A browse asks for everything credited to one
+        artist id and pages until it has it, which is the only way a chronological discography
+        can be honest about being complete.
+
+        `primary_types` filters server-side (album, ep, single, broadcast, other). Filtering
+        here rather than after the fact matters for the same reason it does in the search
+        query: the cap below is spent on what was asked for instead of on singles nobody
+        wanted.
+
+        `studio_only` drops live albums, compilations and the rest AFTER the browse, because
+        MusicBrainz browse has no secondary-type parameter. Filtering returned rows is exactly
+        what CLAUDE.md says not to do for the SEARCH - but the reason it is wrong there does
+        not apply here. A search spends a limited budget on whatever matched, so discarding
+        rows throws that budget away; a browse has already paged through everything credited
+        to the artist, so what is being filtered is the complete set rather than a sample.
+        """
+        logger.info(
+            "browsing an artist's release groups from musicbrainz",
+            extra={"frontend": True, "src": "musicbrainz"},
+        )
+
+        groups = []
+        offset = 0
+
+        while True:
+            params = {
+                "artist": artist_mbid,
+                "inc": "artist-credits",
+                "fmt": "json",
+                "limit": self.DISCOGRAPHY_PAGE,
+                "offset": offset,
+            }
+
+            #? MusicBrainz takes these as a `type` param repeated per value; httpx renders a
+            #? list that way. Omitted entirely when nothing is selected - an empty `type` is
+            #? not the same as no filter and returns nothing.
+            if primary_types:
+                params["type"] = primary_types
+
+            data = await self.request_with_retries("release-group/", params)
+
+            #? A failed request and an artist with no release groups are NOT the same thing.
+            #? request_with_retries answers with an error dict rather than raising, so reading
+            #? .get("release-groups", []) would turn an outage into "this artist has released
+            #? nothing" - stated confidently, with nothing on screen suggesting a retry. The
+            #? same trap get_releases documents above.
+            if data.get("status") == "failed":
+                problem = data.get("error") or "the request failed"
+                logger.warning(
+                    f"couldn't load that artist's discography ({problem})",
+                    extra={"frontend": True, "src": "musicbrainz"},
+                )
+                return {
+                    "release-group-count": len(groups),
+                    "release-groups": groups,
+                    "truncated": False,
+                    "problem": problem,
+                }
+
+            page = data.get("release-groups", [])
+            if not page:
+                break
+
+            groups.extend(page)
+
+            total = data.get("release-group-count", 0)
+
+            if len(groups) >= self.DISCOGRAPHY_MAX and len(groups) < total:
+                kept = self._filter_studio(groups[: self.DISCOGRAPHY_MAX], studio_only)
+                return {
+                    "release-group-count": len(kept),
+                    "release-groups": kept,
+                    #? Says the list is not the whole story, so the interface can too. An
+                    #? incomplete discography presented as complete is the failure to avoid.
+                    "truncated": True,
+                    "total-available": total,
+                    "problem": None,
+                }
+
+            if len(groups) >= total:
+                break
+
+            offset += len(page)
+
+        kept = self._filter_studio(groups, studio_only)
+
+        return {
+            "release-group-count": len(kept),
+            "release-groups": kept,
+            "truncated": False,
+            #? None means the answer is complete and an empty list really does mean empty
+            "problem": None,
+        }
+
+    @classmethod
+    def _filter_studio(cls, groups: list[dict], studio_only: bool) -> list[dict]:
+        """Drop anything carrying a secondary type, when asked. See the note above."""
+        if not studio_only:
+            return groups
+
+        return [
+            group
+            for group in groups
+            if not any(
+                str(t).lower() in cls.NOISY_SECONDARY_TYPES
+                for t in (group.get("secondary-types") or [])
+            )
+        ]
+
+
     async def fully_search(self, query: str, limit: int = 5, include_releases: bool = True) -> dict:
         """
         Release groups matching the query, and by default the releases of the best one.

@@ -162,6 +162,13 @@ export interface Preferences {
   searchLimit: number
   /** Start every search with the "studio only" release-type filter applied. */
   searchStudioOnly: boolean
+  /**
+   * How the results list is ordered. One of the ids in interface/scripts/sort.js.
+   *
+   * Chronological by default: "sorted by year" is ambiguous, and the reading that matters is
+   * reading an artist's output in the order they made it.
+   */
+  searchSort: string
 
   /* --- soulseek candidates --- */
   /** Starting position of the min-score slider in the candidates panel, 0-100. */
@@ -181,6 +188,7 @@ export interface Preferences {
 export const PREFERENCE_FALLBACK: Preferences = {
   searchLimit: 50,
   searchStudioOnly: false,
+  searchSort: 'year_asc',
   candidateMinScore: 0,
   candidateFreeSlotOnly: false,
   candidateCompleteOnly: false,
@@ -213,6 +221,10 @@ export function readPreferences(): Preferences {
   return {
     searchLimit: num(stored.searchLimit, PREFERENCE_FALLBACK.searchLimit, 1, 100),
     searchStudioOnly: bool(stored.searchStudioOnly, PREFERENCE_FALLBACK.searchStudioOnly),
+    searchSort:
+      typeof stored.searchSort === 'string' && stored.searchSort
+        ? stored.searchSort
+        : PREFERENCE_FALLBACK.searchSort,
     candidateMinScore: num(stored.candidateMinScore, PREFERENCE_FALLBACK.candidateMinScore, 0, 100),
     candidateFreeSlotOnly: bool(
       stored.candidateFreeSlotOnly,

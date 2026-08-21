@@ -93,7 +93,21 @@
             </div>
             <div id="results-section">
                 <div id="results-toolbar">
+                    <!-- shown only while a browsed discography is open; see loadDiscography -->
+                    <button type="button" id="discography-back" class="columns-toggle-button" hidden>← Results</button>
+                    <label id="discography-scope" class="candidate-filter-toggle" hidden
+                           title="Studio albums only, or everything credited to this artist">
+                        <input type="checkbox" id="discography-studio-only" checked>
+                        <span class="text default-secondary">Studio only</span>
+                    </label>
                     <span id="results-summary" class="text default-muted">No search yet</span>
+                    <!-- Reorders the groups already on screen. It does NOT re-ask
+                         MusicBrainz, which has no sort parameter on a search anyway - see
+                         the note at the top of scripts/sort.js about what that means. -->
+                    <div class="releases-columns-control" id="sort-control">
+                        <button type="button" id="sort-toggle-button" class="columns-toggle-button">Sort ▾</button>
+                        <div class="columns-dropdown" id="sort-dropdown"></div>
+                    </div>
                     <div class="releases-columns-control" id="global-columns-control">
                         <button type="button" id="columns-toggle-button" class="columns-toggle-button">Columns ▾</button>
                         <div class="columns-dropdown" id="columns-dropdown"></div>

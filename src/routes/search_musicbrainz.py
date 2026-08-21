@@ -34,6 +34,61 @@ async def fully_search(
         raise HTTPException(status_code=500, detail=f"Error searching MusicBrainz: {e}")
 
 
+#? The primary types MusicBrainz browse accepts. Validated here rather than passed straight
+#? through: an unrecognised value makes the whole browse return nothing, which would look
+#? exactly like an artist with no records.
+DISCOGRAPHY_TYPES = {"album", "ep", "single", "broadcast", "other"}
+
+
+@router.get("/discography")
+async def discography(
+    request: Request,
+    artist_mbid: str,
+    #? Comma-separated, e.g. "album,ep". Empty means every type.
+    types: str = "",
+    #? Drops live albums, compilations, demos and the like. Applied after the browse, which
+    #? is sound here because the browse is complete - see the client's note.
+    studio_only: bool = False,
+):
+    """
+    Every release group credited to one artist.
+
+    A BROWSE, deliberately, not a search. A search answers in relevance order and spends its
+    limit on whatever matched, so sorting those results by year gives you the oldest of the N
+    most relevant - not the artist's earliest work. Only a browse can answer "everything this
+    artist released, in order" without lying about completeness.
+    """
+    requested = [t.strip().lower() for t in types.split(",") if t.strip()]
+    unknown = [t for t in requested if t not in DISCOGRAPHY_TYPES]
+
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unknown release type(s): {', '.join(unknown)}. "
+                f"Expected any of {', '.join(sorted(DISCOGRAPHY_TYPES))}."
+            ),
+        )
+
+    try:
+        mb_client = request.app.state.musicbrainz_client
+        return await mb_client.get_artist_release_groups(
+            artist_mbid, requested or None, studio_only=studio_only
+        )
+
+    except MusicBrainzUnavailable as e:
+        #? 503 not 500: nothing is wrong with the request, the upstream is just down
+        raise HTTPException(
+            status_code=503,
+            detail=f"MusicBrainz is unreachable right now, so that discography couldn't be "
+                   f"loaded. Try again shortly. ({e})",
+        )
+
+    except Exception as e:
+        logger.error(f"Exception in /discography endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error browsing MusicBrainz: {e}")
+
+
 @router.get("/releases")
 async def get_releases(
     request: Request,

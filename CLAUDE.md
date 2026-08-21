@@ -265,6 +265,65 @@ real tracklist → enqueue → poller watches transfers → organizer tags and f
   and `jimbrainz` are lowercase brand names** — never sentence-case them, rephrase so they are
   not sentence-initial instead.
 
+### Browsing a discography, and ordering results
+
+- **The search cannot answer "everything this artist released, in order", and a sort control
+  over its results cannot either.** MusicBrainz answers a search in relevance order and
+  spends the `limit` on whatever matched, so sorting 50 results by year gives the oldest of
+  the fifty most RELEVANT — for Portishead that is bootlegs, with the three actual albums
+  scattered among them. This is the same trap as the type filter: the fix is to change what
+  you ASK for, not to rearrange what came back.
+- **So a discography is a BROWSE.** `/search_musicbrainz/discography` takes an artist MBID and
+  pages `release-group?artist=…` until it has everything. Portishead: 3 studio albums.
+  Dance Gavin Dance: 11, 2007 → 2025, in order. Neither is reachable by any search.
+- **Filtering returned rows is wrong for a search and RIGHT for a browse**, which is worth
+  stating because the two look identical in code. A search spends a limited budget on
+  whatever matched, so discarding rows throws that budget away. A browse has already paged
+  through everything credited to the artist, so `studio_only` is filtering the complete set
+  rather than a sample. That is why it is applied after the fact here and inside the query
+  there.
+- **There is a 500-group cap (`DISCOGRAPHY_MAX`) and truncation is REPORTED.** The artist
+  credited on a record is not always a person — "Various Artists" carries tens of thousands
+  of groups, and paging that would hammer a rate-limited service to build a list nobody could
+  read. When it caps, the summary says so and withdraws the completeness claim, because an
+  incomplete discography presented as complete is the failure to avoid.
+- **The pre-fetched `best-match-releases` are bound to their group BY ID, not by position.**
+  They belong to whichever group MusicBrainz ranked first and arrive with no id attached, so
+  the old `index === 0` check handed them to whatever sorted to the top once ordering existed
+  — a different album's pressings, shown confidently. Verified after the fix: with the sort on
+  and 50 results, the card carrying them was at position **45**, not 0.
+- **`relevance` is a deliberate no-op, not a sort by score.** It IS the order MusicBrainz
+  answered in; re-sorting on the score field would only reshuffle the many groups that tie on
+  100 (see the note about the first five results all scoring exactly 100).
+- **Undated groups sink whichever direction the sort runs.** Reading a missing date as year 0
+  puts every bootleg MusicBrainz knows least about at the top of "oldest first". Pinned in
+  `ui/test/sort.sim.cjs`.
+- **`interface/scripts/sort.mjs` is `.mjs` for the TEST, not for the browser.** Node reads a
+  bare `.js` as CommonJS unless a package.json says otherwise, so the sim could not import it.
+  `.mjs` is unambiguous to Node and still serves as `text/javascript`.
+
+### Alternate performances collide with the album they accompany
+
+- **An instrumental release is a DIFFERENT KIND of edition from a deluxe, and it matters
+  more.** A deluxe is more of the same album, so a collision loses some bonus tracks. An
+  instrumental is a different *recording* — identical track titles, numbers and count — so a
+  collision means every file matches one already on disk, all of them are skipped, and the
+  job reports that nothing needed doing. You asked for an album and got neither.
+- **Verified against the live API:** MusicBrainz holds Dance Gavin Dance's instrumental as a
+  RELEASE inside the ordinary album's group, carrying `(instrumental)` in its **title** with
+  an **empty disambiguation**. So every source `resolve_edition_label()` consults returned
+  blank and it resolved to `Afterburner (2020)` — the standard album's own folder.
+- **`resolve_album_dir()`'s escalation does not save you here**, and the reason is a
+  deliberate decision documented above: it shares a folder when the existing one is
+  UNTAGGED, which is the common case for any library that predates jimbrainz. The fix has to
+  be that the two never resolve to the same name in the first place.
+- **`instrumental`, `acoustic` and `a cappella` are therefore in the edition vocabulary**, and
+  that vocabulary exists in TWO places which must stay in step: `EDITION_PATTERNS` in
+  `matching.py` tags the Soulseek FOLDER being offered, and `EDITION_KEYWORDS` in `main.js`
+  tags the RELEASE you picked. They are scored against each other, so **a marker in only one
+  of them is worse than one in neither** — the release would carry a tag no folder could
+  match.
+
 ### The mobile layout
 
 Rebuilt in v0.5.3. It fitted on a phone since v0.3.x, which is not the same as being usable
@@ -917,6 +976,7 @@ npm run dev        # harness on :5173, proxies /jimbrainz + /styles to :8080 (st
 node ui/test/speed.sim.cjs      # the derived download rate, simulated against a known truth
 node ui/test/queue.sim.cjs      # the tab badge and the review queue agreeing on what's outstanding
 node ui/test/downloads.sim.cjs  # the downloads panel's optimistic overlays, incl. the wrong-prediction paths
+node ui/test/sort.sim.cjs       # result ordering - undated groups, ties, and relevance-as-no-op
 ```
 
 `npm run dev` serves `ui/index.html`, a harness for working on one component in isolation with

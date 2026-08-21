@@ -317,3 +317,41 @@ def test_bitrates_collected_from_lossy_files():
 
 def test_empty_responses_produce_no_candidates():
     assert rank_candidates([], EXPECTED_BASE) == []
+
+
+# ===== alternate performances in folder names ================================
+
+
+def test_instrumental_is_detected_in_a_soulseek_folder_name():
+    """
+    The other half of the instrumental fix. This vocabulary tags the FOLDER a peer is
+    offering; EDITION_KEYWORDS in interface/scripts/main.js tags the RELEASE you picked, and
+    the two are scored against each other. A marker present in only one of them is worse than
+    one present in neither - the release would carry a tag no folder could ever match.
+    """
+    from src.matching import detect_edition_tags
+
+    assert detect_edition_tags("Dance Gavin Dance - Afterburner (2020) [Instrumental]") == {
+        "INSTRUMENTAL"
+    }
+    assert detect_edition_tags("Afterburner (2020) [FLAC]") == set()
+
+
+def test_acoustic_and_a_cappella_are_detected_including_the_common_misspelling():
+    from src.matching import detect_edition_tags
+
+    assert detect_edition_tags("Some Album (Acoustic)") == {"ACOUSTIC"}
+    assert detect_edition_tags("Some Album (A Cappella)") == {"A CAPPELLA"}
+    #? "acapella" and "a capella" are both far more common in the wild than the correct
+    #? spelling, and a folder name is typed by a stranger
+    assert detect_edition_tags("Some Album (Acappella)") == {"A CAPPELLA"}
+    assert detect_edition_tags("Some Album (A Capella)") == {"A CAPPELLA"}
+
+
+def test_the_new_markers_do_not_disturb_the_existing_ones():
+    from src.matching import detect_edition_tags
+
+    assert detect_edition_tags("Album (Super Deluxe Edition)") == {"SUPER DELUXE"}
+    assert detect_edition_tags("Album (2011 Remaster)") == {"REMASTER"}
+    #? a release can genuinely be both
+    assert detect_edition_tags("Album (Deluxe) [Instrumental]") == {"DELUXE", "INSTRUMENTAL"}

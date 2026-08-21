@@ -31,6 +31,24 @@ EDITION_PATTERNS = [
     (re.compile(r"limited\s*edition"), "LIMITED"),
     (re.compile(r"special\s*edition"), "SPECIAL EDITION"),
     (re.compile(r"remaster"), "REMASTER"),
+
+    #? ALTERNATE PERFORMANCES, which are a different kind of edition from the ones above and
+    #? matter more, not less.
+    #?
+    #? A deluxe edition is MORE OF THE SAME ALBUM: collide it with the standard press and you
+    #? lose some bonus tracks. An instrumental is a DIFFERENT RECORDING of it - same track
+    #? titles, same numbers, same count - so colliding it means every single file matches an
+    #? existing one, all of them are skipped, and you end up with neither album while the job
+    #? reports that there was nothing to do.
+    #?
+    #? Dance Gavin Dance is the case that surfaced it: MusicBrainz holds the instrumental as a
+    #? RELEASE inside the ordinary album's group, with "(instrumental)" in the title and an
+    #? EMPTY disambiguation - so every source resolve_edition_label() consults came back blank
+    #? and it resolved to the standard album's own folder. Verified against the live API.
+    (re.compile(r"instrumental"), "INSTRUMENTAL"),
+    (re.compile(r"acoustic"), "ACOUSTIC"),
+    #? "a cappella", "acappella" and the common misspelling "a capella"
+    (re.compile(r"a\s*capp?ella"), "A CAPPELLA"),
 ]
 
 #? how much each signal contributes to the final score. title/count identify the album,

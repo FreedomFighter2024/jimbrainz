@@ -1,5 +1,6 @@
 import { init} from './init.js';
 import {sleep} from './utils.js';
+import { DEFAULT_SORT, SORT_MODES, isSortMode, sortReleaseGroups, sortModeLabel } from './sort.mjs';
 
 
 
@@ -119,6 +120,7 @@ function setLabel(elementId, text) {
 const PREFERENCE_FALLBACK = {
     searchLimit: 50,
     searchStudioOnly: false,
+    searchSort: 'year_asc',
     candidateMinScore: 0,
     candidateFreeSlotOnly: false,
     candidateCompleteOnly: false,
@@ -644,28 +646,167 @@ artistSearchInput.addEventListener('keypress', (e) => {
 
 
 
+/*
+ * The last search's results, kept so the sort can be changed without asking MusicBrainz
+ * again. Re-searching to reorder fifty groups we already hold would be rude to a service
+ * that is rate limited and frequently down, and slow for no reason.
+ */
+let lastResults = null;
+
+/*
+ * A browsed discography, when one is open, or null when the results area is showing a search.
+ *
+ * Held SEPARATELY from lastResults rather than overwriting it, so leaving a discography puts
+ * the search you came from back exactly as it was - including which groups you had already
+ * expanded the releases for. Losing a search you spent a rate-limited request on because you
+ * glanced at an artist would be a poor trade.
+ */
+let discography = null;
+
+/** The order the results are displayed in. Persisted; see the settings tab. */
+let currentSort = (() => {
+    const saved = loadPreferences().searchSort;
+    return isSortMode(saved) ? saved : DEFAULT_SORT;
+})();
+
 function processSearchResults(results) {
     lastSearchRan = true;
+    lastResults = results;
+    //? A new search replaces whatever was on screen, discography included - it is a fresh
+    //? question, and leaving the old answer up with new results underneath reads as a bug.
+    discography = null;
+    renderSearchResults();
+}
+
+/**
+ * Browse one artist's release groups and show them instead of the search results.
+ *
+ * A BROWSE, not a search, and that is the whole reason this exists. A search answers in
+ * relevance order and spends its limit on whatever matched, so sorting those results by year
+ * gives the oldest of the N most relevant - for Portishead, fifty bootlegs with the actual
+ * albums scattered among them. The browse returns everything credited to the artist id, so
+ * "oldest first" means what it says.
+ */
+async function loadDiscography(artistMbid, artistName) {
+    if (!artistMbid) return;
+
+    const container = document.getElementById('search-results-scrollable');
+    container.innerHTML = '<div class="loading-panel">Asking MusicBrainz…</div>';
+
+    try {
+        const params = new URLSearchParams({ artist_mbid: artistMbid, types: 'album' });
+        if (discographyStudioOnly) params.set('studio_only', 'true');
+
+        const response = await fetch(`/jimbrainz/search_musicbrainz/discography?${params}`);
+
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.detail || `the request failed (${response.status})`);
+        }
+
+        const data = await response.json();
+
+        //? A failed browse answers 200 with a `problem` rather than raising, exactly as the
+        //? releases fetch does - so an outage would otherwise render as "this artist has
+        //? released nothing", stated confidently with nothing suggesting a retry.
+        if (data.problem) throw new Error(data.problem);
+
+        discography = {
+            artistMbid,
+            artistName,
+            truncated: Boolean(data.truncated),
+            totalAvailable: data['total-available'] ?? null,
+            groups: data['release-groups'] || [],
+        };
+
+        renderSearchResults();
+    }
+
+    catch (error) {
+        console.error(`Discography error: ${error.message}`);
+        discography = null;
+        container.innerHTML =
+            `<h4 class="text red candidates-status">couldn't load that discography - ${error.message}</h4>`;
+        updateResultsSummary();
+    }
+}
+
+/** Whether a discography browse asks for studio albums only. */
+let discographyStudioOnly = true;
+
+function closeDiscography() {
+    discography = null;
+    renderSearchResults();
+}
+
+const discographyBackButton = document.getElementById('discography-back');
+discographyBackButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeDiscography();
+});
+
+/*
+ * The way back is only offered when there is somewhere to go.
+ *
+ * A discography reached from a search returns to it with every expanded group still expanded,
+ * because the search's results were never thrown away. With no prior search the button would
+ * lead to an empty pane, which is worse than not offering it.
+ */
+function updateDiscographyControls() {
+    discographyBackButton.hidden = !(discography && lastResults);
+    discographyScope.hidden = !discography;
+}
+
+const discographyScope = document.getElementById('discography-scope');
+const discographyStudioOnlyBox = document.getElementById('discography-studio-only');
+
+discographyStudioOnlyBox.addEventListener('change', () => {
+    discographyStudioOnly = discographyStudioOnlyBox.checked;
+
+    //? Re-browses rather than filtering what is on screen. The secondary-type filter is
+    //? applied server-side against the COMPLETE set, so turning it off has to go and get the
+    //? rows that were dropped - they were never sent.
+    if (discography) void loadDiscography(discography.artistMbid, discography.artistName);
+});
+
+function renderSearchResults() {
     const container = document.getElementById('search-results-scrollable');
     container.innerHTML = '';
     mountedReleaseGrids.clear();
-    const releaseGroups = results['release-groups'] || [];
-    const bestMatchReleases = results['best-match-releases'] || [];
 
-    releaseGroups.forEach((rg, index) => {
-        // Only the top group arrives with its releases already fetched. An EMPTY list is
-        // passed as null on purpose: it means we have nothing to show for that group, which is
-        // the same situation as never having asked - and the server cannot currently tell an
+    const releaseGroups = discography
+        ? discography.groups
+        : (lastResults?.['release-groups'] || []);
+
+    //? Only a search carries pre-fetched releases; a browse never does.
+    const bestMatchReleases = discography ? [] : (lastResults?.['best-match-releases'] || []);
+
+    /*
+     * WHICH group the pre-fetched releases belong to, captured BEFORE sorting.
+     *
+     * They are the releases of whichever group MusicBrainz ranked first, and the server sends
+     * them positionally with no id attached. Reading them off index 0 after a sort would hand
+     * one group's pressings to whatever group happened to sort to the top - a wrong tracklist
+     * shown confidently, which is worse than none.
+     */
+    const bestMatchId = releaseGroups[0]?.id ?? null;
+
+    for (const rg of sortReleaseGroups(releaseGroups, currentSort)) {
+        // Only the best-match group arrives with its releases already fetched. An EMPTY list
+        // is passed as null on purpose: it means we have nothing to show for that group, which
+        // is the same situation as never having asked - and the server cannot currently tell an
         // empty release group apart from a releases request that failed, which MusicBrainz
         // does often. Either way the group needs a way to be fetched again.
-        const releases = index === 0 && bestMatchReleases.length ? bestMatchReleases : null;
+        const isBestMatch = bestMatchId !== null && rg.id === bestMatchId;
+        const releases = isBestMatch && bestMatchReleases.length ? bestMatchReleases : null;
 
         container.appendChild(createReleaseGroupElement(rg, releases));
-    });
+    }
 
     loadAllCoverImages(container);
     renderFacets();
     updateResultsSummary();
+    updateDiscographyControls();
 }
 
 async function findCandidates(expected) {
@@ -1202,6 +1343,13 @@ function getLanguageScript(release) {
 
 
 
+/*
+ * KEEP THIS IN STEP WITH EDITION_PATTERNS IN src/matching.py.
+ *
+ * This list tags the RELEASE you picked; that one tags the Soulseek FOLDER offered against
+ * it. They are compared to each other, so a marker present in only one of them is worse than
+ * one present in neither - the release would carry a tag no folder could ever match.
+ */
 const EDITION_KEYWORDS = [
     { regex: /super deluxe/, label: 'SUPER DELUXE' },
     { regex: /deluxe/, label: 'DELUXE' },
@@ -1210,6 +1358,17 @@ const EDITION_KEYWORDS = [
     { regex: /expanded/, label: 'EXPANDED' },
     { regex: /limited edition/, label: 'LIMITED' },
     { regex: /special edition/, label: 'SPECIAL EDITION' },
+
+    /*
+     * Alternate performances - see the long note in src/matching.py for why these are a
+     * different kind of edition from the ones above. Short version: an instrumental has the
+     * same track titles, numbers and count as the album it accompanies, so without a marker
+     * it resolves to that album's folder, every file is skipped as already-present, and the
+     * import reports that nothing needed doing.
+     */
+    { regex: /instrumental/, label: 'INSTRUMENTAL' },
+    { regex: /acoustic/, label: 'ACOUSTIC' },
+    { regex: /a\s*capp?ella/, label: 'A CAPPELLA' },
 ];
 
 function isRemaster(release) {
@@ -1455,6 +1614,74 @@ document.getElementById('clear-filters-button').addEventListener('click', () => 
     notifyFilterStateChange();
 });
 
+/* ===== sort order ===== */
+
+const sortControl = document.getElementById('sort-control');
+const sortToggleButton = document.getElementById('sort-toggle-button');
+
+sortToggleButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sortControl.classList.toggle('open');
+});
+
+document.addEventListener('click', (e) => {
+    if (!sortControl.contains(e.target)) sortControl.classList.remove('open');
+});
+
+function renderSortDropdown() {
+    const dropdown = document.getElementById('sort-dropdown');
+    dropdown.innerHTML = '';
+
+    for (const mode of SORT_MODES) {
+        const item = document.createElement('label');
+        item.className = 'columns-dropdown-item';
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'result-sort';
+        radio.value = mode.id;
+        radio.checked = mode.id === currentSort;
+
+        radio.addEventListener('change', () => {
+            currentSort = mode.id;
+            savePreference('searchSort', mode.id);
+            sortControl.classList.remove('open');
+            //? Re-render from what we already hold. Re-searching to reorder groups already on
+            //? screen would spend a rate-limited request to change nothing but the order.
+            renderSearchResults();
+            renderSortDropdown();
+        });
+
+        item.append(radio, document.createTextNode(mode.label));
+        dropdown.appendChild(item);
+    }
+
+    //? The button carries the active order for the same reason the type filter's does: an
+    //? ordering you cannot see is one you stop trusting, and "why is the 1994 album third"
+    //? has a very different answer depending on it.
+    sortToggleButton.textContent = `Sort: ${sortModeLabel(currentSort)} ▾`;
+}
+
+renderSortDropdown();
+
+/**
+ * Write one preference back, without disturbing the others.
+ *
+ * The settings tab owns this blob, so this reads-modifies-writes rather than holding a cached
+ * copy - otherwise a change made there would be clobbered by the next sort chosen here.
+ */
+function savePreference(key, value) {
+    try {
+        const current = loadPreferences();
+        current[key] = value;
+        localStorage.setItem('jimbrainz-preferences', JSON.stringify(current));
+    }
+
+    catch {
+        // storage unavailable - the sort still applies, it just won't be remembered
+    }
+}
+
 const columnsToggleButtonGlobal = document.getElementById('columns-toggle-button');
 const columnsControlGlobal = document.getElementById('global-columns-control');
 columnsToggleButtonGlobal.addEventListener('click', (e) => {
@@ -1583,6 +1810,32 @@ function updateResultsSummary() {
     const described = describeTypeFilter();
     const filterNote = described ? ` · ${described}` : '';
     summary.title = described ? `search was narrowed with: ${buildTypeFilter()}` : '';
+
+    /*
+     * A discography says so, and says whether it is complete.
+     *
+     * It replaces the usual counts because they would be misleading here: this is a browse of
+     * everything credited to one artist, not the N best matches for a query, and the type
+     * filter note does not apply to it at all.
+     */
+    if (discography) {
+        const count = discography.groups.length;
+        const scope = discographyStudioOnly ? 'studio album' : 'release';
+        const plural = count === 1 ? '' : 's';
+
+        summary.textContent =
+            `${discography.artistName} · ${count} ${scope}${plural}` +
+            (discography.truncated
+                ? ` · showing the first ${count} of ${discography.totalAvailable}`
+                : '');
+
+        //? The completeness claim is the whole value of a browse over a search, so it is
+        //? stated rather than implied - and withdrawn honestly when it was capped.
+        summary.title = discography.truncated
+            ? `this artist has more than jimbrainz will page through in one go, so this is not the complete discography`
+            : `every ${scope} credited to this artist on MusicBrainz`;
+        return;
+    }
 
     if (!total) {
         const groups = document.querySelectorAll('.results-box.release-group-result').length;
@@ -1961,6 +2214,17 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     const scoreBand = typeof score === 'number'
         ? (score >= 90 ? 'high' : score >= 70 ? 'mid' : 'low')
         : 'low';
+
+    /*
+     * No score, no chip.
+     *
+     * A relevance score is a property of a SEARCH, and a browsed discography has none - it
+     * rendered as "N/A% match" on every row, which is a confident-looking answer to a
+     * question nobody asked. Omitted entirely rather than shown empty.
+     */
+    const scoreMarkup = typeof score === 'number'
+        ? `<h3 class="matchScore ${scoreBand}" title="MusicBrainz relevance score for this search">${score}<span class="matchScore-unit">% match</span></h3>`
+        : '';
     const releaseGroupId = releaseGroup.id;
     const artistId = getArtistId(releaseGroup['artist-credit']);
     // carried down into the releases grid so each row can build a soulseek search for itself
@@ -1976,7 +2240,13 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
         <div class="release-group-header">
             <div class="shrinkable">
                 <h3 class="text white-tertiary releaseGrpArtist">
-                    <a href="https://musicbrainz.org/artist/${artistId}" target="_blank" rel="noopener noreferrer">${artist}</a>&nbsp;-&nbsp;
+                    <!--
+                      The artist name opens their DISCOGRAPHY rather than musicbrainz.org.
+                      Following a link off-site was the least useful thing this could do with
+                      a click, and "everything this artist released, in order" is a question
+                      the search can't answer at all - it spends its limit on relevance. The
+                      external link is still one click away, on the ↗.
+                    --><button type="button" class="releaseGrpArtistButton" data-artist-mbid="${artistId || ''}" title="Browse ${artist}'s discography">${artist}</button><a class="releaseGrpArtistLink" href="https://musicbrainz.org/artist/${artistId}" target="_blank" rel="noopener noreferrer" title="${artist} on MusicBrainz">↗</a>&nbsp;-&nbsp;
                 </h3>
                 <h3 class="text white releaseGrpName">
                     <a href="https://musicbrainz.org/release-group/${releaseGroupId}" target="_blank" rel="noopener noreferrer">${title} (${year})</a>
@@ -1984,7 +2254,7 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
                 <h3 class="text white-tertiary releaseGrpType">&nbsp;[${typeDisplay}] &nbsp;</h3>
             </div>
             <div class="non-shrinkable">
-                <h3 class="matchScore ${scoreBand}" title="MusicBrainz relevance score for this search">${score}<span class="matchScore-unit">% match</span></h3>
+                ${scoreMarkup}
                 <button class="text default addButton" type="button">Find</button>
             </div>
         </div>
@@ -2018,6 +2288,14 @@ function createReleaseGroupElement(releaseGroup, releases = null) {
     }
 
     div.innerHTML = html;
+
+    const artistButton = div.querySelector('.releaseGrpArtistButton');
+    if (artistButton) {
+        artistButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            void loadDiscography(artistButton.dataset.artistMbid, artist);
+        });
+    }
 
     div.querySelector('.addButton').addEventListener('click', async () => {
         await openCandidatesPanel(
